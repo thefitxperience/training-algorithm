@@ -1,16 +1,16 @@
+import { useMemo } from 'react'
 import type { View } from '../App'
 import type { Program } from '../lib/generate'
+import { pickKey, roundSets } from '../lib/rounding'
 import { equipmentOptions, isTokenAvailable } from '../lib/equipment'
 import type { ClientInput } from '../types'
 
 /**
- * Sets can be fractional (2.5, 1.5). The detailed view shows them as-is, never rounded —
- * the raw value is what the allocation asked for. The simple view is client-facing, where
- * "half a set" is meaningless, so a fraction becomes the range it actually represents:
- * 2.5 → "2-3" (two sets one session, three the next; the weekly total is unchanged).
+ * The detailed view shows allocation sets as-is, fractions and all — the raw value is what
+ * the allocation asked for. The simple view is client-facing and has to be decisive, so it
+ * uses the whole numbers from lib/rounding.ts instead.
  */
-const fmtSets = (n: number, detailed: boolean) =>
-  detailed || Number.isInteger(n) ? String(n) : `${Math.floor(n)}-${Math.ceil(n)}`
+const fmtSets = (n: number) => String(n)
 
 export function ProgramPanel({
   program,
@@ -24,6 +24,16 @@ export function ProgramPanel({
   const { block, days, warnings } = program
   const short = block.deliveredDays < input.days
   const detailed = view === 'detailed'
+
+  // Simple view prescribes whole sets; session length follows from those, not from the
+  // fractional allocation values.
+  const rounding = useMemo(() => roundSets(program), [program])
+  const setsFor = (dayIndex: number, position: number, raw: number) =>
+    detailed ? raw : (rounding.byPick.get(pickKey(dayIndex, position)) ?? raw)
+  const minutesFor = (day: (typeof days)[number]) =>
+    detailed
+      ? day.minutes
+      : rounding.dayTotals[day.index] * program.minutesPerSet + program.warmupMinutes
 
   return (
     <div className="space-y-4">
@@ -120,7 +130,7 @@ export function ProgramPanel({
               <span className={detailed ? '' : 'rounded-full bg-slate-100 px-2 py-0.5 font-medium'}>
                 {day.exercises.length} exercises
               </span>
-              {detailed && <span>{fmtSets(day.totalSets, true)} sets</span>}
+              {detailed && <span>{fmtSets(day.totalSets)} sets</span>}
               <span
                 className={
                   day.overCeiling && detailed
@@ -130,7 +140,7 @@ export function ProgramPanel({
                       : 'rounded-full bg-slate-800 px-2 py-0.5 font-semibold text-white'
                 }
               >
-                {day.minutes.toFixed(0)} min
+                {minutesFor(day).toFixed(0)} min
                 {day.overCeiling && detailed && ` — over ${program.timeCeiling} min ceiling`}
               </span>
             </div>
@@ -193,7 +203,7 @@ export function ProgramPanel({
                       detailed ? 'px-3 py-1.5' : 'px-4 py-2 text-right font-semibold'
                     }`}
                   >
-                    {fmtSets(c.sets, detailed)} × {c.reps}
+                    {fmtSets(setsFor(day.index, i, c.sets))} × {c.reps}
                   </td>
                   <td
                     className={`whitespace-nowrap text-slate-600 ${

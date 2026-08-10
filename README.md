@@ -146,12 +146,17 @@ Places where the spec left a choice, and what was chosen:
    upstream in the data.
 5. **Sex overrides apply to targets with a floor of 2** for every override, which is what
    makes the female `Traps −2` case behave.
-6. **Fractional sets are shown as a range in the simple view only.** `2.5` renders as
-   `2-3` there — a client can't perform half a set, and the fraction is a weekly average
-   (two sets one session, three the next; the weekly total is unchanged). The detailed view
-   still prints `2.5` verbatim, because the harness has to show exactly what the allocation
-   asked for. The rounding is display-only: per-day set totals, session minutes and the
-   volume audit all run on the raw fractional values in both views.
+6. **The simple view prescribes whole sets via balanced rounding**
+   ([src/lib/rounding.ts](src/lib/rounding.ts)). A client-facing program has to be
+   decisive, but rounding every fraction the same way drifts hard — all-up is +11% on the
+   week (127.5 → 142 sets on the reference client), all-down is −11%. Instead a running
+   error is carried **per muscle group**: the first 3.5 rounds to 4, the next 3.5 in that
+   group rounds to 3, and so on. Every group lands within **0.5 sets** of its target, and
+   the week comes to 132 instead of 127.5 (+3.5%). Within a group the picks are ordered
+   heaviest-primary-first, so the extra set goes to the main compound and the shave comes
+   off the accessory. The detailed view still prints `3.5` verbatim — the harness has to
+   show exactly what the allocation asked for — and the volume audit is computed from the
+   raw values, with the rounded week total shown alongside it so the drift stays visible.
 7. **Equipment tiers are an addition to the original spec**, not something the data models.
    `exercises.json` has no availability field, so the tiers are a bucketing of its
    equipment tokens; the bucket lists are in one place and are the thing to edit if a token
@@ -160,10 +165,10 @@ Places where the spec left a choice, and what was chosen:
 
 ## Acceptance criteria — current status
 
-`npm run acceptance` → **22 of 22 checks pass**. The five presets all run at `Full gym`,
-so the original criteria are unaffected by the equipment feature; seven further checks
-cover equipment tiers and split advice. Note the count went from 23/24 to 22/22 because the
-week criterion was **removed**, not because the failure was fixed — see below.
+`npm run acceptance` → **37 of 37 checks pass**. The five presets all run at `Full gym`, so
+the original criteria are unaffected by the equipment feature; the rest cover equipment
+tiers, split advice and set rounding. Note the count dropped to 22/22 at one point because
+the week criterion was **removed**, not because its failure was fixed — see below.
 
 | Criterion | Status |
 |---|---|
@@ -182,6 +187,9 @@ week criterion was **removed**, not because the failure was fixed — see below.
 | Equipment: nothing outside the tier is ever prescribed | **pass** — all three tiers |
 | Equipment: bodyweight-only shrinks the program and reports fallbacks | **pass** — 40 → 30 exercises, 17 warnings |
 | Equipment: no substitution crosses a muscle group even at bodyweight | **pass** |
+| Rounding: every prescribed set count is a whole number | **pass** — all 5 presets |
+| Rounding: no muscle group drifts more than 0.5 sets | **pass** — max 0.5 on every preset |
+| Rounding: no session crosses the goal's time ceiling | **pass** — worst is Youth strength day 3 at 103 of 105 min |
 | Split advice: reference client gets a Recommended split | **pass** — Upper / Lower |
 | Split advice: non-18-29 client is flagged as reading the 18-29 rows | **pass** |
 

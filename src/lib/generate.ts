@@ -49,6 +49,10 @@ export interface Program {
   prescriptionKey: string
   exerciseCount: number
   timeCeiling: number
+  /** minutes = totalSets * minutesPerSet + warmupMinutes — exposed so the simple view can
+   *  recompute session length from its whole-number sets */
+  minutesPerSet: number
+  warmupMinutes: number
 }
 
 export type GenerateResult =
@@ -290,6 +294,8 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
       prescriptionKey: pKey,
       exerciseCount: days.reduce((s, d) => s + d.exercises.length, 0),
       timeCeiling: config.timeCeiling[input.goal],
+      minutesPerSet: (config.repsMid[input.goal] * 3 + config.restMid[input.goal]) / 60,
+      warmupMinutes: config.warmupMinutes,
     },
   }
 }

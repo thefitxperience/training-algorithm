@@ -11,6 +11,7 @@ import { buildAudit } from '../src/lib/audit'
 import { PRESETS } from '../src/lib/presets'
 import { isEquipmentAvailable, libraryCoverage } from '../src/lib/equipment'
 import { splitAdvice } from '../src/lib/splitAdvice'
+import { roundSets } from '../src/lib/rounding'
 import type { ClientInput, DataBundle } from '../src/types'
 
 const dir = join(process.cwd(), 'public', 'data')
@@ -178,6 +179,41 @@ const preset = (name: string) => PRESETS.find((p) => p.name === name)!
 
   const coverage = tiers.map((t) => `${t}: ${libraryCoverage(data.exercises, t).available}`)
   console.log(`\nLibrary coverage — ${coverage.join(', ')} of ${libraryCoverage(data.exercises, 'Full gym').total} non-mobility exercises`)
+}
+
+// ---- Whole-set rounding (simple view) --------------------------------------
+{
+  for (const pr of PRESETS) {
+    const p = run(pr.input)
+    const r = roundSets(p)
+    const all = [...r.byPick.values()]
+
+    check(
+      `Rounding (${pr.name}): every prescribed set count is a whole number`,
+      all.every((n) => Number.isInteger(n)),
+      all.filter((n) => !Number.isInteger(n)).join(', '),
+    )
+    check(
+      `Rounding (${pr.name}): no muscle group drifts more than 0.5 sets`,
+      r.maxDrift <= 0.5 + 1e-9,
+      `max drift ${r.maxDrift.toFixed(1)} — ${Object.entries(r.driftByGroup)
+        .filter(([, v]) => Math.abs(v) > 0.5)
+        .map(([g, v]) => `${g} ${v.toFixed(1)}`)
+        .join(', ')}`,
+    )
+
+    // Rounding lengthens sessions; nothing may cross the goal's time ceiling because of it.
+    const over = r.dayTotals
+      .map((t, i) => ({ day: i + 1, min: t * p.minutesPerSet + p.warmupMinutes }))
+      .filter((d) => d.min > p.timeCeiling)
+    check(
+      `Rounding (${pr.name}): no session crosses the ${p.timeCeiling} min ceiling`,
+      over.length === 0,
+      over.length
+        ? over.map((d) => `day ${d.day} ${d.min.toFixed(0)} min`).join(', ')
+        : `longest ${Math.max(...r.dayTotals.map((t) => t * p.minutesPerSet + p.warmupMinutes)).toFixed(0)} min`,
+    )
+  }
 }
 
 // ---- Split recommendation --------------------------------------------------

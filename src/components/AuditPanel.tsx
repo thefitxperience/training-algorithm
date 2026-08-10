@@ -1,4 +1,5 @@
 import type { Audit } from '../lib/audit'
+import type { Rounding } from '../lib/rounding'
 import type { Config } from '../types'
 
 const BAND: Record<string, string> = {
@@ -10,7 +11,17 @@ const BAND: Record<string, string> = {
 
 const n1 = (v: number) => v.toFixed(1)
 
-export function AuditPanel({ audit, config, sex }: { audit: Audit; config: Config; sex: string }) {
+export function AuditPanel({
+  audit,
+  config,
+  sex,
+  rounding,
+}: {
+  audit: Audit
+  config: Config
+  sex: string
+  rounding: Rounding
+}) {
   const overrides = sex === 'Female' ? config.femaleOverrides : config.maleOverrides
 
   return (
@@ -106,6 +117,14 @@ export function AuditPanel({ audit, config, sex }: { audit: Audit; config: Confi
         <div>
           Indirect credit {config.indirectCredit} × sets per <span className="font-mono">alsoTrains</span> entry
           that maps to the group. Targets carry the {sex.toLowerCase()} overrides.
+        </div>
+        <div className="rounded border border-slate-200 bg-slate-50 px-1.5 py-1">
+          <span className="font-semibold">Simple view rounds to whole sets:</span>{' '}
+          {rounding.roundedWeekTotal} vs {rounding.rawWeekTotal} raw
+          {rounding.rawWeekTotal > 0 &&
+            ` (${((rounding.roundedWeekTotal / rounding.rawWeekTotal - 1) * 100).toFixed(1)}%)`}
+          . Worst single group drifts {rounding.maxDrift.toFixed(1)} sets. The figures above are
+          computed from the raw allocation values.
         </div>
         {audit.unmappedAlsoTrains.length > 0 && (
           <div className="rounded border border-orange-200 bg-orange-50 px-1.5 py-1 text-orange-800">

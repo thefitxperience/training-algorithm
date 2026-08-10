@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { loadData } from './data/load'
 import { ageBracket, generate } from './lib/generate'
 import { buildAudit } from './lib/audit'
+import { roundSets } from './lib/rounding'
 import { PRESETS } from './lib/presets'
 import { ClientPanel } from './components/ClientPanel'
 import { ProgramPanel } from './components/ProgramPanel'
@@ -150,7 +151,12 @@ export default function App() {
 
           <aside className="lg:sticky lg:top-4 lg:self-start">
             {audit && result?.ok ? (
-              <AuditPanel audit={audit} config={data.config} sex={input.sex} />
+              <AuditPanel
+                audit={audit}
+                config={data.config}
+                sex={input.sex}
+                rounding={roundSets(result.program)}
+              />
             ) : (
               <div className="rounded border border-slate-200 bg-white p-3 text-xs text-slate-500">
                 No audit — no program generated.

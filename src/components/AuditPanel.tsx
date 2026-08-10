@@ -29,8 +29,9 @@ export function AuditPanel({
       <div>
         <h2 className="text-sm font-bold text-slate-800">Volume audit</h2>
         <p className="text-xs text-slate-500">
-          Delivered is recomputed from the exercises actually chosen — not read from the allocation —
-          so a divergence from <span className="font-mono">delivered</span> means the pipeline drifted.
+          Delivered volume is recalculated from the exercises actually chosen, not copied from the
+          plan — so if it diverges from the plan's own estimate, the program has drifted from what
+          was intended.
         </p>
       </div>
 
@@ -52,7 +53,7 @@ export function AuditPanel({
             <th className="py-1 pr-1 font-semibold">Group</th>
             <th className="px-1 py-1 text-right font-semibold">Target</th>
             <th className="px-1 py-1 text-right font-semibold">Deliv.</th>
-            <th className="px-1 py-1 text-right font-semibold" title="the allocation block's own `delivered` field">
+            <th className="px-1 py-1 text-right font-semibold" title="what the plan expected to deliver">
               Exp.
             </th>
             <th className="py-1 pl-1 text-right font-semibold">Ratio</th>
@@ -89,7 +90,7 @@ export function AuditPanel({
                 <td className="px-1 py-1 text-right font-mono text-slate-900">{n1(r.delivered)}</td>
                 <td
                   className={`px-1 py-1 text-right font-mono ${drift > 1 ? 'text-orange-700' : 'text-slate-400'}`}
-                  title={drift > 1 ? `diverges from allocation's delivered by ${n1(drift)} sets` : ''}
+                  title={drift > 1 ? `differs from the plan's estimate by ${n1(drift)} sets` : ''}
                 >
                   {n1(r.expected)}
                 </td>
@@ -115,24 +116,24 @@ export function AuditPanel({
           Deliberately deprioritised; excluded from the summary count.
         </div>
         <div>
-          Indirect credit {config.indirectCredit} × sets per <span className="font-mono">alsoTrains</span> entry
-          that maps to the group. Targets carry the {sex.toLowerCase()} overrides.
+          An exercise also earns {config.indirectCredit} × its sets for each secondary muscle it
+          works. Targets include the {sex.toLowerCase()} adjustments.
         </div>
         <div className="rounded border border-slate-200 bg-slate-50 px-1.5 py-1">
           <span className="font-semibold">Simple view rounds to whole sets:</span>{' '}
-          {rounding.roundedWeekTotal} vs {rounding.rawWeekTotal} raw
+          {rounding.roundedWeekTotal} vs {rounding.rawWeekTotal} planned
           {rounding.rawWeekTotal > 0 &&
             ` (${((rounding.roundedWeekTotal / rounding.rawWeekTotal - 1) * 100).toFixed(1)}%)`}
-          . Worst single group drifts {rounding.maxDrift.toFixed(1)} sets. The figures above are
-          computed from the raw allocation values.
+          . Worst single group drifts {rounding.maxDrift.toFixed(1)} sets. The figures above use the
+          exact planned values.
         </div>
         {audit.unmappedAlsoTrains.length > 0 && (
           <div className="rounded border border-orange-200 bg-orange-50 px-1.5 py-1 text-orange-800">
             <span className="font-semibold">Data note:</span> {audit.unmappedAlsoTrains.length}{' '}
-            <span className="font-mono">alsoTrains</span> name
-            {audit.unmappedAlsoTrains.length === 1 ? '' : 's'} in this program match no{' '}
-            <span className="font-mono">sub</span> in exercises.json, so earn no indirect credit:{' '}
-            {audit.unmappedAlsoTrains.map((s) => `"${s}"`).join(', ')}. Not fuzzy-matched by design.
+            secondary-muscle name{audit.unmappedAlsoTrains.length === 1 ? '' : 's'} in this program
+            don't match any sub-region in the exercise library, so they earn no secondary credit:{' '}
+            {audit.unmappedAlsoTrains.map((s) => `"${s}"`).join(', ')}. Matched exactly, never
+            guessed.
           </div>
         )}
       </div>

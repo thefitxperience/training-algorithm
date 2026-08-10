@@ -147,7 +147,7 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
       ok: false,
       key,
       ageBracket: ageBr,
-      error: `No allocation block for key "${key}". This combination is not present in allocation.json.`,
+      error: `No program is available for this combination: ${input.split}, ${input.goal}, ${ageBr}, ${input.level}, ${input.days} days per week.`,
     }
   }
 
@@ -158,7 +158,7 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
       ok: false,
       key: pKey,
       ageBracket: ageBr,
-      error: `No prescription entry for key "${pKey}" / goal "${input.goal}".`,
+      error: `No reps and rest guidance is available for a ${input.sex.toLowerCase()} ${input.level.toLowerCase()} aged ${ageBr} training ${input.days} days per week for ${input.goal}.`,
     }
   }
 

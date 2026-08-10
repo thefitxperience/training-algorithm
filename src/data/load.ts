@@ -7,8 +7,13 @@ import type { Allocation, Config, DataBundle, Exercise, Prescription, Splits } f
 let bundlePromise: Promise<DataBundle> | null = null
 
 async function fetchJson<T>(file: string): Promise<T> {
-  const res = await fetch(`${import.meta.env.BASE_URL}data/${file}`)
-  if (!res.ok) throw new Error(`Failed to load data/${file}: ${res.status} ${res.statusText}`)
+  const url = `${import.meta.env.BASE_URL}data/${file}`
+  const res = await fetch(url)
+  if (!res.ok) {
+    // Keep the specifics in the console for debugging; the UI shows a plain message.
+    console.error(`Failed to load ${url}: ${res.status} ${res.statusText}`)
+    throw new Error('The program library could not be loaded. Please refresh and try again.')
+  }
   return (await res.json()) as T
 }
 

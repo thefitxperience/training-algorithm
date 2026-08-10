@@ -75,9 +75,9 @@ export function ClientPanel({
   const badgeRow: SplitBadge | undefined = ageBracket === '18-29' ? splits[key] : undefined
   const badgeMissingReason =
     ageBracket !== '18-29'
-      ? `splits.json only covers age 18-29 — no badge for the ${ageBracket} bracket.`
+      ? `Split ratings are only available for ages 18-29, so there is none for the ${ageBracket} bracket.`
       : !splits[key]
-        ? `No badge row for "${key}".`
+        ? 'There is no rating for this combination of goal, days and level.'
         : null
 
   // ---- controls, shared by both layouts -------------------------------------
@@ -242,14 +242,13 @@ export function ClientPanel({
         </>
       ) : (
         <span className="text-slate-500">
-          splits.json has no rows at all for {input.goal} / {input.days} days / {input.level}.
+          No split ratings are available for {input.goal} / {input.days} days / {input.level}.
         </span>
       )}
       {advice.fromReferenceBracket && (
         <div className="mt-1 border-t border-slate-200 pt-1 text-[10px] text-amber-700">
-          splits.json holds rows for age 18-29 only. This recommendation is read from the 18-29
-          reference row for the same goal / days / level — it is not age-specific advice for the{' '}
-          {ageBracket} bracket.
+          Split ratings cover ages 18-29 only. This suggestion comes from the 18-29 guidance for
+          the same goal, days and level — it is not tailored to the {ageBracket} bracket.
         </div>
       )}
     </div>

@@ -43,7 +43,7 @@ export function ProgramPanel({
             {input.days} days requested → {block.deliveredDays} days delivered
           </div>
           <div className="mt-1 text-sm text-amber-800">
-            {block.note || 'No note supplied by the allocation.'}
+            {block.note || 'No further detail available.'}
           </div>
           <div className="mt-1 text-xs text-amber-700">
             This is the real programme outcome for this client, not an error.

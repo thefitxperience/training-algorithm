@@ -84,7 +84,7 @@ export default function App() {
   }
 
   if (!data) {
-    return <div className="p-8 text-sm text-slate-500">Loading data (allocation.json is ~3 MB)…</div>
+    return <div className="p-8 text-sm text-slate-500">Loading the program library…</div>
   }
 
   const programOrError = result?.ok ? (

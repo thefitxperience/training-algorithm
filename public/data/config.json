@@ -1,0 +1,87 @@
+{
+ "indirectCredit": 0.3,
+ "timeCeiling": {
+  "Lose Fat": 60,
+  "Build Muscle": 90,
+  "Get Stronger": 105
+ },
+ "warmupMinutes": 8,
+ "repsMid": {
+  "Lose Fat": 13.5,
+  "Build Muscle": 10,
+  "Get Stronger": 4.5
+ },
+ "restMid": {
+  "Lose Fat": 37.5,
+  "Build Muscle": 75,
+  "Get Stronger": 150
+ },
+ "placeholderGroups": [
+  "Rotator cuff",
+  "Neck",
+  "Forearms & grip",
+  "Lower back"
+ ],
+ "majorGroups": [
+  "Chest",
+  "Lats",
+  "Delts",
+  "Quads, hams, adductors",
+  "Glutes & hips"
+ ],
+ "groups": [
+  "Chest",
+  "Lats",
+  "Upper back",
+  "Traps",
+  "Delts",
+  "Rotator cuff",
+  "Neck",
+  "Biceps",
+  "Triceps",
+  "Forearms & grip",
+  "Abs & core",
+  "Lower back",
+  "Glutes & hips",
+  "Quads, hams, adductors",
+  "Calves & ankle"
+ ],
+ "ages": [
+  "6-12",
+  "13-17",
+  "18-29",
+  "30-39",
+  "40-49",
+  "50-64",
+  "65+"
+ ],
+ "levels": [
+  "Beginner",
+  "Intermediate",
+  "Advanced"
+ ],
+ "goals": [
+  "Lose Fat",
+  "Build Muscle",
+  "Get Stronger"
+ ],
+ "splits": [
+  "Full Body",
+  "Muscle Group Per Day",
+  "PPL + Upper / Lower",
+  "Push / Pull",
+  "Push / Pull / Legs",
+  "Upper / Lower",
+  "Upper / Lower / Full"
+ ],
+ "femaleOverrides": {
+  "Glutes & hips": 3.0,
+  "Traps": -2.0
+ },
+ "maleOverrides": {
+  "Chest": 1.5,
+  "Lats": 1.5,
+  "Delts": 1.5,
+  "Triceps": 1.5
+ }
+}

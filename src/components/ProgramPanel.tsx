@@ -47,7 +47,8 @@ export function ProgramPanel({
   const rounding = useMemo(() => roundSets(program), [program])
   const setsFor = (dayIndex: number, position: number, raw: number) =>
     detailed ? raw : (rounding.byPick.get(pickKey(dayIndex, position)) ?? raw)
-  // Simple view prescribes whole sets, so its session length follows from those.
+  // Simple view prescribes whole sets, so its session length follows from those. Corrective
+  // work is already whole-numbered and sits outside the block model, so it is added on.
   const minutesFor = (day: (typeof days)[number]) =>
     detailed
       ? day.minutes
@@ -55,7 +56,7 @@ export function ProgramPanel({
           day.blocks,
           (i) => rounding.byPick.get(pickKey(day.index, i)) ?? day.exercises[i].sets,
           program.timeParams,
-        )
+        ) + day.correctiveMinutes
 
   return (
     <div className="space-y-4">
@@ -398,9 +399,114 @@ export function ProgramPanel({
             </tbody>
             ))}
           </table>
+
+          {/* Corrective work sits at the end of every session, visually apart from the main
+              work — it is added volume, not part of the muscle-group allocation. */}
+          {(day.correctives.length > 0 || day.correctiveStretches.length > 0) && (
+            <div className="border-t-2 border-fuchsia-300 bg-fuchsia-50/50">
+              <div className="flex flex-wrap items-center gap-2 px-4 py-1.5">
+                <span className="rounded bg-fuchsia-200 px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-fuchsia-900 uppercase">
+                  Corrective (BodyDot)
+                </span>
+                <span className="text-[11px] text-fuchsia-900">
+                  end of session · every session · {day.correctiveMinutes.toFixed(0)} min
+                </span>
+              </div>
+              <table className={`w-full text-left ${detailed ? 'text-xs' : 'text-[13px]'}`}>
+                <tbody>
+                  {day.correctives.map((c, ci) => (
+                    <tr key={`c-${ci}`} className="border-t border-fuchsia-100">
+                      <td className={detailed ? 'px-3 py-1.5' : 'px-4 py-2'}>
+                        <span className="font-medium text-slate-800">{c.prescribedName}</span>
+                        {c.prescribedName.toLowerCase() !== c.exercise.name.toLowerCase() && (
+                          <span className="ml-1 text-[10px] text-slate-500">({c.exercise.name})</span>
+                        )}
+                        <span
+                          className="ml-1.5 rounded bg-fuchsia-100 px-1 py-0.5 text-[10px] font-bold text-fuchsia-800"
+                          title={`Added because your ${c.indicators.join(' and ')} reading sits outside its normal band.`}
+                        >
+                          {c.indicators.join(' · ')}
+                        </span>
+                        {c.side !== 'both' && (
+                          <span className="ml-1.5 rounded bg-slate-800 px-1 py-0.5 text-[10px] font-bold text-white">
+                            {c.side.toUpperCase()} SIDE ONLY
+                          </span>
+                        )}
+                      </td>
+                      <td
+                        className={`font-mono whitespace-nowrap text-slate-800 ${
+                          detailed ? 'px-3 py-1.5' : 'px-4 py-2 text-right font-semibold'
+                        }`}
+                      >
+                        {/* A mobility corrective is timed, never counted in reps. */}
+                        {c.reps === null ? `${c.sets} × ${c.seconds}s` : `${c.sets} × ${c.reps}`}
+                      </td>
+                      <td
+                        className={`whitespace-nowrap text-slate-600 ${
+                          detailed ? 'px-3 py-1.5' : 'px-4 py-2 text-right'
+                        }`}
+                      >
+                        30s
+                      </td>
+                    </tr>
+                  ))}
+                  {day.correctiveStretches.map((s, si) => (
+                    <tr key={`s-${si}`} className="border-t border-fuchsia-100">
+                      <td className={detailed ? 'px-3 py-1.5' : 'px-4 py-2'}>
+                        <span className="text-slate-700">{s.name}</span>
+                        {s.libraryName && s.libraryName !== s.name && (
+                          <span className="ml-1 text-[10px] text-slate-500">({s.libraryName})</span>
+                        )}
+                        <span className="ml-1.5 rounded bg-slate-200 px-1 py-0.5 text-[10px] font-bold text-slate-700">
+                          STRETCH
+                        </span>
+                        {s.unmapped && (
+                          <span
+                            className="ml-1.5 text-[10px] text-slate-500"
+                            title="No match in the exercise library — prescribed as written, with the timer."
+                          >
+                            no library match
+                          </span>
+                        )}
+                      </td>
+                      <td
+                        className={`font-mono whitespace-nowrap text-slate-800 ${
+                          detailed ? 'px-3 py-1.5' : 'px-4 py-2 text-right font-semibold'
+                        }`}
+                      >
+                        {s.seconds}s
+                      </td>
+                      <td className={detailed ? 'px-3 py-1.5' : 'px-4 py-2'} />
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </section>
         ))}
       </div>
+
+      {/* Anything the posture layer could not place stays visible next to the program. */}
+      {program.bodydot.active &&
+        (program.bodydot.deferred.length > 0 || program.bodydot.unfilled.length > 0) && (
+          <div className="rounded-lg border border-slate-300 bg-white px-4 py-3">
+            <div className="text-sm font-bold text-slate-800">Posture findings not prescribed</div>
+            <ul className="mt-1 space-y-0.5 text-xs text-slate-600">
+              {program.bodydot.deferred.map((d) => (
+                <li key={`d-${d.code}`}>
+                  <span className="font-semibold">{d.indicator}</span> — {d.names.join(', ')}:{' '}
+                  {d.reason}.
+                </li>
+              ))}
+              {program.bodydot.unfilled.map((u) => (
+                <li key={`u-${u.code}`}>
+                  <span className="font-semibold">{u.indicator}</span> {u.value} — {u.reason}.
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
     </div>
   )
 }

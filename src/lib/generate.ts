@@ -31,6 +31,14 @@ import {
   type InBodyResult,
 } from './inbody'
 import {
+  correctiveSeconds,
+  evaluateBodyDot,
+  trimToCeiling,
+  type BodyDotResult,
+  type CorrectiveSlot,
+  type CorrectiveStretch,
+} from './bodydot'
+import {
   blockSeconds,
   buildSubAliases,
   formBlocks,
@@ -77,10 +85,14 @@ export interface GeneratedDay {
   exercises: ChosenExercise[]
   /** how the session is performed — one entry per straight exercise or paired block */
   blocks: Block[]
-  /** sum of sets across the day */
+  /** sum of sets across the day — corrective slots are additive and stay out of it */
   totalSets: number
   minutes: number
   overCeiling: boolean
+  /** BodyDot corrective work, appended after the main work; same block in every session */
+  correctives: CorrectiveSlot[]
+  correctiveStretches: CorrectiveStretch[]
+  correctiveMinutes: number
 }
 
 export type WarningKind = 'reuse' | 'substitute' | 'dropped' | 'pain-dropped'
@@ -119,6 +131,8 @@ export interface Program {
   inbody: InBodyResult
   /** VALD findings, bumps and anything it could not fill; inert with no readings */
   vald: ValdResult
+  /** posture findings and the corrective block they produced; inert with no readings */
+  bodydot: BodyDotResult
   /** verdict per exercise id across the whole library, for the audit and the UI */
   verdicts: Map<number, ExerciseVerdict>
   /** everything the injury layer took out of the pool, for the removals panel */
@@ -169,8 +183,10 @@ export function isEligible(
   level: string,
   ageBr: string,
   equipment: EquipmentTier = 'Full gym',
+  /** mobility is barred from the main pool by design; as BodyDot corrective work it is the point */
+  allowMobility = false,
 ): boolean {
-  if (ex.type === 'mobility') return false
+  if (ex.type === 'mobility' && !allowMobility) return false
   if (ex.avoidAges.includes(ageBr)) return false
   if (!isEquipmentAvailable(ex, equipment)) return false
 
@@ -182,6 +198,21 @@ export function isEligible(
   if (ageBr === '13-17' && level === 'Beginner' && ex.load > 4) return false
 
   return true
+}
+
+/**
+ * "Program standard sets" for a bilateral corrective: the set count the rest of this program
+ * is already using, as a whole number, since a corrective has to be decisive. Halves round
+ * up and a tie goes to the larger figure.
+ */
+export function modalSets(values: number[]): number {
+  if (values.length === 0) return 0
+  const counts = new Map<number, number>()
+  for (const v of values) {
+    const n = Math.round(v)
+    counts.set(n, (counts.get(n) ?? 0) + 1)
+  }
+  return [...counts.entries()].sort((a, b) => b[1] - a[1] || b[0] - a[0])[0][0]
 }
 
 /** Spec ranking: main lift (Get Stronger only) -> tier -> load desc -> id asc. */
@@ -598,8 +629,48 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
       totalSets,
       minutes,
       overCeiling: minutes > config.timeCeiling[input.goal],
+      correctives: [] as CorrectiveSlot[],
+      correctiveStretches: [] as CorrectiveStretch[],
+      correctiveMinutes: 0,
     }
   })
+
+  // ---- BodyDot ------------------------------------------------------------
+  // Runs last, after every other layer, and is the only machine here that ADDS slots.
+  // Everything above is already fixed: it appends corrective work to the end of each
+  // session and never touches the split, the selection, or anyone else's sets.
+  const bodydot = evaluateBodyDot(input.bodydot, data.bodydot, {
+    library: exercises,
+    // What the rest of the program is doing, as one decisive whole number.
+    standardSets: modalSets(days.flatMap((d) => d.exercises.map((c) => c.sets))),
+    reps: inbody.active ? `${inbody.reps[0]}-${inbody.reps[1]}` : rx.reps,
+    // Precedence: injury outranks a corrective, so a removed exercise is never added back.
+    removed: isRemoved,
+    allowedExercise: (ex) => isEligible(ex, input.level, ageBr, input.equipment, true),
+    // A stretch carries no load, so only pain and available equipment can rule it out.
+    allowedStretch: (ex) =>
+      !ex.avoidAges.includes(ageBr) && isEquipmentAvailable(ex, input.equipment),
+  })
+
+  if (bodydot.active) {
+    const ceilingSeconds = config.timeCeiling[input.goal] * 60
+    for (const day of days) {
+      const { correctives, stretches, dropped } = trimToCeiling(
+        bodydot.correctives,
+        bodydot.stretches,
+        data.bodydot,
+        day.minutes * 60,
+        ceilingSeconds,
+      )
+      day.correctives = correctives
+      day.correctiveStretches = stretches
+      day.correctiveMinutes =
+        correctiveSeconds(correctives, stretches, data.bodydot.stretchSeconds) / 60
+      day.minutes += day.correctiveMinutes
+      day.overCeiling = day.minutes > config.timeCeiling[input.goal]
+      for (const what of dropped) bodydot.trimmed.push({ dayIndex: day.index, what })
+    }
+  }
 
   return {
     ok: true,
@@ -619,6 +690,7 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
       restMultiplier: tp.restMultiplier,
       inbody,
       vald,
+      bodydot,
       verdicts,
       removedByPain,
     },

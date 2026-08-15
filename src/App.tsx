@@ -11,6 +11,8 @@ import { InBodyPanel } from './components/InBodyPanel'
 import { ValdPanel } from './components/ValdPanel'
 import { WORKED_EXAMPLE, hasAnyInput, type InBodyInput } from './lib/inbody'
 import { hasAnyReading, type ValdInput } from './lib/vald'
+import { hasAnyBodyDot, type BodyDotInput } from './lib/bodydot'
+import { BodyDotPanel } from './components/BodyDotPanel'
 import { AuditPanel } from './components/AuditPanel'
 import { EQUIPMENT_TIERS, type EquipmentTier } from './lib/equipment'
 import type { PainSelection, Side } from './lib/injury'
@@ -66,6 +68,21 @@ function valdFromUrl(q: URLSearchParams): ValdInput | null {
   ) as ValdInput
 }
 
+/** bodydot=S05:52,F05:-4:L — reading and, on a lateral indicator, the side it was found on */
+function bodydotFromUrl(q: URLSearchParams): BodyDotInput | null {
+  const raw = q.get('bodydot')
+  if (raw === null) return null
+  return Object.fromEntries(
+    raw
+      .split(',')
+      .filter(Boolean)
+      .map((entry) => {
+        const [code, value, side] = entry.split(':')
+        return [code, { value: Number(value), side: side === 'R' ? 'Right' : side === 'L' ? 'Left' : undefined }]
+      }),
+  ) as BodyDotInput
+}
+
 function inputFromUrl(): ClientInput {
   const q = new URLSearchParams(window.location.search)
   const presetName = q.get('preset')
@@ -78,6 +95,7 @@ function inputFromUrl(): ClientInput {
         pains: painsFromUrl(q) ?? p.input.pains,
         inbody: inbodyFromUrl(q) ?? p.input.inbody,
         vald: valdFromUrl(q) ?? p.input.vald,
+        bodydot: bodydotFromUrl(q) ?? p.input.bodydot,
         structure: STRUCTURES.includes(q.get('structure') as Structure)
           ? (q.get('structure') as Structure)
           : p.input.structure,
@@ -97,6 +115,7 @@ function inputFromUrl(): ClientInput {
     pains: painsFromUrl(q) ?? base.pains,
     inbody: inbodyFromUrl(q) ?? base.inbody,
     vald: valdFromUrl(q) ?? base.vald,
+    bodydot: bodydotFromUrl(q) ?? base.bodydot,
     structure: STRUCTURES.includes(q.get('structure') as Structure)
       ? (q.get('structure') as Structure)
       : base.structure,
@@ -120,7 +139,7 @@ export default function App() {
   useEffect(() => {
     const q = new URLSearchParams(
       Object.entries(input)
-        .filter(([k]) => k !== 'pains' && k !== 'inbody' && k !== 'vald')
+        .filter(([k]) => k !== 'pains' && k !== 'inbody' && k !== 'vald' && k !== 'bodydot')
         .map(([k, v]) => [k, String(v)]) as [string, string][],
     )
     const pains = Object.entries(input.pains)
@@ -137,6 +156,13 @@ export default function App() {
         'vald',
         Object.entries(input.vald)
           .map(([code, r]) => `${code}:${r.asymmetry}:${r.weakSide[0]}`)
+          .join(','),
+      )
+    if (hasAnyBodyDot(input.bodydot))
+      q.set(
+        'bodydot',
+        Object.entries(input.bodydot)
+          .map(([code, r]) => `${code}:${r.value}${r.side ? `:${r.side[0]}` : ''}`)
           .join(','),
       )
     q.set('view', view)
@@ -176,7 +202,7 @@ export default function App() {
   }, [data, input, bracket])
 
   // pains / inbody / vald are objects, so they need comparing by value, not identity.
-  const OBJECT_FIELDS: (keyof ClientInput)[] = ['pains', 'inbody', 'vald']
+  const OBJECT_FIELDS: (keyof ClientInput)[] = ['pains', 'inbody', 'vald', 'bodydot']
   const objectKey = (p: ClientInput) =>
     OBJECT_FIELDS.map((f) => JSON.stringify(Object.entries(p[f] ?? {}).sort())).join('|')
   const activePreset =
@@ -270,6 +296,17 @@ export default function App() {
               />
             </div>
           )}
+          {result?.ok && (
+            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <BodyDotPanel
+                data={data.bodydot}
+                input={input.bodydot}
+                setInput={(bodydot) => setInput({ ...input, bodydot })}
+                result={result.program.bodydot}
+                compact
+              />
+            </div>
+          )}
           <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <PainPanel
               injury={data.injury}
@@ -314,6 +351,16 @@ export default function App() {
                     input={input.vald}
                     setInput={(vald) => setInput({ ...input, vald })}
                     result={result.program.vald}
+                  />
+                </div>
+              )}
+              {result?.ok && (
+                <div className="mt-4 border-t border-slate-200 pt-3">
+                  <BodyDotPanel
+                    data={data.bodydot}
+                    input={input.bodydot}
+                    setInput={(bodydot) => setInput({ ...input, bodydot })}
+                    result={result.program.bodydot}
                   />
                 </div>
               )}

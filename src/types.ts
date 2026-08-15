@@ -3,6 +3,7 @@ import type { PainSelection } from './lib/injury'
 import type { Structure } from './lib/structure'
 import type { InBodyInput } from './lib/inbody'
 import type { ValdInput } from './lib/vald'
+import type { BodyDotInput } from './lib/bodydot'
 
 export type Sex = 'Male' | 'Female'
 export type Tier = 'primary' | 'secondary' | 'accessory'
@@ -193,6 +194,65 @@ export interface ValdData {
   readAsRatios: string[][]
 }
 
+export interface BodyDotBand {
+  code: string
+  indicator: string
+  view: string
+  unit: string
+  /** "35.0 to 45.0", or "-" where the indicator defines no band on that edge */
+  normal: string
+  borderlineLow: string
+  abnormalLow: string
+  borderlineHigh: string
+  abnormalHigh: string
+  inArsenal: boolean
+}
+
+/** Already resolved to a library id — the arsenal's shorthand never name-matches. */
+export interface ArsenalItem {
+  arsenalName: string
+  exerciseId: number | null
+  libraryName: string | null
+  confidence: 'HIGH' | 'MEDIUM' | 'GAP' | string
+  reasoning?: string
+}
+
+export interface ArsenalEntry {
+  code: string
+  indicator: string
+  edge: 'low' | 'high' | 'any'
+  /** "bilateral" | "same side" | "OPPOSITE side" */
+  laterality: string
+  region: string
+  exercises: ArsenalItem[]
+  stretches: ArsenalItem[]
+  /** the two F06 rows are deliberately swapped relative to the source spreadsheet */
+  correctedFromSource: boolean
+  meaning: string | null
+}
+
+export interface BodyDotData {
+  /** bands[0] is the spreadsheet header row, not an indicator */
+  bands: BodyDotBand[]
+  arsenal: ArsenalEntry[]
+  tiers: { borderlineDeltaFraction: number; note: string }
+  sets: {
+    borderlineUnilateral: number
+    abnormalUnilateral: number
+    borderlineBilateral: string
+    abnormalBilateral: string
+  }
+  correctiveSlotCapPerSession: number
+  stretchSeconds: number
+  timeCost: string
+  trimOrder: string[]
+  precedence: string
+  lateralityRule: Record<string, string>
+  f06Gate: { enabled: boolean; note: string }
+  deadBorderlineEdges: [string, string][]
+  unmappedStretches: string[]
+}
+
 export interface DataBundle {
   config: Config
   allocation: Allocation
@@ -203,6 +263,7 @@ export interface DataBundle {
   structure: StructureData
   inbody: InBodyData
   vald: ValdData
+  bodydot: BodyDotData
 }
 
 export interface ClientInput {
@@ -222,4 +283,6 @@ export interface ClientInput {
   inbody: InBodyInput
   /** asymmetry readings per test code; empty means the VALD layer is inert */
   vald: ValdInput
+  /** posture readings per indicator code; empty means no corrective slots are added */
+  bodydot: BodyDotInput
 }

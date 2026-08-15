@@ -51,7 +51,7 @@ access control rather than Pages.
 
 ## Data
 
-Nine files in `public/data/`, served as static assets and fetched once at startup:
+Ten files in `public/data/`, served as static assets and fetched once at startup:
 
 | File | What it is |
 |---|---|
@@ -64,6 +64,7 @@ Nine files in `public/data/`, served as static assets and fetched once at startu
 | `structure.json` | joints and antagonists per sub-region, plus the timing, rest and load constants |
 | `inbody.json` | scan thresholds, the 8 pre-blended goal vectors, rest floors, region map and filler rules |
 | `vald.json` | 6 asymmetry brackets, the 17 tests with their library coverage, and the budget/conversion rules |
+| `bodydot.json` | 26 posture indicators with their bands, and 18 arsenal entries covering 13 of them, pre-resolved to library ids |
 
 They are generated upstream and are **not modified** by this app. `loadData()` in
 [src/data/load.ts](src/data/load.ts) caches the fetch promise at module scope, so
@@ -74,7 +75,8 @@ linkable regression case: `?preset=Stress%20test&view=detailed`, or
 `?sex=Male&age=28&level=Intermediate&…`. Pains ride along too, and layer on top of a preset:
 `?preset=Reference&pains=SHOULDER:Left,LOWBACK:Both`. So does a scan —
 `?inbody=example` loads the spec's worked client, or pass the values as
-`?inbody=smm:30.1,pbf:26.4,…`. VALD readings too: `?vald=Q-KD:25:L,G-ABD:12:R`.
+`?inbody=smm:30.1,pbf:26.4,…`. VALD readings too: `?vald=Q-KD:25:L,G-ABD:12:R`. And posture readings, with the side on the
+lateral indicators: `?bodydot=S02:60,F05:6:L`.
 
 ## Layout
 
@@ -249,6 +251,138 @@ and they diverge as soon as a finding fires.
   asserted. On the three-glute test G-EXT is the one that goes unserved — because its only
   matching slot is a bilateral main lift, not because the budget ran out.
 
+## BodyDot posture
+
+Fifth and last rule layer, and the only one in the stack that **adds slots**. It runs last,
+after injury, InBody and VALD, and appends a corrective block to the end of every session.
+It never touches the split, the selection, the sets, or anyone else's work — the main
+program with a posture reading entered is byte-identical to the one without it.
+
+26 indicators are measured across four views. 13 of them have a corrective protocol; the
+other 13 are computed, displayed, and reported as *"measured, no protocol yet."*
+
+**The side rule is the thing this layer is easiest to build backwards.** A left-hiked pelvis
+is levelled by training the **right** side to hike; a right-abnormal Kendall Knee prescribes
+work on the **left** leg. That is the opposite of VALD, where the side that tested weak is
+the side that gets the work. Both conventions are live in the same program, and there is an
+acceptance check that runs them together on one client and asserts they point opposite ways.
+`{Side}` / `{side}` placeholders are filled from the **resolved** side, never the measured one,
+and the panel shows the resolved side for exactly that reason.
+
+Classification is on the **crossed edge**, low or high — not the arithmetic sign of the
+reading — and that edge is what selects the arsenal entry. Bands in the file are adjacent
+with both ends inclusive, so a value sitting exactly on a boundary takes the **milder** tier.
+
+Allocation is the same two-pass shape as VALD, capped at **3 exercises per session, counting
+exercises rather than findings** — one arsenal entry can list three. Pass 1 reserves one
+exercise for each finding in rank order; pass 2 spends what is left while holding back a slot
+for anything pass 1 could not serve. Without pass 1 a single three-exercise entry swallows
+the whole cap and the second finding gets nothing. Ranking is abnormal before borderline,
+then distance outside the band as a fraction of that indicator's full range (which is what
+lets a reading in degrees be ranked against one in centimetres), then file order so two runs
+agree exactly.
+
+Stretches are **timed, not set-counted, and never consume a corrective slot.** They
+accompany their block, so a finding that placed nothing brings no stretches with it.
+
+Nothing is dropped silently: partially-placed blocks name the exercises that did not fit,
+findings that can prescribe nothing say why, and the time trim reports every exercise it
+removed and from which session.
+
+### F06 (HKA) is deliberately not the source spreadsheet
+
+Both F06 rows carry `correctedFromSource: true`. Negative is varus (bow-leg), positive is
+valgus (knock-knee). The source arsenal prescribed adduction strengthening with an abductor
+stretch on the **positive** edge — bow-leg treatment, which applied to a knock-kneed client
+drives the knees further in. The shipped data has them swapped: above the band gets
+**abduction** work and an **adductor** stretch, below the band the reverse. Two acceptance
+checks pin both edges so a later "fix" back toward the spreadsheet fails the suite rather
+than passing quietly.
+
+### Readings the spec left open
+
+- **"Program standard sets"** for a bilateral corrective is read as *the set count the rest
+  of this program is already using* — the modal whole-number set count across the week,
+  halves up, ties to the larger. A corrective has to be decisive, so it never inherits a
+  fractional allocation value. On the reference client that is 4 sets.
+- **The tier→exercise-count rule is stated only for the bilateral column**, so it is applied
+  only there: borderline bilateral takes the first arsenal exercise, abnormal bilateral takes
+  all. A **unilateral** finding takes the whole entry and varies its *sets* instead (+1
+  borderline, +2 abnormal), which is what its column actually says.
+- **Correctives are excluded from the volume audit and from `totalSets`**, matching how
+  VALD's extra weak-side sets are already handled. They are added corrective work, not part
+  of the muscle-group allocation, and folding them in would read as volume overshoot.
+- **A corrective still has to clear the client's age, level and equipment screen** — the
+  spec is silent, but precedence puts BodyDot last, so it does not get to override Stage 1's
+  safety rules. Mobility is the one exemption: it is barred from the main pool by design, and
+  as corrective work it is the point. Stretches carry no load, so only pain and available
+  equipment can rule one out.
+- **A mobility-type corrective is timed, never given reps** — `4 × 40s`. Note the time model
+  already charges 40s of work per corrective set for *every* corrective, so this changes what
+  is printed, not what the session costs. Chin tucks (id 123) are typed `isometric`, not
+  `mobility`, so by the criterion as written they still get sets and reps; worth a look.
+
+### Expect these, they are not bugs
+
+- **7 of the 21 live edges have no practical borderline zone** — S08 low/high, T03 high, F05
+  low/high, F06 low/high. The zone is 10% of the threshold, so where the threshold is small
+  it is a sliver: S08 and T03 are **2.0%** of their abnormal region, F05 **2.6%**, F06
+  **4.5%**. Those indicators effectively jump from normal straight to abnormal. The suite
+  derives the list from the bands and asserts it matches `deadBorderlineEdges` exactly, so
+  the 7 are verified rather than taken on trust. The strip is narrow, not literally empty —
+  a 5.2° S08 reading does classify as borderline — so the app surfaces it as
+  *"no practical borderline zone"* rather than claiming it can never fire.
+- **The 10% rule is 10% of the threshold at the crossed edge, not 10% of the band width.**
+  All 43 bands follow it except **S04 low and Q05 low**, where the threshold is `0.0` and the
+  rule degenerates; the file falls back to 10% of the band's other threshold. Neither is in
+  the arsenal. The suite checks the rule and names those two exceptions rather than widening
+  the tolerance to hide them.
+- **4 stretches have no library match** (abductor, adductor and hamstring stretches, Garland
+  pose). They are prescribed as free text with the timer and consume no slot.
+- **13 of 26 indicators can never prescribe anything.** Their bands are still computed and
+  shown, reported as *"measured, no protocol yet"*, never as normal.
+- **A reading can fall outside a band the file leaves as `-`** — T03 below −5, say. That is
+  reported as out of range with no tier claimed, not silently treated as normal.
+
+### Consequences worth knowing
+
+- **The reference client's sessions sit close to their ceiling, so the trim bites.** Days 1
+  and 3 run 84 and 82 minutes against a 90 ceiling, leaving room for one corrective; days 2
+  and 4 carry all three. So the block genuinely differs between sessions on a full program.
+  That is `trimOrder` doing its job, and every dropped exercise is named against its session.
+- **`trimOrder` has four steps and only one of them is reachable.** Step 1, InBody high-TBW
+  filler bouts, runs *inside* the rest interval and adds no session time, so trimming it
+  recovers nothing. Steps 3 and 4, the VALD conversion and its extra weak-side sets, cannot
+  be the cause of a breach because VALD refuses any bump that would breach the ceiling in the
+  first place — which is asserted, not assumed, so if that invariant ever changes the steps
+  come back into play. The loop is still written over all four in order.
+- **The simple view's session times read 2–4 minutes higher than the trim's own numbers**, so
+  a trimmed session can still show as over the ceiling there — day 1 above reads 89 min in the
+  detailed view and 93 in the simple one. This is the pre-existing gap between the two views:
+  the simple view re-derives session length from its rounded whole sets, which are on average
+  slightly larger. The trim balances against the canonical `day.minutes`, because deciding
+  *content* from the simple view's numbers would make the two views prescribe different
+  programs.
+- **An older or very restricted client can measure a finding and get nothing for it.** The
+  Q04 entry is a leg press and a deep barbell squat; for a 68-year-old beginner the first
+  exceeds the 65+ load cap and the second is on that bracket's avoid list, so Q04 prescribes
+  nothing and says exactly that. Working as intended, but it is the most likely thing to be
+  mistaken for a bug.
+- **Four arsenal exercises are MEDIUM confidence** — readings of Dr. Raul's shorthand rather
+  than exact matches, and the ones to watch:
+
+  | Indicator | Arsenal shorthand | Mapped to | Why it is a judgement call |
+  |---|---|---|---|
+  | F03 low | "{Side} front single arm pushdown" | Scapular depression pulldown | Read as scapular depression, not triceps — the finding is shoulder-girdle height, which a triceps pushdown would not move |
+  | F03 low | "{Side} side single arm pushdown" | Straight-arm pulldown | Same reading on the lateral pull line |
+  | S05 high | "Rowing back" | Wide-grip row to sternum | Kyphosis needs retraction and thoracic extension, so a retraction-biased row rather than a lat-biased one |
+  | S06 low | "Lower back extension" | Seated back extension | Chosen over the 45° version because low lordosis is a flat lumbar spine and seated is the gentler load |
+
+  Three **stretches** are also MEDIUM: F03's upper-trap stretch → levator stretch-hold, S05's
+  "Cobra pose" → thoracic extension over roller, and Q01's bent-over shoulder flexion stretch
+  → bench thoracic extension. The remaining 31 mappings are exact or near-exact; all 38
+  pre-resolved ids are checked against the library on every run, names included.
+
 ## Split recommendation
 
 The split selector stays fully free — every split in `config.splits` is selectable — but the
@@ -336,9 +470,10 @@ Places where the spec left a choice, and what was chosen:
 
 ## Acceptance criteria — current status
 
-`npm run acceptance` → **84 of 84 checks pass**. The five presets all run at `Full gym`, so
+`npm run acceptance` → **118 of 118 checks pass**. The five presets all run at `Full gym`, so
 the original criteria are unaffected by the equipment feature; the rest cover equipment
-tiers, split advice, set rounding, the injury, structure, InBody and VALD layers. Note the count dropped to 22/22 at one point because
+tiers, split advice, set rounding, and the injury, structure, InBody, VALD and BodyDot
+layers. Note the count dropped to 22/22 at one point because
 the week criterion was **removed**, not because its failure was fixed — see below.
 
 | Criterion | Status |
@@ -404,6 +539,40 @@ the week criterion was **removed**, not because its failure was fixed — see be
 | **VALD:** injury SIDE_ONLY right + weak left → no bump, visible note | **pass** |
 | **VALD:** slot count unchanged, strong side keeps its direct volume | **pass** — max indirect drift 1.8 sets |
 | **VALD:** the audit diverges by side once a finding fires | **pass** |
+| **BodyDot:** no readings leaves the program identical | **pass** — and the whole acceptance output is byte-identical to the previous commit's |
+| **BodyDot:** a finding adds slots and changes nothing else | **pass** — main program byte-identical |
+| **BodyDot:** a LEFT Pelvic Tilt finding prescribes a RIGHT hip hike | **pass** |
+| **BodyDot:** a RIGHT Kendall Knee finding prescribes LEFT leg work | **pass** |
+| **BodyDot:** the opposite-side rule does not leak into VALD's convention | **pass** — same client, VALD works right, BodyDot left |
+| **BodyDot:** HKA above the band (valgus) → abduction work + adductor stretch | **pass** |
+| **BodyDot:** HKA below the band (varus) → adduction work + abductor stretch | **pass** |
+| **BodyDot:** both F06 rows flagged corrected-from-source with their meaning | **pass** |
+| **BodyDot:** never more than 3 correctives in a session | **pass** — 19 sessions swept, worst is 3 |
+| **BodyDot:** stretches do not count toward the cap | **pass** — 3 correctives + 1 stretch in one session |
+| **BodyDot:** both findings served before the three-exercise entry gets its second | **pass** — S02 2/3, S01 1/1, 1 deferred |
+| **BodyDot:** what did not fit is reported by name | **pass** |
+| **BodyDot:** correctives appear in every session, tagged and attributed | **pass** |
+| **BodyDot:** corrective slots stay out of the main list and the set totals | **pass** |
+| **BodyDot:** a mobility corrective is timed, never given sets and reps | **pass** — 90/90 hip lift at 4 × 40s |
+| **BodyDot:** a loaded corrective still gets reps | **pass** — 2 examined |
+| **BodyDot:** unilateral +2 abnormal / +1 borderline | **pass** |
+| **BodyDot:** borderline bilateral takes the first exercise, abnormal takes all | **pass** |
+| **BodyDot:** injury REMOVE outranks a corrective | **pass** — rear delt fly prescribed pain-free, absent with shoulder pain |
+| **BodyDot:** a stretch removed for a reported pain is not prescribed | **pass** |
+| **BodyDot:** a finding whose whole entry is removed prescribes nothing, and says why | **pass** |
+| **BodyDot:** a corrective the client cannot safely load is not added, and says why | **pass** — see below |
+| **BodyDot:** an indicator with no protocol is reported, never silently skipped | **pass** — all 13 |
+| **BodyDot:** a reading outside an undefined edge is reported, not treated as normal | **pass** |
+| **BodyDot:** boundary values take the milder tier | **pass** |
+| **BodyDot:** every borderline band is 10% of the threshold at its edge | **pass** — 43 bands, 2 named exceptions |
+| **BodyDot:** the 7 declared dead borderline edges are exactly the ones under 5% | **pass** — derived from the bands, not trusted |
+| **BodyDot:** every arsenal id resolves to the library and matches its name | **pass** — 38 ids |
+| **BodyDot:** an unmapped stretch is free text with the timer | **pass** |
+| **BodyDot:** the time constants match the formula in the data file | **pass** |
+| **BodyDot:** corrective minutes follow the stated formula | **pass** |
+| **BodyDot:** the trim recovers the ceiling unless the session was already over | **pass** — 3 sessions trimmed |
+| **BodyDot:** VALD can never cause a breach, so trim steps 3–4 stay unreachable | **pass** — 4 bumps, none pushing a session over |
+| **BodyDot:** two runs of the same input are identical | **pass** |
 
 ### A Stage 1 criterion that no longer applies
 

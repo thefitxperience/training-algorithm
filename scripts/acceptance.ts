@@ -16,6 +16,14 @@ import { buildInjuryIndex, verdictForPain, type PainSelection } from '../src/lib
 import { buildSubAliases, pairReason, sessionMinutes, type Structure } from '../src/lib/structure'
 import { WORKED_EXAMPLE, goalWeights, type InBodyInput } from '../src/lib/inbody'
 import type { ValdInput } from '../src/lib/vald'
+import {
+  CORRECTIVE_REST_SECONDS,
+  CORRECTIVE_WORK_SECONDS,
+  classify,
+  parseRange,
+  realBands,
+  type BodyDotInput,
+} from '../src/lib/bodydot'
 import type { ClientInput, DataBundle } from '../src/types'
 
 const dir = join(process.cwd(), 'public', 'data')
@@ -30,6 +38,7 @@ const data: DataBundle = {
   structure: read('structure.json'),
   inbody: read('inbody.json'),
   vald: read('vald.json'),
+  bodydot: read('bodydot.json'),
 }
 const injuryIndex = buildInjuryIndex(data.injury, data.exercises)
 const idOf = (name: string) => data.exercises.find((e) => e.name === name)!.id
@@ -624,6 +633,7 @@ const fingerprint = (p: ReturnType<typeof run>) =>
       structure: 'straight',
       inbody: WORKED_EXAMPLE,
       vald: {},
+      bodydot: {},
     }
     const p = run(client)
     const ib = p.inbody
@@ -939,6 +949,492 @@ const fingerprint = (p: ReturnType<typeof run>) =>
       `left ${quads.leftDelivered.toFixed(1)} vs right ${quads.rightDelivered.toFixed(1)}`,
     )
   }
+}
+
+// ---- BodyDot layer ---------------------------------------------------------
+{
+  const withBd = (bodydot: BodyDotInput, over: Partial<ClientInput> = {}) =>
+    run({ ...REF, ...over, bodydot })
+  /** the main program only — corrective slots are additive and sit outside it */
+  const mainOf = (p: ReturnType<typeof run>) =>
+    p.days.map((d) => d.exercises.map((e) => `${e.exercise.id}:${e.sets}`).join(',')).join(' | ')
+  const bands = realBands(data.bodydot)
+  const nameOf = (c: { prescribedName: string }) => c.prescribedName.toLowerCase()
+
+  check(
+    'BodyDot: with no readings the program is unchanged',
+    mainOf(run(REF)) === mainOf(withBd({})) &&
+      !run(REF).bodydot.active &&
+      run(REF).days.every((d) => d.correctives.length === 0 && d.correctiveMinutes === 0) &&
+      run(REF).days.every((d, i) => d.minutes === run(REF).days[i].minutes),
+    'inert',
+  )
+
+  {
+    // the only machine that adds slots — and it must add ONLY slots
+    const p = withBd({ S02: { value: 60 } })
+    check(
+      'BodyDot: a finding adds corrective slots and changes nothing else',
+      mainOf(p) === mainOf(run(REF)) && p.bodydot.correctives.length > 0,
+      `${p.bodydot.correctives.length} correctives, main program byte-identical`,
+    )
+  }
+
+  // ---- step 3, the side rule ----------------------------------------------
+  {
+    const p = withBd({ F05: { value: 6, side: 'Left' } })
+    const c = p.bodydot.correctives
+    check(
+      'BodyDot: a LEFT Pelvic Tilt finding prescribes a RIGHT hip hike',
+      c.length === 1 && c[0].side === 'Right' && nameOf(c[0]).includes('right hip hike'),
+      c.map((x) => `${x.prescribedName} [${x.side}]`).join(', ') || 'nothing prescribed',
+    )
+  }
+
+  {
+    const p = withBd({ S08: { value: 12, side: 'Right' } })
+    const c = p.bodydot.correctives
+    check(
+      'BodyDot: a RIGHT Kendall Knee finding prescribes LEFT leg work',
+      c.length > 0 && c.every((x) => x.side === 'Left') && nameOf(c[0]).includes('left leg extensions'),
+      c.map((x) => `${x.prescribedName} [${x.side}]`).join(', ') || 'nothing prescribed',
+    )
+  }
+
+  {
+    // the opposite-side rule is BodyDot's alone — VALD still trains the side that tested weak
+    const p = withBd(
+      { S08: { value: 12, side: 'Right' } },
+      { vald: { 'Q-KD': { asymmetry: 25, weakSide: 'Right' } } },
+    )
+    const bump = p.days.flatMap((d) => d.exercises).find((e) => e.unilateral)
+    check(
+      "BodyDot: the opposite-side rule does not leak into VALD's weak-side convention",
+      bump?.unilateral?.weakSide === 'Right' && p.bodydot.correctives.every((c) => c.side === 'Left'),
+      `same client: VALD works the ${bump?.unilateral?.weakSide} side, BodyDot the ${p.bodydot.correctives[0]?.side}`,
+    )
+  }
+
+  // ---- F06, deliberately swapped relative to the source spreadsheet -------
+  {
+    const p = withBd({ F06: { value: 6, side: 'Right' } })
+    const names = p.bodydot.correctives.map(nameOf)
+    const stretches = p.bodydot.stretches.map((s) => s.name.toLowerCase())
+    check(
+      'BodyDot: an HKA reading above the band (valgus) prescribes abduction work and an adductor stretch',
+      names.some((n) => n.includes('abduction')) &&
+        !names.some((n) => n.includes('adduction')) &&
+        stretches.some((s) => s.includes('adductor')),
+      `${names.join(', ')} + stretches: ${stretches.join(', ')}`,
+    )
+    const low = withBd({ F06: { value: -6, side: 'Right' } })
+    check(
+      'BodyDot: an HKA reading below the band (varus) prescribes adduction work and an abductor stretch',
+      low.bodydot.correctives.some((c) => nameOf(c).includes('adduction')) &&
+        low.bodydot.stretches.some((s) => s.name.toLowerCase().includes('abductor')),
+      `${low.bodydot.correctives.map(nameOf).join(', ')} + ${low.bodydot.stretches.map((s) => s.name).join(', ')}`,
+    )
+    const f06 = data.bodydot.arsenal.filter((a) => a.code === 'F06')
+    check(
+      'BodyDot: both F06 rows are flagged as corrected from source, with their meaning stated',
+      f06.length === 2 && f06.every((a) => a.correctedFromSource && a.meaning),
+      f06.map((a) => `${a.edge} = ${a.meaning}`).join('; '),
+    )
+  }
+
+  // ---- step 5, the cap and the reservation pass ---------------------------
+  {
+    const many: BodyDotInput = {
+      S01: { value: 40 },
+      S02: { value: 60 },
+      S05: { value: 55 },
+      S06: { value: 65 },
+      S07: { value: 12 },
+      Q04: { value: 40 },
+      T03: { value: 20 },
+    }
+    let sessions = 0
+    let worst = 0
+    for (const pr of PRESETS) {
+      const p = run({ ...pr.input, bodydot: many })
+      for (const d of p.days) {
+        sessions++
+        worst = Math.max(worst, d.correctives.length)
+      }
+      worst = Math.max(worst, p.bodydot.correctives.length)
+    }
+    check(
+      'BodyDot: never more than 3 corrective exercises in a session',
+      worst <= data.bodydot.correctiveSlotCapPerSession && sessions > 0,
+      `worst session had ${worst} of a cap of ${data.bodydot.correctiveSlotCapPerSession}, across ${sessions} sessions`,
+    )
+  }
+
+  {
+    // S02 abnormal bilateral fills the cap on its own and still brings a stretch
+    const p = withBd({ S02: { value: 60 } })
+    const full = p.days.find((d) => d.correctives.length === data.bodydot.correctiveSlotCapPerSession)
+    check(
+      'BodyDot: stretches do not count toward the corrective cap',
+      p.bodydot.correctives.length === 3 &&
+        p.bodydot.stretches.length === 1 &&
+        full !== undefined &&
+        full.correctiveStretches.length === 1,
+      `${p.bodydot.correctives.length} correctives (cap 3) plus ${p.bodydot.stretches.length} stretch in the same session`,
+    )
+  }
+
+  {
+    // S02 (three exercises, ranked first) vs S01 (one exercise). Without the reservation
+    // pass S02 eats the whole cap and S01 gets nothing at all.
+    const p = withBd({ S02: { value: 60 }, S01: { value: 40 } })
+    const block = p.bodydot.correctives
+    const s01 = block.filter((c) => c.codes.includes('S01'))
+    const s02 = block.filter((c) => c.codes.includes('S02'))
+    check(
+      'BodyDot: both findings are served before the three-exercise entry gets its second',
+      s01.length >= 1 && s02.length >= 1 && block.length === 3 && p.bodydot.deferred.length === 1,
+      `S02 got ${s02.length} of 3, S01 got ${s01.length} of 1, ${p.bodydot.deferred.length} deferred`,
+    )
+    check(
+      'BodyDot: what did not fit is reported by name, not dropped',
+      p.bodydot.deferred[0]?.names.length === 1 && /cap/.test(p.bodydot.deferred[0]?.reason ?? ''),
+      `${p.bodydot.deferred[0]?.code}: ${p.bodydot.deferred[0]?.names.join(', ')}`,
+    )
+  }
+
+  // ---- step 6, placement --------------------------------------------------
+  {
+    // Day 2 and day 4 of the reference client have the headroom to carry the whole block.
+    const p = withBd({ F05: { value: 6, side: 'Left' } })
+    check(
+      'BodyDot: correctives appear in every session of the week, tagged and attributed',
+      p.days.length > 0 &&
+        p.days.every(
+          (d) =>
+            d.correctives.length > 0 &&
+            d.correctives.every((c) => c.codes.length > 0 && c.indicators.length > 0),
+        ),
+      `${p.days.map((d) => d.correctives.length).join('/')} per session, attributed to ${p.days[0].correctives[0].indicators.join(', ')}`,
+    )
+    check(
+      'BodyDot: corrective slots stay out of the main exercise list and the set totals',
+      p.days.every(
+        (d) =>
+          !d.exercises.some((e) => d.correctives.some((c) => c.exercise.id === e.exercise.id)) &&
+          d.totalSets === run(REF).days[d.index].totalSets,
+      ),
+      'appended after the main work, no change to weekly volume',
+    )
+  }
+
+  {
+    // S07 high lists a mobility exercise (90/90 hip lift) among its three
+    const p = withBd({ S07: { value: 12 } })
+    const mob = p.bodydot.correctives.filter((c) => c.exercise.type === 'mobility')
+    const loaded = p.bodydot.correctives.filter((c) => c.exercise.type !== 'mobility')
+    check(
+      'BodyDot: a mobility corrective is timed, never given sets and reps',
+      mob.length > 0 && mob.every((c) => c.reps === null && c.seconds === data.bodydot.stretchSeconds),
+      `${mob.length} mobility corrective(s) examined: ${mob.map((c) => `${c.exercise.name} = ${c.sets}x${c.seconds}s`).join(', ')}`,
+    )
+    check(
+      'BodyDot: a loaded corrective still gets reps',
+      loaded.length > 0 && loaded.every((c) => c.reps !== null && c.seconds === null),
+      `${loaded.length} loaded corrective(s): ${loaded.map((c) => `${c.exercise.name} ${c.sets}x${c.reps}`).join(', ')}`,
+    )
+  }
+
+  // ---- step 4, set counts -------------------------------------------------
+  {
+    const abnormal = withBd({ F05: { value: 6, side: 'Left' } }).bodydot.correctives
+    const borderline = withBd({ F03: { value: 11, side: 'Left' } }).bodydot.correctives
+    check(
+      'BodyDot: a unilateral finding gets +2 sets when abnormal, +1 when borderline',
+      abnormal.length > 0 &&
+        abnormal.every((c) => c.sets === data.bodydot.sets.abnormalUnilateral) &&
+        borderline.length > 0 &&
+        borderline.every((c) => c.sets === data.bodydot.sets.borderlineUnilateral),
+      `abnormal ${abnormal[0]?.sets} set(s), borderline ${borderline[0]?.sets} set(s)`,
+    )
+  }
+
+  {
+    // S05 borderline high (45-49.5) vs abnormal high — the same entry, two exercises
+    const b = withBd({ S05: { value: 47 } })
+    const a = withBd({ S05: { value: 55 } })
+    const std = a.bodydot.standardSets
+    check(
+      'BodyDot: a borderline bilateral finding takes the first arsenal exercise only, abnormal takes all',
+      b.bodydot.correctives.length === 1 &&
+        a.bodydot.correctives.length === 2 &&
+        b.bodydot.findings[0].limitedToFirst &&
+        b.bodydot.correctives[0].sets === std,
+      `borderline ${b.bodydot.correctives.map(nameOf).join(', ')} | abnormal ${a.bodydot.correctives.map(nameOf).join(', ')}, both at the program's ${std} sets`,
+    )
+  }
+
+  // ---- precedence: injury outranks a corrective ---------------------------
+  {
+    // Shoulder pain removes the rear delt fly, which is the FIRST exercise of the S02 entry.
+    const painFree = withBd({ S02: { value: 60 } })
+    const p = withBd({ S02: { value: 60 } }, { pains: { SHOULDER: 'Both' } })
+    const removedFromEntry = data.bodydot.arsenal
+      .filter((entry) => entry.code === 'S02')
+      .flatMap((entry) => entry.exercises)
+      .filter((e) => e.exerciseId !== null && p.verdicts.get(e.exerciseId)?.verdict === 'REMOVE')
+    check(
+      'BodyDot: an injury REMOVE outranks a corrective — the exercise is not added',
+      removedFromEntry.length > 0 &&
+        p.bodydot.correctives.every((c) => c.exercise.id !== removedFromEntry[0].exerciseId) &&
+        painFree.bodydot.correctives.some((c) => c.exercise.id === removedFromEntry[0].exerciseId),
+      `${removedFromEntry.map((e) => e.libraryName).join(', ')} is prescribed for this finding pain-free, and removed with shoulder pain reported`,
+    )
+    check(
+      'BodyDot: a stretch removed for a reported pain is not prescribed either',
+      painFree.bodydot.stretches.length > 0 && p.bodydot.stretches.length === 0,
+      `pain-free: ${painFree.bodydot.stretches.map((s) => s.name).join(', ')}; with shoulder pain: none`,
+    )
+  }
+
+  {
+    // Low back pain removes the ONLY exercise the F05 entry has
+    const p = withBd({ F05: { value: 6, side: 'Left' } }, { pains: { LOWBACK: 'Both' } })
+    check(
+      'BodyDot: a finding whose whole entry is removed by pain prescribes nothing, and says why',
+      p.bodydot.correctives.length === 0 &&
+        p.bodydot.unfilled.some((u) => u.code === 'F05' && /removed by a pain/.test(u.reason)),
+      p.bodydot.unfilled.map((u) => `${u.code}: ${u.reason}`).join(' | '),
+    )
+  }
+
+  {
+    // Age and equipment still bind: the Q04 entry is a leg press and a deep barbell squat
+    const p = run({ ...preset('Older adult').input, bodydot: { Q04: { value: 40 } } })
+    check(
+      'BodyDot: a corrective the client cannot safely load is not added, and says why',
+      p.bodydot.correctives.length === 0 &&
+        p.bodydot.unfilled.some((u) => u.code === 'Q04' && /age, level or equipment/.test(u.reason)),
+      p.bodydot.unfilled.map((u) => `${u.code}: ${u.reason}`).join(' | '),
+    )
+  }
+
+  // ---- steps 1-2, bands and coverage --------------------------------------
+  {
+    const noProtocol = bands.filter((b) => !b.inArsenal)
+    const readings = Object.fromEntries(
+      noProtocol.map((b) => [b.code, { value: 999 }]),
+    ) as BodyDotInput
+    const p = withBd(readings)
+    check(
+      'BodyDot: an indicator with no protocol is reported as measured, never silently skipped',
+      noProtocol.length === 13 &&
+        noProtocol.every((b) => p.bodydot.unfilled.some((u) => u.code === b.code)) &&
+        p.bodydot.correctives.length === 0,
+      `${noProtocol.length} of ${bands.length} indicators have no arsenal entry, all ${p.bodydot.unfilled.length} reported`,
+    )
+  }
+
+  {
+    // T03 defines no band below its normal range at all
+    const p = withBd({ T03: { value: -20 } })
+    check(
+      'BodyDot: a reading outside an edge the file leaves undefined is reported, not treated as normal',
+      p.bodydot.findings.some((f) => f.code === 'T03' && f.tier === 'unbanded') &&
+        p.bodydot.unfilled.some((u) => u.code === 'T03'),
+      p.bodydot.unfilled.map((u) => u.reason).join(' | '),
+    )
+  }
+
+  {
+    // Boundaries are inclusive on both sides in the file, so the milder tier has to win.
+    const s05 = bands.find((b) => b.code === 'S05')!
+    check(
+      'BodyDot: tiers classify on the crossed edge, with boundary values taking the milder tier',
+      classify(s05, 45).tier === 'normal' &&
+        classify(s05, 47).tier === 'borderline' &&
+        classify(s05, 49.5).tier === 'borderline' &&
+        classify(s05, 55).tier === 'abnormal' &&
+        classify(s05, 33).tier === 'borderline' &&
+        classify(s05, 25).tier === 'abnormal' &&
+        classify(s05, 55).edge === 'high' &&
+        classify(s05, 25).edge === 'low',
+      'S05 45/47/49.5/55 and 33/25 deg',
+    )
+  }
+
+  {
+    // The 10% rule, checked against the bands the file actually ships.
+    const off: string[] = []
+    let checked = 0
+    for (const b of bands) {
+      const n = parseRange(b.normal)
+      if (!n) continue
+      for (const [str, thr] of [
+        [b.borderlineLow, n[0]],
+        [b.borderlineHigh, n[1]],
+      ] as [string, number][]) {
+        const r = parseRange(str)
+        if (!r) continue
+        checked++
+        // Where the threshold is zero the 10% rule degenerates, and the file falls back to
+        // 10% of the band's other threshold. Both cases are outside the arsenal.
+        const expect = thr === 0 ? null : 0.1 * Math.abs(thr)
+        if (expect !== null && Math.abs(r[1] - r[0] - expect) > 1e-9)
+          off.push(`${b.code}: ${r[1] - r[0]} vs ${expect.toFixed(2)}`)
+      }
+    }
+    check(
+      'BodyDot: every borderline band is 10% of the threshold at its edge',
+      off.length === 0 && checked > 0,
+      off.length
+        ? off.join('; ')
+        : `${checked} bands checked; S04 low and Q05 low sit on a zero threshold and fall back to 10% of the band's other edge`,
+    )
+  }
+
+  {
+    // "The borderline tier can never fire on 7 of 21 edges" — verified, not assumed.
+    const dead: string[] = []
+    let live = 0
+    for (const b of bands.filter((x) => x.inArsenal)) {
+      for (const [edge, bl, ab] of [
+        ['low', b.borderlineLow, b.abnormalLow],
+        ['high', b.borderlineHigh, b.abnormalHigh],
+      ] as ['low' | 'high', string, string][]) {
+        const r = parseRange(bl)
+        const a = parseRange(ab)
+        if (!r || !a) continue
+        live++
+        if ((r[1] - r[0]) / (a[1] - a[0]) < 0.05) dead.push(`${b.code} ${edge}`)
+      }
+    }
+    const declared = data.bodydot.deadBorderlineEdges.map(([c, e]) => `${c} ${e}`)
+    check(
+      'BodyDot: the 7 declared dead borderline edges are exactly the ones under 5% of their abnormal region',
+      live === 21 &&
+        dead.length === 7 &&
+        dead.every((d) => declared.includes(d)) &&
+        declared.every((d) => dead.includes(d)),
+      `${dead.length} of ${live} live edges: ${dead.join(', ')}`,
+    )
+  }
+
+  {
+    // The arsenal is pre-resolved to library ids — nothing here name-matches at runtime.
+    const bad: string[] = []
+    let resolved = 0
+    for (const entry of data.bodydot.arsenal) {
+      for (const item of [...entry.exercises, ...entry.stretches]) {
+        if (item.exerciseId === null) continue
+        resolved++
+        const lib = data.exercises.find((e) => e.id === item.exerciseId)
+        if (!lib) bad.push(`${entry.code} ${item.arsenalName} -> missing id ${item.exerciseId}`)
+        else if (lib.name !== item.libraryName)
+          bad.push(`${entry.code} id ${item.exerciseId}: "${item.libraryName}" vs "${lib.name}"`)
+      }
+    }
+    check(
+      'BodyDot: every arsenal id resolves to the library and matches its recorded name',
+      bad.length === 0 && resolved > 0,
+      bad.length ? bad.join('; ') : `${resolved} pre-resolved ids checked across ${data.bodydot.arsenal.length} entries`,
+    )
+  }
+
+  {
+    const p = withBd({ F06: { value: 6, side: 'Right' } })
+    const unmapped = p.bodydot.stretches.filter((s) => s.unmapped)
+    check(
+      'BodyDot: a stretch with no library match is prescribed as free text with the timer',
+      unmapped.length > 0 &&
+        unmapped.every(
+          (s) => s.exerciseId === null && s.seconds === data.bodydot.stretchSeconds,
+        ) &&
+        data.bodydot.unmappedStretches.includes(unmapped[0].name),
+      `${unmapped.map((s) => `${s.name} ${s.seconds}s`).join(', ')} — 4 declared unmapped: ${data.bodydot.unmappedStretches.join(', ')}`,
+    )
+  }
+
+  // ---- step 7, time and trim ----------------------------------------------
+  check(
+    'BodyDot: the time constants match the formula in the data file',
+    new RegExp(`work\\s*${CORRECTIVE_WORK_SECONDS}`).test(data.bodydot.timeCost) &&
+      new RegExp(`rest\\s*${CORRECTIVE_REST_SECONDS}`).test(data.bodydot.timeCost) &&
+      new RegExp(`stretches x ${data.bodydot.stretchSeconds}`).test(data.bodydot.timeCost),
+    data.bodydot.timeCost,
+  )
+
+  {
+    const p = withBd({ S02: { value: 60 } })
+    const bad = p.days.filter((d) => {
+      const expect =
+        (d.correctives.reduce(
+          (s, c) => s + c.sets * (CORRECTIVE_WORK_SECONDS + CORRECTIVE_REST_SECONDS),
+          0,
+        ) +
+          d.correctiveStretches.length * data.bodydot.stretchSeconds) /
+        60
+      return Math.abs(d.correctiveMinutes - expect) > 1e-9
+    })
+    check(
+      'BodyDot: corrective minutes follow exercises x sets x (40 + 30) + stretches x 40',
+      bad.length === 0 && p.days.some((d) => d.correctiveMinutes > 0),
+      `${p.days.map((d) => d.correctiveMinutes.toFixed(2)).join(' / ')} min of corrective work per session`,
+    )
+  }
+
+  {
+    // Trimming must recover the ceiling wherever the session was inside it to begin with.
+    const many: BodyDotInput = { S02: { value: 60 }, S01: { value: 40 }, T03: { value: 20 } }
+    const bad: string[] = []
+    let trimmedSessions = 0
+    for (const pr of PRESETS) {
+      const base = run(pr.input)
+      const p = run({ ...pr.input, bodydot: many })
+      for (const d of p.days) {
+        const wasOver = base.days[d.index].minutes > p.timeCeiling
+        if (p.bodydot.trimmed.some((t) => t.dayIndex === d.index)) trimmedSessions++
+        if (d.minutes > p.timeCeiling && !wasOver && d.correctives.length > 0)
+          bad.push(`${pr.name} day ${d.index + 1}: ${d.minutes.toFixed(0)} > ${p.timeCeiling}`)
+      }
+    }
+    check(
+      'BodyDot: the trim brings every session back inside its ceiling unless it was already over',
+      bad.length === 0 && trimmedSessions > 0,
+      bad.length ? bad.join('; ') : `${trimmedSessions} sessions trimmed across the presets`,
+    )
+  }
+
+  {
+    // trimOrder steps 3 and 4 are unreachable because VALD refuses to breach in the first
+    // place. That is an invariant, so it gets asserted rather than assumed.
+    const vald: ValdInput = {
+      'Q-KD': { asymmetry: 25, weakSide: 'Left' },
+      'H-KF': { asymmetry: 22, weakSide: 'Right' },
+    }
+    const bad: string[] = []
+    let bumped = 0
+    for (const pr of PRESETS) {
+      const base = run(pr.input)
+      const p = run({ ...pr.input, vald })
+      bumped += p.vald.bumps.length
+      for (const d of p.days)
+        if (d.minutes > p.timeCeiling && base.days[d.index].minutes <= p.timeCeiling)
+          bad.push(`${pr.name} day ${d.index + 1}`)
+    }
+    check(
+      'BodyDot: VALD can never be the cause of a ceiling breach, so trim steps 3-4 stay unreachable',
+      bad.length === 0 && bumped > 0,
+      bad.length ? bad.join('; ') : `${bumped} VALD bumps across the presets, none pushing a session over`,
+    )
+  }
+
+  check(
+    'BodyDot: two runs of the same input are identical',
+    JSON.stringify(withBd({ S02: { value: 60 }, F05: { value: 6, side: 'Left' } }).bodydot.correctives) ===
+      JSON.stringify(withBd({ S02: { value: 60 }, F05: { value: 6, side: 'Left' } }).bodydot.correctives),
+    'deterministic',
+  )
 }
 
 // ---- Report ----------------------------------------------------------------

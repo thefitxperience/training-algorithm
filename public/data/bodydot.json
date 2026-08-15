@@ -1,0 +1,919 @@
+{
+ "bands": [
+  {
+   "code": "Code",
+   "indicator": "Indicator",
+   "view": "View",
+   "unit": "Unit",
+   "normal": "Normal band",
+   "borderlineLow": "Borderline LOW",
+   "abnormalLow": "Abnormal LOW",
+   "borderlineHigh": "Borderline HIGH",
+   "abnormalHigh": "Abnormal HIGH",
+   "inArsenal": false
+  },
+  {
+   "code": "F01",
+   "indicator": "Head Horizontal Angle",
+   "view": "Frontal",
+   "unit": "deg",
+   "normal": "-5.0 to 5.0",
+   "borderlineLow": "-5.5 to -5.0",
+   "abnormalLow": "-30.0 to -5.5",
+   "borderlineHigh": "5.0 to 5.5",
+   "abnormalHigh": "5.5 to 30.0",
+   "inArsenal": false
+  },
+  {
+   "code": "F02",
+   "indicator": "Shoulder Horizontal Angle",
+   "view": "Frontal",
+   "unit": "deg",
+   "normal": "-2.0 to 2.0",
+   "borderlineLow": "-2.2 to -2.0",
+   "abnormalLow": "-10.0 to -2.2",
+   "borderlineHigh": "2.0 to 2.2",
+   "abnormalHigh": "2.2 to 10.0",
+   "inArsenal": false
+  },
+  {
+   "code": "F03",
+   "indicator": "Shoulder Slope",
+   "view": "Frontal",
+   "unit": "deg",
+   "normal": "12.0 to 18.0",
+   "borderlineLow": "10.8 to 12.0",
+   "abnormalLow": "-5.0 to 10.8",
+   "borderlineHigh": "18.0 to 19.8",
+   "abnormalHigh": "19.8 to 30.0",
+   "inArsenal": true
+  },
+  {
+   "code": "F04",
+   "indicator": "Elbow Angle",
+   "view": "Frontal",
+   "unit": "deg",
+   "normal": "165.0 to 180.0",
+   "borderlineLow": "148.5 to 165.0",
+   "abnormalLow": "120.0 to 148.5",
+   "borderlineHigh": "-",
+   "abnormalHigh": "-",
+   "inArsenal": false
+  },
+  {
+   "code": "F05",
+   "indicator": "Pelvic Tilt (frontal)",
+   "view": "Frontal",
+   "unit": "deg",
+   "normal": "-2.0 to 2.0",
+   "borderlineLow": "-2.2 to -2.0",
+   "abnormalLow": "-10.0 to -2.2",
+   "borderlineHigh": "2.0 to 2.2",
+   "abnormalHigh": "2.2 to 10.0",
+   "inArsenal": true
+  },
+  {
+   "code": "F06",
+   "indicator": "HKA Angle",
+   "view": "Frontal",
+   "unit": "deg",
+   "normal": "-3.0 to 3.0",
+   "borderlineLow": "-3.3 to -3.0",
+   "abnormalLow": "-10.0 to -3.3",
+   "borderlineHigh": "3.0 to 3.3",
+   "abnormalHigh": "3.3 to 10.0",
+   "inArsenal": true
+  },
+  {
+   "code": "F07",
+   "indicator": "Coronal Balance",
+   "view": "Frontal",
+   "unit": "cm",
+   "normal": "-5.0 to 5.0",
+   "borderlineLow": "-5.5 to -5.0",
+   "abnormalLow": "-30.0 to -5.5",
+   "borderlineHigh": "5.0 to 5.5",
+   "abnormalHigh": "5.5 to 30.0",
+   "inArsenal": false
+  },
+  {
+   "code": "S01",
+   "indicator": "Forward Head Posture Angle",
+   "view": "Sagittal",
+   "unit": "deg",
+   "normal": "0.0 to 30.0",
+   "borderlineLow": "-",
+   "abnormalLow": "-",
+   "borderlineHigh": "30.0 to 33.0",
+   "abnormalHigh": "33.0 to 70.0",
+   "inArsenal": true
+  },
+  {
+   "code": "S02",
+   "indicator": "Rounded Shoulder Angle",
+   "view": "Sagittal",
+   "unit": "deg",
+   "normal": "0.0 to 42.0",
+   "borderlineLow": "-",
+   "abnormalLow": "-",
+   "borderlineHigh": "42.0 to 46.2",
+   "abnormalHigh": "46.2 to 70.0",
+   "inArsenal": true
+  },
+  {
+   "code": "S03",
+   "indicator": "T1 Pelvic Angle",
+   "view": "Sagittal",
+   "unit": "deg",
+   "normal": "0.0 to 20.0",
+   "borderlineLow": "-",
+   "abnormalLow": "-",
+   "borderlineHigh": "20.0 to 22.0",
+   "abnormalHigh": "22.0 to 50.0",
+   "inArsenal": false
+  },
+  {
+   "code": "S04",
+   "indicator": "Sagittal Vertical Axis",
+   "view": "Sagittal",
+   "unit": "cm",
+   "normal": "0.0 to 5.0",
+   "borderlineLow": "-0.5 to 0.0",
+   "abnormalLow": "-30.0 to -0.5",
+   "borderlineHigh": "5.0 to 5.5",
+   "abnormalHigh": "5.5 to 30.0",
+   "inArsenal": false
+  },
+  {
+   "code": "S05",
+   "indicator": "Thoracic Kyphosis Angle",
+   "view": "Sagittal",
+   "unit": "deg",
+   "normal": "35.0 to 45.0",
+   "borderlineLow": "31.5 to 35.0",
+   "abnormalLow": "20.0 to 31.5",
+   "borderlineHigh": "45.0 to 49.5",
+   "abnormalHigh": "49.5 to 60.0",
+   "inArsenal": true
+  },
+  {
+   "code": "S06",
+   "indicator": "Lumbar Lordosis Angle",
+   "view": "Sagittal",
+   "unit": "deg",
+   "normal": "45.0 to 55.0",
+   "borderlineLow": "40.5 to 45.0",
+   "abnormalLow": "30.0 to 40.5",
+   "borderlineHigh": "55.0 to 60.5",
+   "abnormalHigh": "60.5 to 70.0",
+   "inArsenal": true
+  },
+  {
+   "code": "S07",
+   "indicator": "Anterior Pelvic Tilt Angle",
+   "view": "Sagittal",
+   "unit": "deg",
+   "normal": "5.0 to 8.0",
+   "borderlineLow": "4.5 to 5.0",
+   "abnormalLow": "-5.0 to 4.5",
+   "borderlineHigh": "8.0 to 8.8",
+   "abnormalHigh": "8.8 to 20.0",
+   "inArsenal": true
+  },
+  {
+   "code": "S08",
+   "indicator": "Kendall Knee Angle",
+   "view": "Sagittal",
+   "unit": "deg",
+   "normal": "-5.0 to 5.0",
+   "borderlineLow": "-5.5 to -5.0",
+   "abnormalLow": "-30.0 to -5.5",
+   "borderlineHigh": "5.0 to 5.5",
+   "abnormalHigh": "5.5 to 30.0",
+   "inArsenal": true
+  },
+  {
+   "code": "S09",
+   "indicator": "Kendall Hip Angle",
+   "view": "Sagittal",
+   "unit": "deg",
+   "normal": "-5.0 to 5.0",
+   "borderlineLow": "-5.5 to -5.0",
+   "abnormalLow": "-30.0 to -5.5",
+   "borderlineHigh": "5.0 to 5.5",
+   "abnormalHigh": "5.5 to 30.0",
+   "inArsenal": false
+  },
+  {
+   "code": "S10",
+   "indicator": "Kendall Shoulder Angle",
+   "view": "Sagittal",
+   "unit": "deg",
+   "normal": "-5.0 to 5.0",
+   "borderlineLow": "-5.5 to -5.0",
+   "abnormalLow": "-30.0 to -5.5",
+   "borderlineHigh": "5.0 to 5.5",
+   "abnormalHigh": "5.5 to 30.0",
+   "inArsenal": false
+  },
+  {
+   "code": "S11",
+   "indicator": "Kendall Ear Angle",
+   "view": "Sagittal",
+   "unit": "deg",
+   "normal": "-5.0 to 5.0",
+   "borderlineLow": "-5.5 to -5.0",
+   "abnormalLow": "-30.0 to -5.5",
+   "borderlineHigh": "5.0 to 5.5",
+   "abnormalHigh": "5.5 to 30.0",
+   "inArsenal": false
+  },
+  {
+   "code": "Q01",
+   "indicator": "Shoulder Stability",
+   "view": "Overhead Squat",
+   "unit": "deg",
+   "normal": "170.0 to 180.0",
+   "borderlineLow": "153.0 to 170.0",
+   "abnormalLow": "120.0 to 153.0",
+   "borderlineHigh": "-",
+   "abnormalHigh": "-",
+   "inArsenal": true
+  },
+  {
+   "code": "Q02",
+   "indicator": "Spinal Neutrality",
+   "view": "Overhead Squat",
+   "unit": "deg",
+   "normal": "60.0 to 90.0",
+   "borderlineLow": "54.0 to 60.0",
+   "abnormalLow": "0.0 to 54.0",
+   "borderlineHigh": "90.0 to 99.0",
+   "abnormalHigh": "99.0 to 150.0",
+   "inArsenal": false
+  },
+  {
+   "code": "Q03",
+   "indicator": "Knee Stability",
+   "view": "Overhead Squat",
+   "unit": "cm",
+   "normal": "-5.0 to 5.0",
+   "borderlineLow": "-5.5 to -5.0",
+   "abnormalLow": "-30.0 to -5.5",
+   "borderlineHigh": "5.0 to 5.5",
+   "abnormalHigh": "5.5 to 30.0",
+   "inArsenal": false
+  },
+  {
+   "code": "Q04",
+   "indicator": "Squat Depth",
+   "view": "Overhead Squat",
+   "unit": "deg",
+   "normal": "60.0 to 150.0",
+   "borderlineLow": "54.0 to 60.0",
+   "abnormalLow": "0.0 to 54.0",
+   "borderlineHigh": "-",
+   "abnormalHigh": "-",
+   "inArsenal": true
+  },
+  {
+   "code": "Q05",
+   "indicator": "Pelvic Stability",
+   "view": "Overhead Squat",
+   "unit": "deg",
+   "normal": "0.0 to 10.0",
+   "borderlineLow": "-1.0 to 0.0",
+   "abnormalLow": "-20.0 to -1.0",
+   "borderlineHigh": "10.0 to 11.0",
+   "abnormalHigh": "11.0 to 20.0",
+   "inArsenal": true
+  },
+  {
+   "code": "T01",
+   "indicator": "Knee Extension Angle",
+   "view": "Toe Touch",
+   "unit": "deg",
+   "normal": "170.0 to 180.0",
+   "borderlineLow": "153.0 to 170.0",
+   "abnormalLow": "120.0 to 153.0",
+   "borderlineHigh": "-",
+   "abnormalHigh": "-",
+   "inArsenal": false
+  },
+  {
+   "code": "T02",
+   "indicator": "Hip Hinge Angle",
+   "view": "Toe Touch",
+   "unit": "deg",
+   "normal": "0.0 to 70.0",
+   "borderlineLow": "-",
+   "abnormalLow": "-",
+   "borderlineHigh": "70.0 to 77.0",
+   "abnormalHigh": "77.0 to 150.0",
+   "inArsenal": false
+  },
+  {
+   "code": "T03",
+   "indicator": "Fingertip to Floor Distance",
+   "view": "Toe Touch",
+   "unit": "cm",
+   "normal": "-5.0 to 5.0",
+   "borderlineLow": "-",
+   "abnormalLow": "-",
+   "borderlineHigh": "5.0 to 5.5",
+   "abnormalHigh": "5.5 to 30.0",
+   "inArsenal": true
+  }
+ ],
+ "arsenal": [
+  {
+   "code": "F03",
+   "indicator": "Shoulder Slope",
+   "edge": "low",
+   "laterality": "same side",
+   "region": "Upper body & neck",
+   "exercises": [
+    {
+     "arsenalName": "{Side} front single arm pushdown",
+     "exerciseId": 63,
+     "libraryName": "Scapular depression pulldown",
+     "confidence": "MEDIUM",
+     "reasoning": "Read as scapular depression, not triceps. The finding is shoulder-girdle height; a triceps pushdown would not move it. 'Front' taken as the anterior pull line."
+    },
+    {
+     "arsenalName": "{Side} side single arm pushdown",
+     "exerciseId": 45,
+     "libraryName": "Straight-arm pulldown",
+     "confidence": "MEDIUM",
+     "reasoning": "Same reading, lateral pull line - straight-arm pulldown depresses and downwardly rotates the scapula."
+    }
+   ],
+   "stretches": [
+    {
+     "arsenalName": "Stretching {side} upper traps",
+     "exerciseId": 55,
+     "libraryName": "Levator stretch-hold with scapular depression",
+     "confidence": "MEDIUM"
+    }
+   ],
+   "correctedFromSource": false,
+   "meaning": null
+  },
+  {
+   "code": "F03",
+   "indicator": "Shoulder Slope",
+   "edge": "high",
+   "laterality": "same side",
+   "region": "Upper body & neck",
+   "exercises": [
+    {
+     "arsenalName": "{Side} shrugs",
+     "exerciseId": 75,
+     "libraryName": "Shrug",
+     "confidence": "HIGH",
+     "reasoning": "Shrug."
+    }
+   ],
+   "stretches": [],
+   "correctedFromSource": false,
+   "meaning": null
+  },
+  {
+   "code": "F05",
+   "indicator": "Pelvic Tilt (frontal)",
+   "edge": "any",
+   "laterality": "OPPOSITE side",
+   "region": "Lower body",
+   "exercises": [
+    {
+     "arsenalName": "{Side} hip hike",
+     "exerciseId": 315,
+     "libraryName": "Side-lying hip hike",
+     "confidence": "HIGH",
+     "reasoning": "Side-lying hip hike, added to the library on 15 Aug."
+    }
+   ],
+   "stretches": [],
+   "correctedFromSource": false,
+   "meaning": null
+  },
+  {
+   "code": "F06",
+   "indicator": "HKA Angle",
+   "edge": "high",
+   "laterality": "same side",
+   "region": "Lower body",
+   "exercises": [
+    {
+     "arsenalName": "{Side} hip abduction cable",
+     "exerciseId": 238,
+     "libraryName": "Standing cable abduction, slight IR",
+     "confidence": "HIGH",
+     "reasoning": "Standing cable abduction, slight IR."
+    },
+    {
+     "arsenalName": "{Side} glute kickback",
+     "exerciseId": 226,
+     "libraryName": "Glute kickback",
+     "confidence": "HIGH",
+     "reasoning": "Glute kickback."
+    }
+   ],
+   "stretches": [
+    {
+     "arsenalName": "Stretching adductor",
+     "exerciseId": null,
+     "libraryName": null,
+     "confidence": "GAP"
+    }
+   ],
+   "correctedFromSource": true,
+   "meaning": "valgus (knock-knee)"
+  },
+  {
+   "code": "F06",
+   "indicator": "HKA Angle",
+   "edge": "low",
+   "laterality": "same side",
+   "region": "Lower body",
+   "exercises": [
+    {
+     "arsenalName": "{Side} glute kickback",
+     "exerciseId": 226,
+     "libraryName": "Glute kickback",
+     "confidence": "HIGH",
+     "reasoning": "Glute kickback."
+    },
+    {
+     "arsenalName": "{Side} hip adduction cable",
+     "exerciseId": 292,
+     "libraryName": "Standing cable adduction",
+     "confidence": "HIGH",
+     "reasoning": "Standing cable adduction."
+    }
+   ],
+   "stretches": [
+    {
+     "arsenalName": "Stretching abductor",
+     "exerciseId": null,
+     "libraryName": null,
+     "confidence": "GAP"
+    }
+   ],
+   "correctedFromSource": true,
+   "meaning": "varus (bow-leg)"
+  },
+  {
+   "code": "S01",
+   "indicator": "Forward Head Posture Angle",
+   "edge": "high",
+   "laterality": "bilateral",
+   "region": "Upper body & neck",
+   "exercises": [
+    {
+     "arsenalName": "Chin tucks",
+     "exerciseId": 123,
+     "libraryName": "Chin tuck / deep neck flexor hold",
+     "confidence": "HIGH",
+     "reasoning": "Chin tuck / deep neck flexor hold."
+    }
+   ],
+   "stretches": [],
+   "correctedFromSource": false,
+   "meaning": null
+  },
+  {
+   "code": "S02",
+   "indicator": "Rounded Shoulder Angle",
+   "edge": "high",
+   "laterality": "bilateral",
+   "region": "Upper body & neck",
+   "exercises": [
+    {
+     "arsenalName": "Reverse flys",
+     "exerciseId": 97,
+     "libraryName": "Rear delt fly",
+     "confidence": "HIGH",
+     "reasoning": "Rear delt fly."
+    },
+    {
+     "arsenalName": "Face pull",
+     "exerciseId": 95,
+     "libraryName": "Face pull",
+     "confidence": "HIGH",
+     "reasoning": "Exact name match."
+    },
+    {
+     "arsenalName": "External rotation",
+     "exerciseId": 109,
+     "libraryName": "Standing external rotation, elbow at side",
+     "confidence": "HIGH",
+     "reasoning": "Standing external rotation, elbow at side - the lowest-skill of seven RC-ER options."
+    }
+   ],
+   "stretches": [
+    {
+     "arsenalName": "Stretching chest",
+     "exerciseId": 9,
+     "libraryName": "Banded pec stretch",
+     "confidence": "HIGH"
+    }
+   ],
+   "correctedFromSource": false,
+   "meaning": null
+  },
+  {
+   "code": "S05",
+   "indicator": "Thoracic Kyphosis Angle",
+   "edge": "high",
+   "laterality": "bilateral",
+   "region": "Upper body & neck",
+   "exercises": [
+    {
+     "arsenalName": "Back extensions",
+     "exerciseId": 203,
+     "libraryName": "45 back extension",
+     "confidence": "HIGH",
+     "reasoning": "45 back extension."
+    },
+    {
+     "arsenalName": "Rowing back",
+     "exerciseId": 53,
+     "libraryName": "Wide-grip row to sternum",
+     "confidence": "MEDIUM",
+     "reasoning": "Wide-grip row to sternum. Kyphosis needs scapular retraction and thoracic extension, so a retraction-biased row rather than a lat-biased one."
+    }
+   ],
+   "stretches": [
+    {
+     "arsenalName": "Cobra pose",
+     "exerciseId": 51,
+     "libraryName": "Thoracic extension over roller",
+     "confidence": "MEDIUM"
+    }
+   ],
+   "correctedFromSource": false,
+   "meaning": null
+  },
+  {
+   "code": "S06",
+   "indicator": "Lumbar Lordosis Angle",
+   "edge": "high",
+   "laterality": "bilateral",
+   "region": "Upper body & neck",
+   "exercises": [
+    {
+     "arsenalName": "Crunches",
+     "exerciseId": 169,
+     "libraryName": "Crunch",
+     "confidence": "HIGH",
+     "reasoning": "Crunch."
+    }
+   ],
+   "stretches": [
+    {
+     "arsenalName": "Stretching hip flexors",
+     "exerciseId": 240,
+     "libraryName": "Half-kneeling hip flexor stretch",
+     "confidence": "HIGH"
+    }
+   ],
+   "correctedFromSource": false,
+   "meaning": null
+  },
+  {
+   "code": "S06",
+   "indicator": "Lumbar Lordosis Angle",
+   "edge": "low",
+   "laterality": "bilateral",
+   "region": "Upper body & neck",
+   "exercises": [
+    {
+     "arsenalName": "Lower back extension",
+     "exerciseId": 209,
+     "libraryName": "Seated back extension",
+     "confidence": "MEDIUM",
+     "reasoning": "Seated back extension. Chosen over 45 back extension because low lordosis is a flat lumbar spine and the seated version is the gentler load."
+    }
+   ],
+   "stretches": [],
+   "correctedFromSource": false,
+   "meaning": null
+  },
+  {
+   "code": "S07",
+   "indicator": "Anterior Pelvic Tilt Angle",
+   "edge": "high",
+   "laterality": "bilateral",
+   "region": "Lower body",
+   "exercises": [
+    {
+     "arsenalName": "Posterior-pelvic-tilt glute bridge",
+     "exerciseId": 219,
+     "libraryName": "Posterior-pelvic-tilt glute bridge",
+     "confidence": "HIGH",
+     "reasoning": "Exact name match."
+    },
+    {
+     "arsenalName": "90/90 hip lift with breathing",
+     "exerciseId": 179,
+     "libraryName": "90/90 hip lift with breathing",
+     "confidence": "HIGH",
+     "reasoning": "Exact name match."
+    },
+    {
+     "arsenalName": "Hip thrust",
+     "exerciseId": 217,
+     "libraryName": "Hip thrust",
+     "confidence": "HIGH",
+     "reasoning": "Exact name match."
+    }
+   ],
+   "stretches": [
+    {
+     "arsenalName": "Half-kneeling hip flexor stretch",
+     "exerciseId": null,
+     "libraryName": null,
+     "confidence": "GAP"
+    }
+   ],
+   "correctedFromSource": false,
+   "meaning": null
+  },
+  {
+   "code": "S07",
+   "indicator": "Anterior Pelvic Tilt Angle",
+   "edge": "low",
+   "laterality": "bilateral",
+   "region": "Lower body",
+   "exercises": [
+    {
+     "arsenalName": "45 back extension",
+     "exerciseId": 203,
+     "libraryName": "45 back extension",
+     "confidence": "HIGH",
+     "reasoning": "Exact name match."
+    },
+    {
+     "arsenalName": "Superman / prone extension",
+     "exerciseId": 210,
+     "libraryName": "Superman / prone extension",
+     "confidence": "HIGH",
+     "reasoning": "Exact name match."
+    }
+   ],
+   "stretches": [
+    {
+     "arsenalName": "Hamstring stretching",
+     "exerciseId": null,
+     "libraryName": null,
+     "confidence": "GAP"
+    }
+   ],
+   "correctedFromSource": false,
+   "meaning": null
+  },
+  {
+   "code": "S08",
+   "indicator": "Kendall Knee Angle",
+   "edge": "high",
+   "laterality": "OPPOSITE side",
+   "region": "Lower body",
+   "exercises": [
+    {
+     "arsenalName": "{Side} leg extensions",
+     "exerciseId": 253,
+     "libraryName": "Leg extension",
+     "confidence": "HIGH",
+     "reasoning": "Leg extension."
+    },
+    {
+     "arsenalName": "Single leg press {side}",
+     "exerciseId": 259,
+     "libraryName": "Single-leg leg press",
+     "confidence": "HIGH",
+     "reasoning": "Single-leg leg press."
+    }
+   ],
+   "stretches": [],
+   "correctedFromSource": false,
+   "meaning": null
+  },
+  {
+   "code": "S08",
+   "indicator": "Kendall Knee Angle",
+   "edge": "low",
+   "laterality": "OPPOSITE side",
+   "region": "Lower body",
+   "exercises": [
+    {
+     "arsenalName": "{Side} hamstring curls",
+     "exerciseId": 282,
+     "libraryName": "Standing single-leg curl",
+     "confidence": "HIGH",
+     "reasoning": "Standing single-leg curl - the unilateral option, which this contralateral entry needs."
+    }
+   ],
+   "stretches": [],
+   "correctedFromSource": false,
+   "meaning": null
+  },
+  {
+   "code": "Q01",
+   "indicator": "Shoulder Stability",
+   "edge": "low",
+   "laterality": "bilateral",
+   "region": "Upper body & neck",
+   "exercises": [
+    {
+     "arsenalName": "Bar military press",
+     "exerciseId": 82,
+     "libraryName": "Standing overhead press",
+     "confidence": "HIGH",
+     "reasoning": "Standing overhead press."
+    },
+    {
+     "arsenalName": "Y raises",
+     "exerciseId": 60,
+     "libraryName": "Prone Y-raise on incline",
+     "confidence": "HIGH",
+     "reasoning": "Prone Y-raise on incline."
+    }
+   ],
+   "stretches": [
+    {
+     "arsenalName": "Stretching shoulder (bent-over flexion)",
+     "exerciseId": 47,
+     "libraryName": "Bench thoracic extension",
+     "confidence": "MEDIUM"
+    }
+   ],
+   "correctedFromSource": false,
+   "meaning": null
+  },
+  {
+   "code": "Q04",
+   "indicator": "Squat Depth",
+   "edge": "low",
+   "laterality": "bilateral",
+   "region": "Lower body",
+   "exercises": [
+    {
+     "arsenalName": "Leg press full ROM",
+     "exerciseId": 254,
+     "libraryName": "Leg press",
+     "confidence": "HIGH",
+     "reasoning": "Leg press."
+    },
+    {
+     "arsenalName": "Back squats full ROM",
+     "exerciseId": 222,
+     "libraryName": "Deep back squat, full ROM",
+     "confidence": "HIGH",
+     "reasoning": "Deep back squat, full ROM - the library's explicit full-ROM entry."
+    }
+   ],
+   "stretches": [
+    {
+     "arsenalName": "Garland pose (hip opening)",
+     "exerciseId": null,
+     "libraryName": null,
+     "confidence": "GAP"
+    }
+   ],
+   "correctedFromSource": false,
+   "meaning": null
+  },
+  {
+   "code": "Q05",
+   "indicator": "Pelvic Stability",
+   "edge": "any",
+   "laterality": "bilateral",
+   "region": "Lower body",
+   "exercises": [
+    {
+     "arsenalName": "Hip thrust",
+     "exerciseId": 217,
+     "libraryName": "Hip thrust",
+     "confidence": "HIGH",
+     "reasoning": "Exact name match."
+    },
+    {
+     "arsenalName": "Hip adductions",
+     "exerciseId": 292,
+     "libraryName": "Standing cable adduction",
+     "confidence": "HIGH",
+     "reasoning": "Standing cable adduction."
+    },
+    {
+     "arsenalName": "Hip abductions",
+     "exerciseId": 238,
+     "libraryName": "Standing cable abduction, slight IR",
+     "confidence": "HIGH",
+     "reasoning": "Standing cable abduction, slight IR."
+    }
+   ],
+   "stretches": [],
+   "correctedFromSource": false,
+   "meaning": null
+  },
+  {
+   "code": "T03",
+   "indicator": "Fingertip to Floor Distance",
+   "edge": "high",
+   "laterality": "bilateral",
+   "region": "Lower body",
+   "exercises": [
+    {
+     "arsenalName": "Romanian deadlift",
+     "exerciseId": 273,
+     "libraryName": "Romanian deadlift",
+     "confidence": "HIGH",
+     "reasoning": "Exact name match."
+    },
+    {
+     "arsenalName": "Stiff leg deadlift",
+     "exerciseId": 275,
+     "libraryName": "Stiff-leg deadlift",
+     "confidence": "HIGH",
+     "reasoning": "Stiff-leg deadlift."
+    }
+   ],
+   "stretches": [
+    {
+     "arsenalName": "Hamstring stretching",
+     "exerciseId": null,
+     "libraryName": null,
+     "confidence": "GAP"
+    }
+   ],
+   "correctedFromSource": false,
+   "meaning": null
+  }
+ ],
+ "tiers": {
+  "borderlineDeltaFraction": 0.1,
+  "note": "delta = 0.10 x |threshold at the crossed edge|; borderline is the delta-wide strip immediately outside, abnormal is everything beyond"
+ },
+ "sets": {
+  "borderlineUnilateral": 1,
+  "abnormalUnilateral": 2,
+  "borderlineBilateral": "program standard sets, FIRST arsenal exercise",
+  "abnormalBilateral": "program standard sets, ALL arsenal exercises"
+ },
+ "correctiveSlotCapPerSession": 3,
+ "stretchSeconds": 40,
+ "timeCost": "exercises x sets x (work 40 + rest 30) + stretches x 40",
+ "trimOrder": [
+  "InBody high-TBW filler bouts",
+  "BodyDot correctives, lowest rank first",
+  "VALD conversion",
+  "VALD extra weak-side sets"
+ ],
+ "precedence": "injury > InBody > VALD > BodyDot",
+ "lateralityRule": {
+  "BI": "bilateral",
+  "IPSI": "the side the finding names",
+  "CONTRA": "the OPPOSITE side"
+ },
+ "f06Gate": {
+  "enabled": true,
+  "note": "Rows swapped from source. Confirmed 15 Aug: negative = varus, positive = valgus. Source arsenal prescribed varus treatment on the positive edge. Verify against BodyDot API documentation before clinical use."
+ },
+ "deadBorderlineEdges": [
+  [
+   "S08",
+   "low"
+  ],
+  [
+   "S08",
+   "high"
+  ],
+  [
+   "T03",
+   "high"
+  ],
+  [
+   "F05",
+   "low"
+  ],
+  [
+   "F05",
+   "high"
+  ],
+  [
+   "F06",
+   "low"
+  ],
+  [
+   "F06",
+   "high"
+  ]
+ ],
+ "unmappedStretches": [
+  "Stretching abductor",
+  "Stretching adductor",
+  "Hamstring stretching",
+  "Garland pose (hip opening)"
+ ]
+}

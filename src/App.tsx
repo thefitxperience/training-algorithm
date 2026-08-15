@@ -6,19 +6,37 @@ import { roundSets } from './lib/rounding'
 import { PRESETS } from './lib/presets'
 import { ClientPanel } from './components/ClientPanel'
 import { ProgramPanel } from './components/ProgramPanel'
+import { MedicalDisclaimer, PainPanel } from './components/PainPanel'
 import { AuditPanel } from './components/AuditPanel'
 import { EQUIPMENT_TIERS, type EquipmentTier } from './lib/equipment'
+import type { PainSelection, Side } from './lib/injury'
 import type { ClientInput, DataBundle } from './types'
 
 export type View = 'simple' | 'detailed'
 
 /** Client state lives in the query string so a given program is a linkable regression case. */
+function painsFromUrl(q: URLSearchParams): PainSelection | null {
+  const raw = q.get('pains')
+  if (raw === null) return null
+  // pains=SHOULDER:Left,LOWBACK:Both
+  return Object.fromEntries(
+    raw
+      .split(',')
+      .filter(Boolean)
+      .map((entry) => {
+        const [id, side] = entry.split(':')
+        return [id, (side as Side) || 'Both']
+      }),
+  ) as PainSelection
+}
+
 function inputFromUrl(): ClientInput {
   const q = new URLSearchParams(window.location.search)
   const presetName = q.get('preset')
   if (presetName) {
     const p = PRESETS.find((x) => x.name.toLowerCase() === presetName.toLowerCase())
-    if (p) return p.input
+    // a preset fixes the client, but pains layer on top of it
+    if (p) return { ...p.input, pains: painsFromUrl(q) ?? p.input.pains }
   }
   const base = PRESETS[0].input
   return {
@@ -31,6 +49,7 @@ function inputFromUrl(): ClientInput {
     equipment: EQUIPMENT_TIERS.includes(q.get('equipment') as EquipmentTier)
       ? (q.get('equipment') as EquipmentTier)
       : base.equipment,
+    pains: painsFromUrl(q) ?? base.pains,
   }
 }
 
@@ -50,8 +69,12 @@ export default function App() {
 
   useEffect(() => {
     const q = new URLSearchParams(
-      Object.entries(input).map(([k, v]) => [k, String(v)]) as [string, string][],
+      Object.entries(input)
+        .filter(([k]) => k !== 'pains')
+        .map(([k, v]) => [k, String(v)]) as [string, string][],
     )
+    const pains = Object.entries(input.pains)
+    if (pains.length) q.set('pains', pains.map(([id, side]) => `${id}:${side}`).join(','))
     q.set('view', view)
     window.history.replaceState(null, '', `?${q.toString()}`)
   }, [input, view])
@@ -69,9 +92,19 @@ export default function App() {
     [data, result, input.sex],
   )
 
+  // `pains` is an object, so it needs comparing by value rather than identity.
+  const painsKey = (p: ClientInput) =>
+    Object.entries(p.pains)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([id, side]) => `${id}:${side}`)
+      .join(',')
   const activePreset =
-    PRESETS.find((p) => (Object.keys(p.input) as (keyof ClientInput)[]).every((k) => p.input[k] === input[k]))
-      ?.name ?? null
+    PRESETS.find(
+      (p) =>
+        (Object.keys(p.input) as (keyof ClientInput)[])
+          .filter((k) => k !== 'pains')
+          .every((k) => p.input[k] === input[k]) && painsKey(p.input) === painsKey(input),
+    )?.name ?? null
 
   if (loadError) {
     return (
@@ -87,8 +120,10 @@ export default function App() {
     return <div className="p-8 text-sm text-slate-500">Loading the program library…</div>
   }
 
+  const hasPains = Object.keys(input.pains).length > 0
+
   const programOrError = result?.ok ? (
-    <ProgramPanel program={result.program} input={input} view={view} />
+    <ProgramPanel program={result.program} input={input} view={view} injury={data.injury} />
   ) : (
     <div className="rounded border-2 border-red-300 bg-red-50 px-4 py-3">
       <div className="text-sm font-bold text-red-900">Cannot generate a program</div>
@@ -129,6 +164,15 @@ export default function App() {
             activePreset={activePreset}
             layout="bar"
           />
+          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <PainPanel
+              injury={data.injury}
+              pains={input.pains}
+              setPains={(pains) => setInput({ ...input, pains })}
+              compact
+            />
+          </div>
+          {hasPains && <MedicalDisclaimer injury={data.injury} />}
           {programOrError}
         </div>
       ) : (
@@ -144,10 +188,20 @@ export default function App() {
                 ageBracket={bracket}
                 activePreset={activePreset}
               />
+              <div className="mt-4 border-t border-slate-200 pt-3">
+                <PainPanel
+                  injury={data.injury}
+                  pains={input.pains}
+                  setPains={(pains) => setInput({ ...input, pains })}
+                />
+              </div>
             </div>
           </aside>
 
-          <main>{programOrError}</main>
+          <main className="space-y-4">
+            {hasPains && <MedicalDisclaimer injury={data.injury} />}
+            {programOrError}
+          </main>
 
           <aside className="lg:sticky lg:top-4 lg:self-start">
             {audit && result?.ok ? (

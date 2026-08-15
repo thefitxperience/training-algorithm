@@ -1,4 +1,12 @@
-import type { Allocation, Config, DataBundle, Exercise, Prescription, Splits } from '../types'
+import type {
+  Allocation,
+  Config,
+  DataBundle,
+  Exercise,
+  InjuryData,
+  Prescription,
+  Splits,
+} from '../types'
 
 /**
  * allocation.json is ~3 MB. The promise is cached at module scope so the fetch and
@@ -20,14 +28,15 @@ async function fetchJson<T>(file: string): Promise<T> {
 export function loadData(): Promise<DataBundle> {
   if (!bundlePromise) {
     bundlePromise = (async () => {
-      const [config, allocation, exercises, prescription, splits] = await Promise.all([
+      const [config, allocation, exercises, prescription, splits, injury] = await Promise.all([
         fetchJson<Config>('config.json'),
         fetchJson<Allocation>('allocation.json'),
         fetchJson<Exercise[]>('exercises.json'),
         fetchJson<Prescription>('prescription.json'),
         fetchJson<Splits>('splits.json'),
+        fetchJson<InjuryData>('injury.json'),
       ])
-      return { config, allocation, exercises, prescription, splits }
+      return { config, allocation, exercises, prescription, splits, injury }
     })()
   }
   return bundlePromise

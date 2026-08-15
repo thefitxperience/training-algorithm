@@ -7,6 +7,9 @@ const BAND: Record<string, string> = {
   amber: 'bg-amber-100 text-amber-900',
   red: 'bg-red-100 text-red-900',
   none: 'bg-slate-100 text-slate-500',
+  // Deliberately removed by the injury layer — distinct from a delivery failure, so it
+  // never reads as red.
+  removed: 'bg-sky-100 text-sky-900',
 }
 
 const n1 = (v: number) => v.toFixed(1)
@@ -45,6 +48,12 @@ export function AuditPanel({
         }`}
       >
         {audit.substantiveWithin25} of {audit.substantiveTotal} substantive groups within ±25%
+        {audit.removedGroupCount > 0 && (
+          <div className="mt-0.5 font-normal">
+            {audit.removedGroupCount} group{audit.removedGroupCount === 1 ? '' : 's'} excluded —
+            removed on purpose because of reported pain, not a delivery failure.
+          </div>
+        )}
       </div>
 
       <table className="w-full text-left text-[11px]">
@@ -95,8 +104,19 @@ export function AuditPanel({
                   {n1(r.expected)}
                 </td>
                 <td className="py-1 pl-1 text-right">
-                  <span className={`rounded px-1 py-0.5 font-mono font-semibold ${BAND[r.band]}`}>
-                    {r.ratio === null ? '—' : r.ratio.toFixed(2)}
+                  <span
+                    className={`rounded px-1 py-0.5 font-mono font-semibold ${BAND[r.band]}`}
+                    title={
+                      r.removedByPain
+                        ? `Removed on purpose: ${r.removedByPainLabels.join(', ')}. ${
+                            r.delivered > 0
+                              ? `The ${n1(r.delivered)} shown is indirect credit from exercises that load it secondarily.`
+                              : ''
+                          }`
+                        : ''
+                    }
+                  >
+                    {r.removedByPain ? 'removed' : r.ratio === null ? '—' : r.ratio.toFixed(2)}
                   </span>
                 </td>
               </tr>

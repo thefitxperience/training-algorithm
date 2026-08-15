@@ -1,4 +1,5 @@
 import type { EquipmentTier } from './lib/equipment'
+import type { PainSelection } from './lib/injury'
 
 export type Sex = 'Male' | 'Female'
 export type Tier = 'primary' | 'secondary' | 'accessory'
@@ -45,6 +46,8 @@ export interface Exercise {
   name: string
   group: string
   sub: string
+  /** sub-region code, e.g. "C-MID". Used by later rule layers; unused today. */
+  code: string
   equipment: string
   alsoTrains: string[]
   type: ExerciseType
@@ -75,12 +78,51 @@ export interface SplitBadge {
 /** keyed "{goal}|{days}|{level}|{split}" — age 18-29 only */
 export type Splits = Record<string, SplitBadge>
 
+export interface Pain {
+  id: string
+  label: string
+  region: string
+  sided: boolean
+  description: string
+}
+
+export interface PainRule {
+  removeSubRegions: string[]
+  removeTags: string[]
+  cautionSubRegions: string[]
+  cautionTags: string[]
+  prioritySubRegions: string[]
+}
+
+/** One record per exercise, joined to exercises.json on `id` — never on sub-region text. */
+export interface InjuryExercise {
+  id: number
+  name: string
+  /** "Muscle group > Sub-region", in the injury library's spelling */
+  key: string
+  loadTags: string[]
+  unilateral: boolean
+  corrective: boolean
+}
+
+export interface InjuryData {
+  pains: Pain[]
+  rules: Record<string, PainRule>
+  loadTags: Record<string, string>
+  exercises: InjuryExercise[]
+  reroute: unknown[]
+  copy: Record<string, string>
+  precedence: string[]
+  emptiedGroups: Record<string, unknown>
+}
+
 export interface DataBundle {
   config: Config
   allocation: Allocation
   exercises: Exercise[]
   prescription: Prescription
   splits: Splits
+  injury: InjuryData
 }
 
 export interface ClientInput {
@@ -92,4 +134,6 @@ export interface ClientInput {
   split: string
   /** what the client can train with — filters the exercise library, see lib/equipment.ts */
   equipment: EquipmentTier
+  /** ticked pains and their side — empty means the injury layer is a no-op */
+  pains: PainSelection
 }

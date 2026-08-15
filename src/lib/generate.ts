@@ -7,6 +7,24 @@ import type {
   Slot,
 } from '../types'
 import { isEquipmentAvailable, type EquipmentTier } from './equipment'
+import {
+  buildInjuryIndex,
+  evaluateAll,
+  type ExerciseVerdict,
+  type InjuryIndex,
+  type PainVerdict,
+} from './injury'
+
+/** The injury index only depends on the loaded data, so build it once per bundle. */
+const indexCache = new WeakMap<Exercise[], InjuryIndex>()
+function injuryIndexFor(data: DataBundle): InjuryIndex {
+  let idx = indexCache.get(data.exercises)
+  if (!idx) {
+    idx = buildInjuryIndex(data.injury, data.exercises)
+    indexCache.set(data.exercises, idx)
+  }
+  return idx
+}
 
 export interface ChosenExercise {
   exercise: Exercise
@@ -17,6 +35,8 @@ export interface ChosenExercise {
   rest: string
   /** why this pick is not a clean first-choice, if applicable */
   flag?: 'reused' | 'substituted'
+  /** injury-layer verdict for this exercise against the ticked pains */
+  verdict: ExerciseVerdict
 }
 
 export interface GeneratedDay {
@@ -29,7 +49,7 @@ export interface GeneratedDay {
   overCeiling: boolean
 }
 
-export type WarningKind = 'reuse' | 'substitute' | 'dropped'
+export type WarningKind = 'reuse' | 'substitute' | 'dropped' | 'pain-dropped'
 
 export interface Warning {
   kind: WarningKind
@@ -37,6 +57,12 @@ export interface Warning {
   dayLabel: string
   sub: string
   message: string
+}
+
+export interface RemovedExercise {
+  exercise: Exercise
+  /** the REMOVE verdicts that took it out, one per pain responsible */
+  reasons: PainVerdict[]
 }
 
 export interface Program {
@@ -53,6 +79,10 @@ export interface Program {
    *  recompute session length from its whole-number sets */
   minutesPerSet: number
   warmupMinutes: number
+  /** verdict per exercise id across the whole library, for the audit and the UI */
+  verdicts: Map<number, ExerciseVerdict>
+  /** everything the injury layer took out of the pool, for the removals panel */
+  removedByPain: RemovedExercise[]
 }
 
 export type GenerateResult =
@@ -117,8 +147,16 @@ export function isEligible(
 /** Spec ranking: main lift (Get Stronger only) -> tier -> load desc -> id asc. */
 const TIER_ORDER: Record<string, number> = { primary: 0, secondary: 1, accessory: 2 }
 
-export function rankCandidates(candidates: Exercise[], goal: string): Exercise[] {
+export function rankCandidates(
+  candidates: Exercise[],
+  goal: string,
+  verdicts?: Map<number, ExerciseVerdict>,
+): Exercise[] {
+  const isPriority = (e: Exercise) => (verdicts?.get(e.id)?.verdict === 'PRIORITY' ? 1 : 0)
   return [...candidates].sort((a, b) => {
+    // Injury-layer corrective work outranks the standard tier ordering.
+    const p = isPriority(b) - isPriority(a)
+    if (p !== 0) return p
     if (goal === 'Get Stronger') {
       const m = Number(b.mainLift) - Number(a.mainLift)
       if (m !== 0) return m
@@ -177,8 +215,24 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
     groupToSubs.get(group)!.push(sub)
   }
 
-  const eligibleIn = (sub: string): Exercise[] =>
+  // The injury layer runs BEFORE selection: verdicts are computed for the whole library,
+  // and REMOVE exercises leave the candidate pool entirely. SIDE_ONLY and CAUTION stay in
+  // and are annotated. Nothing else about the pipeline changes.
+  const verdicts = evaluateAll(exercises, input.pains, data.injury, injuryIndexFor(data))
+  const isRemoved = (ex: Exercise) => verdicts.get(ex.id)?.verdict === 'REMOVE'
+
+  const removedByPain: RemovedExercise[] = exercises
+    .filter(isRemoved)
+    .map((ex) => ({
+      exercise: ex,
+      reasons: (verdicts.get(ex.id)?.byPain ?? []).filter((v) => v.verdict === 'REMOVE'),
+    }))
+
+  /** passes the age/level/equipment rules, ignoring pain — used to attribute empty slots */
+  const baseEligibleIn = (sub: string): Exercise[] =>
     (bySub.get(sub) ?? []).filter((ex) => isEligible(ex, input.level, ageBr, input.equipment))
+
+  const eligibleIn = (sub: string): Exercise[] => baseEligibleIn(sub).filter((ex) => !isRemoved(ex))
 
   const warnings: Warning[] = []
   const usedThisWeek = new Set<number>()
@@ -191,7 +245,7 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
       const [sub, count, setsPerExercise] = slot
 
       for (let n = 0; n < count; n++) {
-        const ranked = rankCandidates(eligibleIn(sub), input.goal)
+        const ranked = rankCandidates(eligibleIn(sub), input.goal, verdicts)
 
         // 1. eligible and unused
         let pick = ranked.find((ex) => !usedThisWeek.has(ex.id))
@@ -210,18 +264,34 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
           })
         }
 
-        // Was this sub-region emptied by the equipment filter specifically, or by age/level?
+        // Attribute an empty sub-region to the layer that emptied it. A slot lost to pain
+        // is a different thing from "nothing eligible found" and has to read differently.
         const equipmentBlocked =
           input.equipment !== 'Full gym' &&
           (bySub.get(sub) ?? []).some((ex) => isEligible(ex, input.level, ageBr, 'Full gym'))
-        const because = equipmentBlocked ? ` (equipment: ${input.equipment})` : ''
+        const painRemovals = baseEligibleIn(sub).filter(isRemoved)
+        const painBlocked = eligibleIn(sub).length === 0 && painRemovals.length > 0
+        const painLabels = [
+          ...new Set(
+            painRemovals.flatMap((ex) =>
+              (verdicts.get(ex.id)?.byPain ?? [])
+                .filter((v) => v.verdict === 'REMOVE')
+                .map((v) => v.painLabel),
+            ),
+          ),
+        ]
+        const because = painBlocked
+          ? ` (removed because you reported ${painLabels.join(' and ')})`
+          : equipmentBlocked
+            ? ` (equipment: ${input.equipment})`
+            : ''
 
         // 3. nothing eligible here -> sibling sub-region in the SAME muscle group
         if (!pick) {
           const group = subToGroup.get(sub)
           if (group) {
             const siblings = (groupToSubs.get(group) ?? []).filter((s) => s !== sub)
-            const siblingPool = rankCandidates(siblings.flatMap(eligibleIn), input.goal)
+            const siblingPool = rankCandidates(siblings.flatMap(eligibleIn), input.goal, verdicts)
             const sub1 = siblingPool.find((ex) => !usedThisWeek.has(ex.id)) ?? siblingPool[0]
             if (sub1) {
               pick = sub1
@@ -240,11 +310,13 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
         // 4. still nothing -> drop the slot
         if (!pick) {
           warnings.push({
-            kind: 'dropped',
+            kind: painBlocked ? 'pain-dropped' : 'dropped',
             dayIndex,
             dayLabel: allocDay.label,
             sub,
-            message: `Day ${dayIndex + 1} (${allocDay.label}): slot "${sub}" dropped${because} — no eligible exercise in this sub-region or any sibling in the same muscle group.`,
+            message: painBlocked
+              ? `Day ${dayIndex + 1} (${allocDay.label}): "${sub}" removed because you reported ${painLabels.join(' and ')} — there was nothing safe left to train here or anywhere else in this muscle group.`
+              : `Day ${dayIndex + 1} (${allocDay.label}): slot "${sub}" dropped${because} — no eligible exercise in this sub-region or any sibling in the same muscle group.`,
           })
           continue
         }
@@ -257,15 +329,23 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
           reps: rx.reps,
           rest: rx.rest,
           flag,
+          verdict: verdicts.get(pick.id) ?? { verdict: 'OK', byPain: [] },
         })
       }
     }
 
-    // Session ordering: on Get Stronger the day must open on its main lifts. This is a
-    // stable reorder of the same picks, so muscle-group volume is untouched.
-    if (input.goal === 'Get Stronger') {
-      chosen.sort((a, b) => Number(b.exercise.mainLift) - Number(a.exercise.mainLift))
-    }
+    // Session ordering, a stable reorder of the same picks — muscle-group volume is
+    // untouched. Injury corrective work opens the session; after that, on Get Stronger,
+    // the main lifts.
+    const priorityRank = (c: ChosenExercise) => (c.verdict.verdict === 'PRIORITY' ? 1 : 0)
+    chosen.sort((a, b) => {
+      const p = priorityRank(b) - priorityRank(a)
+      if (p !== 0) return p
+      if (input.goal === 'Get Stronger') {
+        return Number(b.exercise.mainLift) - Number(a.exercise.mainLift)
+      }
+      return 0
+    })
 
     const totalSets = chosen.reduce((s, c) => s + c.sets, 0)
     const minutes =
@@ -296,6 +376,8 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
       timeCeiling: config.timeCeiling[input.goal],
       minutesPerSet: (config.repsMid[input.goal] * 3 + config.restMid[input.goal]) / 60,
       warmupMinutes: config.warmupMinutes,
+      verdicts,
+      removedByPain,
     },
   }
 }

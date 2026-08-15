@@ -12,6 +12,7 @@ import { PRESETS } from '../src/lib/presets'
 import { isEquipmentAvailable, libraryCoverage } from '../src/lib/equipment'
 import { splitAdvice } from '../src/lib/splitAdvice'
 import { roundSets } from '../src/lib/rounding'
+import { buildInjuryIndex, verdictForPain, type PainSelection } from '../src/lib/injury'
 import type { ClientInput, DataBundle } from '../src/types'
 
 const dir = join(process.cwd(), 'public', 'data')
@@ -22,7 +23,12 @@ const data: DataBundle = {
   exercises: read('exercises.json'),
   prescription: read('prescription.json'),
   splits: read('splits.json'),
+  injury: read('injury.json'),
 }
+const injuryIndex = buildInjuryIndex(data.injury, data.exercises)
+const idOf = (name: string) => data.exercises.find((e) => e.name === name)!.id
+const namesOf = (p: ReturnType<typeof run>) =>
+  p.days.flatMap((d) => d.exercises.map((e) => e.exercise.name.toLowerCase()))
 
 const results: { name: string; pass: boolean; detail: string }[] = []
 const check = (name: string, pass: boolean, detail = '') => results.push({ name, pass, detail })
@@ -231,6 +237,135 @@ const preset = (name: string) => PRESETS.find((p) => p.name === name)!
     'Split advice: non-18-29 client is flagged as reading the reference bracket',
     olderAdvice.fromReferenceBracket,
     `recommended for the 18-29 reference row: ${olderAdvice.recommended.map((o) => o.split).join(', ') || 'none'}`,
+  )
+}
+
+// ---- Injury layer ----------------------------------------------------------
+const REF = preset('Reference').input
+const withPains = (pains: PainSelection) => run({ ...REF, pains })
+const fingerprint = (p: ReturnType<typeof run>) =>
+  p.days.map((d) => d.exercises.map((e) => `${e.exercise.id}@${e.sets}`).join(',')).join(' | ')
+
+// The most important test: no pains ticked must be a byte-for-byte no-op.
+{
+  const before = fingerprint(run(REF))
+  const after = fingerprint(withPains({}))
+  check('Injury: no pains ticked reproduces the baseline program exactly', before === after,
+    before === after ? 'identical' : 'DIFFERS')
+}
+
+// The five validated spot checks.
+{
+  const spots: [string | number, string, string][] = [
+    ['Incline bench press 30-45', 'SHOULDER', 'REMOVE'],
+    ['Incline bench press 30-45', 'UPBACK', 'CAUTION'],
+    ['Incline bench press 30-45', 'NECK', 'OK'],
+    [315, 'LOWBACK', 'REMOVE'],
+    [308, 'ANKLE', 'REMOVE'],
+  ]
+  const bad = spots.filter(([who, pain, want]) => {
+    const id = typeof who === 'number' ? who : idOf(who)
+    return verdictForPain(id, pain, 'Both', data.injury, injuryIndex).verdict !== want
+  })
+  check('Injury: all five validated spot checks', bad.length === 0,
+    bad.length ? bad.map(([w, p]) => `${w}/${p}`).join(', ') : '5/5')
+}
+
+// SHOULDER: no overhead pressing, flys or dips; corrective work opens the session.
+{
+  const p = withPains({ SHOULDER: 'Both' })
+  const names = namesOf(p)
+  const banned = names.filter(
+    (n) => /overhead press|shoulder press|\bfly\b|flye|crossover|\bdip\b/.test(n) && !n.includes('woodchop'),
+  )
+  check('Injury (SHOULDER): no overhead pressing, flys or dips', banned.length === 0, banned.join(', '))
+
+  const correctiveDays = p.days.filter((d) =>
+    d.exercises.some((e) => e.verdict.verdict === 'PRIORITY'),
+  )
+  const opens = correctiveDays.every((d) => d.exercises[0].verdict.verdict === 'PRIORITY')
+  check(
+    'Injury (SHOULDER): corrective work appears first in the sessions that contain it',
+    correctiveDays.length > 0 && opens,
+    `${correctiveDays.length} of ${p.days.length} days contain corrective work; openers: ${correctiveDays
+      .map((d) => d.exercises[0].exercise.name)
+      .join(' | ')}`,
+  )
+}
+
+// LOWBACK: the Lower back group empties, and the audit says removed, not failed.
+{
+  const p = withPains({ LOWBACK: 'Both' })
+  const a = buildAudit(p, data.exercises, REF.sex, data.config)
+  const row = a.rows.find((r) => r.group === 'Lower back')!
+  check(
+    'Injury (LOWBACK): Lower back shows zero direct volume, flagged as removed not failed',
+    row.directDelivered === 0 && row.removedByPain && row.band === 'removed',
+    `direct ${row.directDelivered}, total ${row.delivered.toFixed(2)}${
+      row.delivered > 0
+        ? ` (indirect credit only — a surviving exercise still loads it secondarily)`
+        : ''
+    }, band "${row.band}", labels: ${row.removedByPainLabels.join('; ')}`,
+  )
+  check(
+    'Injury (LOWBACK): dropped slots are labelled as pain removals, not generic failures',
+    p.warnings.some((w) => w.kind === 'pain-dropped') || row.delivered === 0,
+    `${p.warnings.filter((w) => w.kind === 'pain-dropped').length} pain-dropped, ${p.warnings.filter((w) => w.kind === 'dropped').length} generic`,
+  )
+}
+
+// Two pains together: neither resurrects what the other removed.
+{
+  const both = withPains({ SHOULDER: 'Both', LOWBACK: 'Both' })
+  const shoulderRemoved = new Set(withPains({ SHOULDER: 'Both' }).removedByPain.map((r) => r.exercise.id))
+  const lowbackRemoved = new Set(withPains({ LOWBACK: 'Both' }).removedByPain.map((r) => r.exercise.id))
+  const chosen = new Set(both.days.flatMap((d) => d.exercises.map((e) => e.exercise.id)))
+  const resurrected = [...chosen].filter((id) => shoulderRemoved.has(id) || lowbackRemoved.has(id))
+  check(
+    'Injury (SHOULDER + LOWBACK): nothing removed by one pain survives via the other',
+    resurrected.length === 0,
+    resurrected.map((id) => data.exercises.find((e) => e.id === id)!.name).join(', '),
+  )
+}
+
+// A one-sided pain keeps unilateral work, badged, instead of removing it.
+{
+  const left = withPains({ ELBOW_LAT: 'Left' })
+  const both = withPains({ ELBOW_LAT: 'Both' })
+  const sideOnly = [...left.verdicts.values()].filter((v) => v.verdict === 'SIDE_ONLY').length
+  const removedLeft = left.removedByPain.length
+  const removedBoth = both.removedByPain.length
+  const selected = left.days
+    .flatMap((d) => d.exercises)
+    .filter((e) => e.verdict.verdict === 'SIDE_ONLY')
+  check(
+    'Injury (ELBOW_LAT, Left): unilateral work is kept side-only rather than removed',
+    sideOnly > 0 && removedLeft < removedBoth,
+    `${sideOnly} kept side-only instead of removed; removals ${removedBoth} (Both) → ${removedLeft} (Left).` +
+      ` ${selected.length} of them reached the program — the rest rank below unaffected exercises in their sub-region.`,
+  )
+
+  // ...and the badge must actually reach a program somewhere, or it is untested UI.
+  const shoulderLeft = withPains({ SHOULDER: 'Left' })
+  const shown = shoulderLeft.days
+    .flatMap((d) => d.exercises)
+    .filter((e) => e.verdict.verdict === 'SIDE_ONLY')
+  check(
+    'Injury: side-only exercises do reach the program and carry the badge',
+    shown.length > 0,
+    `SHOULDER:Left → ${shown.map((e) => e.exercise.name).join(', ')}`,
+  )
+}
+
+// Unticking returns to baseline.
+{
+  const base = fingerprint(run(REF))
+  const after = fingerprint(withPains({}))
+  const shoulder = fingerprint(withPains({ SHOULDER: 'Both' }))
+  check(
+    'Injury: unticking every pain returns the program to baseline',
+    after === base && shoulder !== base,
+    shoulder === base ? 'SHOULDER changed nothing — filter not applied' : 'baseline restored',
   )
 }
 

@@ -43,7 +43,7 @@ To publish:
 
 The push triggers the workflow; the URL appears under Actions once the deploy job finishes.
 
-**Everything in `public/data/` becomes publicly downloadable** — all five JSON files,
+**Everything in `public/data/` becomes publicly downloadable** — all six JSON files,
 including the 3 MB `allocation.json`. It's a static site, so the browser has to be able to
 fetch them; there is no way to publish this and keep the data private. GitHub Pages on a
 free account also requires a **public repo**. If either matters, this needs a host with
@@ -51,7 +51,7 @@ access control rather than Pages.
 
 ## Data
 
-Five files in `public/data/`, served as static assets and fetched once at startup:
+Six files in `public/data/`, served as static assets and fetched once at startup:
 
 | File | What it is |
 |---|---|
@@ -60,6 +60,7 @@ Five files in `public/data/`, served as static assets and fetched once at startu
 | `exercises.json` | 315 exercises |
 | `prescription.json` | reps/rest keyed `{sex}\|{days}\|{age}\|{level}` then by goal |
 | `splits.json` | split badges keyed `{goal}\|{days}\|{level}\|{split}` (age 18-29 only) |
+| `injury.json` | 18 pains, their rules, load-tag glossary, per-exercise injury records, and UI copy |
 
 They are generated upstream and are **not modified** by this app. `loadData()` in
 [src/data/load.ts](src/data/load.ts) caches the fetch promise at module scope, so
@@ -67,7 +68,8 @@ They are generated upstream and are **not modified** by this app. `loadData()` i
 
 Client state and the view mode are mirrored into the query string, so any program is a
 linkable regression case: `?preset=Stress%20test&view=detailed`, or
-`?sex=Male&age=28&level=Intermediate&…`.
+`?sex=Male&age=28&level=Intermediate&…`. Pains ride along too, and layer on top of a preset:
+`?preset=Reference&pains=SHOULDER:Left,LOWBACK:Both`.
 
 ## Layout
 
@@ -77,6 +79,35 @@ linkable regression case: `?preset=Stress%20test&view=detailed`, or
   exercises rather than read from the allocation's `delivered` field.
 - [src/lib/presets.ts](src/lib/presets.ts) — the five regression presets.
 - [scripts/acceptance.ts](scripts/acceptance.ts) — headless assertions over the same code.
+
+## Injury / pain filter
+
+The first rule layer on top of the base generator. It wraps the pipeline rather than
+changing it: allocation lookup, sets, reps, rest and volume targets are untouched — the
+layer only changes **which exercises fill the slots**.
+
+[src/lib/injury.ts](src/lib/injury.ts) is the verdict engine. For each exercise × ticked
+pain it evaluates five rules **in order, first match wins**: PRIORITY (in a priority
+sub-region *and* flagged corrective), REMOVE (removed sub-region or removed load tag),
+SIDE_ONLY (a removal that survives on the pain-free side — sided pain, one side picked,
+unilateral exercise), CAUTION (cautioned sub-region, cautioned load tag, or a secondary
+muscle landing in a removed/cautioned sub-region), then OK.
+
+Across pains: **any REMOVE wins outright**, then PRIORITY, SIDE_ONLY, CAUTION, OK. A
+PRIORITY from one pain never resurrects what another pain removed. (`injury.json`'s
+`precedence` array lists PRIORITY first; the written rule takes precedence, since it states
+the REMOVE case explicitly.)
+
+Verdicts are **computed, never tabulated** — the library has already grown 307 → 315 once.
+`injury.exercises` joins to `exercises.json` on `id`, never on sub-region text, because the
+two files spell eight sub-regions differently (`Chest > Mid` vs `Mid (flat)`).
+
+In the pipeline: REMOVE leaves the candidate pool before selection; PRIORITY sorts ahead of
+the tier ranking within a sub-region and opens the session; SIDE_ONLY and CAUTION stay in
+and are badged. Emptied slots reuse the **existing** fallback cascade — no second mechanism
+— but a slot lost to pain is labelled as a removal ("removed because you reported low back
+pain"), never as "no eligible exercise found". `injury.json`'s `reroute` table was used to
+understand which sub-regions empty, not to route anything.
 
 ## Split recommendation
 
@@ -165,9 +196,9 @@ Places where the spec left a choice, and what was chosen:
 
 ## Acceptance criteria — current status
 
-`npm run acceptance` → **37 of 37 checks pass**. The five presets all run at `Full gym`, so
+`npm run acceptance` → **47 of 47 checks pass**. The five presets all run at `Full gym`, so
 the original criteria are unaffected by the equipment feature; the rest cover equipment
-tiers, split advice and set rounding. Note the count dropped to 22/22 at one point because
+tiers, split advice, set rounding and the injury layer. Note the count dropped to 22/22 at one point because
 the week criterion was **removed**, not because its failure was fixed — see below.
 
 | Criterion | Status |
@@ -192,6 +223,46 @@ the week criterion was **removed**, not because its failure was fixed — see be
 | Rounding: no session crosses the goal's time ceiling | **pass** — worst is Youth strength day 3 at 103 of 105 min |
 | Split advice: reference client gets a Recommended split | **pass** — Upper / Lower |
 | Split advice: non-18-29 client is flagged as reading the 18-29 rows | **pass** |
+| **Injury:** no pains ticked reproduces the baseline exactly | **pass** — identical fingerprint |
+| **Injury:** the five validated spot checks | **pass** — 5/5 |
+| **Injury:** SHOULDER removes overhead pressing, flys and dips | **pass** |
+| **Injury:** SHOULDER puts corrective work first in sessions containing it | **pass** |
+| **Injury:** LOWBACK empties Lower back, shown as removed not failed | **pass, with a caveat** — see below |
+| **Injury:** SHOULDER + LOWBACK, neither resurrects the other's removals | **pass** |
+| **Injury:** ELBOW_LAT Left keeps unilateral work side-only | **pass, with a caveat** — see below |
+| **Injury:** unticking every pain returns to baseline | **pass** |
+
+### The two injury criteria that pass only with a caveat
+
+**"LOWBACK ticked: the Lower back group shows zero delivered."** Direct volume is exactly
+zero and the row is flagged *removed* in blue, not red — that part holds. But the total
+reads **1.05**, because the audit's `delivered` includes indirect credit and one surviving
+exercise (Bird dog, an Abs & core movement) lists Erectors in its `alsoTrains`. That is the
+Stage 1 formula working as specified, and it is physiologically true — a bird dog does load
+the erectors — so the formula was not changed to force a zero. The audit row now carries
+both figures, and the acceptance check asserts direct volume is zero and prints the
+indirect residue rather than hiding it.
+
+**"ELBOW_LAT with Left: unilateral gripping exercises are kept with a pain-free-side
+badge."** They are kept — removals drop from 36 to 33 and three exercises become SIDE_ONLY
+instead of REMOVE. But for the Reference client **none of those three reach the program**:
+they rank below unaffected exercises in their sub-regions, and the spec says SIDE_ONLY
+exercises stay in the pool and are annotated, not that they get promoted. So the badge is
+correct but invisible for this particular pain. It is visible elsewhere — `SHOULDER:Left`
+puts "Lean-away single-arm cable lateral raise" and "Single-arm lat pulldown" in the
+program with a *Pain-free side only (right)* badge — and that is asserted separately so the
+badge itself is not left untested.
+
+### Known data gap — five secondary-muscle names
+
+The CAUTION rule checks each exercise's `alsoTrains` entries after converting them to
+`"Group > Sub-region"` keys via `exercises.json`, exactly as specified. Five `alsoTrains`
+names (`Lateral-medial (lockout)`, `Mid`, `Lower`, `Stretch`, `Abduction (med-min)`) are
+written in the *injury library's* spelling rather than `exercises.json`'s, so no `sub`
+matches and they convert to nothing. Measured cost: **2 cells of 5,670** change if they are
+resolved — both "Single-leg RDL" moving OK → CAUTION, for GROIN and ANKLE. The spec-literal
+conversion was kept, since it is the one validated against the source matrix, and the
+unresolved names are named in the audit panel rather than guessed at.
 
 ### The dropped criterion — week rotation
 

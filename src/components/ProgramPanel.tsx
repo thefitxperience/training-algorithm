@@ -3,7 +3,12 @@ import type { View } from '../App'
 import type { Program } from '../lib/generate'
 import { pickKey, roundSets } from '../lib/rounding'
 import { equipmentOptions, isTokenAvailable } from '../lib/equipment'
-import type { ClientInput } from '../types'
+import { copyFor, type Side } from '../lib/injury'
+import type { ClientInput, InjuryData } from '../types'
+
+/** The side to actually train is the one the pain is NOT on. */
+const otherSide = (painSide?: Side) =>
+  painSide === 'Left' ? 'right' : painSide === 'Right' ? 'left' : 'pain-free'
 
 /**
  * The detailed view shows allocation sets as-is, fractions and all — the raw value is what
@@ -16,10 +21,12 @@ export function ProgramPanel({
   program,
   input,
   view,
+  injury,
 }: {
   program: Program
   input: ClientInput
   view: View
+  injury: InjuryData
 }) {
   const { block, days, warnings } = program
   const short = block.deliveredDays < input.days
@@ -51,13 +58,71 @@ export function ProgramPanel({
         </div>
       )}
 
-      {detailed && warnings.length > 0 && (
+      {/* Slots lost to pain read as a deliberate removal, never as "nothing found". */}
+      {warnings.some((w) => w.kind === 'pain-dropped') && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3">
+          <div className="text-sm font-bold text-amber-900">Adjusted around your pain</div>
+          <ul className="mt-1 space-y-0.5 text-xs text-amber-800">
+            {warnings
+              .filter((w) => w.kind === 'pain-dropped')
+              .map((w, i) => (
+                <li key={i}>{w.message}</li>
+              ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Collapsed by default — a 60-item list would bury the program — but the count and the
+          pains stay visible, so nothing is silently blocked. */}
+      {program.removedByPain.length > 0 && (
+        <details className="rounded-lg border border-slate-300 bg-white px-4 py-3">
+          <summary className="cursor-pointer text-sm font-bold text-slate-800">
+            {copyFor(injury, 'Removed - list header', {
+              n: program.removedByPain.length,
+              pains: [...new Set(program.removedByPain.flatMap((r) => r.reasons.map((x) => x.painLabel)))].join(
+                ', ',
+              ),
+            })}
+          </summary>
+          <div className="mt-2 space-y-2">
+            {[...new Set(program.removedByPain.flatMap((r) => r.reasons.map((x) => x.painId)))].map(
+              (painId) => {
+                const forPain = program.removedByPain.filter((r) =>
+                  r.reasons.some((x) => x.painId === painId),
+                )
+                const label = forPain[0].reasons.find((x) => x.painId === painId)!.painLabel
+                return (
+                  <div key={painId}>
+                    <div className="text-xs font-semibold text-slate-700">
+                      {label} — {forPain.length} exercises
+                    </div>
+                    <ul className="mt-0.5 grid gap-x-4 text-[11px] text-slate-600 sm:grid-cols-2">
+                      {forPain.map((r) => (
+                        <li key={r.exercise.id}>
+                          {copyFor(injury, 'Removed - line', {
+                            exercise: r.exercise.name,
+                            reason:
+                              r.reasons.find((x) => x.painId === painId)?.reason ?? 'not safe for this pain',
+                          })}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )
+              },
+            )}
+          </div>
+        </details>
+      )}
+
+      {detailed && warnings.filter((w) => w.kind !== 'pain-dropped').length > 0 && (
         <div className="rounded border border-red-300 bg-red-50 px-4 py-3">
           <div className="text-sm font-bold text-red-900">
-            {warnings.length} fallback event{warnings.length === 1 ? '' : 's'}
+            {warnings.filter((w) => w.kind !== 'pain-dropped').length} fallback event
+            {warnings.filter((w) => w.kind !== 'pain-dropped').length === 1 ? '' : 's'}
           </div>
           <ul className="mt-1 space-y-0.5 text-xs text-red-800">
-            {warnings.map((w, i) => (
+            {warnings.filter((w) => w.kind !== 'pain-dropped').map((w, i) => (
               <li key={i}>
                 <span className="rounded bg-red-200 px-1 font-mono text-[10px] uppercase">{w.kind}</span>{' '}
                 {w.message}
@@ -176,6 +241,37 @@ export function ProgramPanel({
                     {c.exercise.mainLift && (
                       <span className="ml-1.5 rounded bg-indigo-100 px-1 py-0.5 text-[10px] font-bold text-indigo-800">
                         MAIN
+                      </span>
+                    )}
+                    {c.verdict.decidedBy && c.verdict.verdict === 'PRIORITY' && (
+                      <span
+                        className="ml-1.5 rounded bg-emerald-100 px-1 py-0.5 text-[10px] font-bold text-emerald-800"
+                        title={copyFor(injury, 'Priority tooltip', {
+                          pain: c.verdict.decidedBy.painLabel,
+                        })}
+                      >
+                        {injury.copy['Priority badge']}
+                      </span>
+                    )}
+                    {c.verdict.decidedBy && c.verdict.verdict === 'SIDE_ONLY' && (
+                      <span
+                        className="ml-1.5 rounded bg-sky-100 px-1 py-0.5 text-[10px] font-bold text-sky-800"
+                        title={copyFor(injury, 'Side-only tooltip', {
+                          side: otherSide(c.verdict.decidedBy.side),
+                          pain: c.verdict.decidedBy.painLabel,
+                        })}
+                      >
+                        {injury.copy['Side-only badge']} ({otherSide(c.verdict.decidedBy.side)})
+                      </span>
+                    )}
+                    {c.verdict.decidedBy && c.verdict.verdict === 'CAUTION' && (
+                      <span
+                        className="ml-1.5 rounded bg-amber-100 px-1 py-0.5 text-[10px] font-bold text-amber-800"
+                        title={copyFor(injury, 'Caution tooltip', {
+                          reason: c.verdict.decidedBy.reason,
+                        })}
+                      >
+                        {copyFor(injury, 'Caution badge', { pain: c.verdict.decidedBy.painLabel })}
                       </span>
                     )}
                     {detailed && c.flag === 'reused' && (

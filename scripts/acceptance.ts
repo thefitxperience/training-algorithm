@@ -483,7 +483,20 @@ const fingerprint = (p: ReturnType<typeof run>) =>
               )
                 bad.push(`${a.name} + ${c.name}`)
             }
-    check('Structure: no block pairs a synergist', bad.length === 0, bad.join(', '))
+    const pairsExamined = all.reduce(
+      (n, p) =>
+        n +
+        p.days.reduce(
+          (m, d) => m + d.blocks.reduce((k, b) => k + (b.indices.length * (b.indices.length - 1)) / 2, 0),
+          0,
+        ),
+      0,
+    )
+    check(
+      'Structure: no block pairs a synergist',
+      bad.length === 0 && pairsExamined > 0,
+      bad.length ? bad.join(', ') : `${pairsExamined} in-block pairs examined`,
+    )
 
     // the spec's own worked example, asserted by name
     const corrective = new Set(data.injury.exercises.filter((r) => r.corrective).map((r) => r.id))
@@ -508,19 +521,32 @@ const fingerprint = (p: ReturnType<typeof run>) =>
     )
   }
 
-  // correctives only with correctives
+  // Correctives only with correctives. Swept across every pain, because the four baseline
+  // programs happen to contain no block holding a corrective at all — an earlier version of
+  // this check examined those alone and passed without testing the rule once.
   {
     const corrective = new Set(data.injury.exercises.filter((r) => r.corrective).map((r) => r.id))
     const bad: string[] = []
-    for (const p of [...all, run({ ...REF, structure: 'superset', pains: { SHOULDER: 'Both' } })])
-      for (const d of p.days)
-        for (const b of d.blocks) {
-          if (b.indices.length < 2) continue
-          const flags = b.indices.map((i) => corrective.has(d.exercises[i].exercise.id))
-          if (flags.some(Boolean) && !flags.every(Boolean))
-            bad.push(b.indices.map((i) => d.exercises[i].exercise.name).join(' + '))
-        }
-    check('Structure: a corrective is never blocked with a non-corrective', bad.length === 0, bad.join('; '))
+    let examined = 0
+    for (const pain of data.injury.pains)
+      for (const structure of ['superset', 'triset'] as const) {
+        const g = generate(data, { ...REF, structure, pains: { [pain.id]: 'Both' } })
+        if (!g.ok) continue
+        for (const d of g.program.days)
+          for (const b of d.blocks) {
+            if (b.indices.length < 2) continue
+            const flags = b.indices.map((i) => corrective.has(d.exercises[i].exercise.id))
+            if (!flags.some(Boolean)) continue
+            examined++
+            if (!flags.every(Boolean))
+              bad.push(`${pain.id}: ` + b.indices.map((i) => d.exercises[i].exercise.name).join(' + '))
+          }
+      }
+    check(
+      'Structure: a corrective is never blocked with a non-corrective',
+      bad.length === 0 && examined > 0,
+      bad.length ? bad.join('; ') : `${examined} blocks containing a corrective examined`,
+    )
   }
 
   // two compounds sharing a joint must never pair
@@ -539,7 +565,20 @@ const fingerprint = (p: ReturnType<typeof run>) =>
               if (a.type === 'compound' && c.type === 'compound' && shares)
                 bad.push(`${a.name} + ${c.name}`)
             }
-    check('Structure: two compounds sharing a joint never pair', bad.length === 0, bad.join(', '))
+    const pairs = all.reduce(
+      (n, p) =>
+        n +
+        p.days.reduce(
+          (m, d) => m + d.blocks.reduce((k, b) => k + (b.indices.length * (b.indices.length - 1)) / 2, 0),
+          0,
+        ),
+      0,
+    )
+    check(
+      'Structure: two compounds sharing a joint never pair',
+      bad.length === 0 && pairs > 0,
+      bad.length ? bad.join(', ') : `${pairs} in-block pairs examined`,
+    )
   }
 
   // coverage, reported not asserted
@@ -635,13 +674,13 @@ const fingerprint = (p: ReturnType<typeof run>) =>
     )
     check(
       'InBody: rule 4 never forces a structure change on a main lift',
-      rule4Slots.every((s) => !s.exercise.mainLift),
-      `${rule4Slots.filter((s) => s.exercise.mainLift).length} main lifts caught`,
+      rule4Slots.length > 0 && rule4Slots.every((s) => !s.exercise.mainLift),
+      `${rule4Slots.length} rule-4 slots checked against ${slots.filter((s) => s.exercise.mainLift).length} main lifts in the program`,
     )
     check(
       'InBody: unowned groups are never touched by rule 4',
-      rule4Slots.every((s) => !data.inbody.unownedGroups.includes(s.exercise.group)),
-      data.inbody.unownedGroups.join(', '),
+      rule4Slots.length > 0 && rule4Slots.every((s) => !data.inbody.unownedGroups.includes(s.exercise.group)),
+      `${rule4Slots.length} rule-4 slots checked; unowned: ${data.inbody.unownedGroups.join(', ')}`,
     )
     // Get Stronger client with TRUNK Over: the 120s floor binds, so the 0.75 multiplier
     // has no visible effect. Correct, not a bug.
@@ -831,10 +870,15 @@ const fingerprint = (p: ReturnType<typeof run>) =>
         if (e.exercise.mainLift && e.unilateral && e.unilateral.form !== 'already')
           bad.push(`${pr.name}: ${e.exercise.name} (${e.unilateral.form})`)
     }
+    let mainLiftsOnTestedSubRegions = 0
+    for (const pr of PRESETS)
+      for (const e of run({ ...pr.input, vald: all }).days.flatMap((d) => d.exercises))
+        if (e.exercise.mainLift && codes.includes(e.exercise.code)) mainLiftsOnTestedSubRegions++
     check(
       'VALD: a bilateral main lift is never bumped and never converted',
-      bad.length === 0,
-      bad.join(', ') || 'checked every test firing at once, across all presets',
+      bad.length === 0 && mainLiftsOnTestedSubRegions > 0,
+      bad.join(', ') ||
+        `${mainLiftsOnTestedSubRegions} main-lift slots sit on a VALD-tested sub-region and none was converted`,
     )
   }
 
@@ -875,11 +919,12 @@ const fingerprint = (p: ReturnType<typeof run>) =>
         maxIndirectDrift = Math.max(maxIndirectDrift, Math.abs(r.delivered - b.rows[i].delivered))
       })
     }
+    const totalBumps = PRESETS.reduce((n, pr) => n + run({ ...pr.input, vald: all }).vald.bumps.length, 0)
     check(
       'VALD: slot count unchanged and the strong side keeps its direct volume',
-      bad.length === 0,
+      bad.length === 0 && totalBumps > 0,
       bad.join(', ') ||
-        `all presets, every test firing — max indirect-credit drift from swaps ${maxIndirectDrift.toFixed(2)} sets`,
+        `${totalBumps} bumps across all presets — max indirect-credit drift from swaps ${maxIndirectDrift.toFixed(2)} sets`,
     )
   }
 

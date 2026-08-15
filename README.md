@@ -414,6 +414,26 @@ its length is computed. The window was an artefact of the retired formula, so th
 asserts the sessions stay inside the goal's own 90 min ceiling and prints the superseded
 window alongside, rather than quietly widening the range.
 
+### Audit of the acceptance suite itself
+
+After finding the check below, the whole suite was audited for the same class of fault — an
+assertion that passes without testing anything. Two mechanisms:
+
+1. **Dangling references.** `scripts/` was outside the TypeScript build, so a check could
+   reference a field that no longer existed, evaluate `NaN`, and pass. Fixed at the root:
+   [tsconfig.scripts.json](tsconfig.scripts.json) puts `scripts/` under `tsc -b`.
+2. **Empty populations.** An `.every()` over an empty array is true, so an "X never happens"
+   check passes when it never looked at an X. Every absence-style check now asserts its
+   population was non-empty and prints how much it examined: 38 in-block pairs for the
+   synergist and shared-joint rules, 8 blocks containing a corrective, 5 rule-4 slots against
+   10 main lifts, 12 main-lift slots on VALD-tested sub-regions, 39 VALD bumps.
+
+**One check was genuinely vacuous:** *"a corrective is never blocked with a non-corrective"*
+examined 39 multi-exercise blocks, **none of which contained a corrective** — the four
+baseline programs simply have no session where two correctives can pair. The rule was never
+tested once. It now sweeps all 18 pains and examines 8 such blocks; a wider sweep of 180
+programs found 22 and **zero mixed**, so the code was right and only the test was weak.
+
 ### A silently-passing check, found and fixed
 
 While wiring VALD I found that `Rounding: no session crosses the ceiling` had been

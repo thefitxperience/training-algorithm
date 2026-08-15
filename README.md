@@ -43,7 +43,7 @@ To publish:
 
 The push triggers the workflow; the URL appears under Actions once the deploy job finishes.
 
-**Everything in `public/data/` becomes publicly downloadable** — all six JSON files,
+**Everything in `public/data/` becomes publicly downloadable** — all seven JSON files,
 including the 3 MB `allocation.json`. It's a static site, so the browser has to be able to
 fetch them; there is no way to publish this and keep the data private. GitHub Pages on a
 free account also requires a **public repo**. If either matters, this needs a host with
@@ -51,7 +51,7 @@ access control rather than Pages.
 
 ## Data
 
-Six files in `public/data/`, served as static assets and fetched once at startup:
+Seven files in `public/data/`, served as static assets and fetched once at startup:
 
 | File | What it is |
 |---|---|
@@ -61,6 +61,7 @@ Six files in `public/data/`, served as static assets and fetched once at startup
 | `prescription.json` | reps/rest keyed `{sex}\|{days}\|{age}\|{level}` then by goal |
 | `splits.json` | split badges keyed `{goal}\|{days}\|{level}\|{split}` (age 18-29 only) |
 | `injury.json` | 18 pains, their rules, load-tag glossary, per-exercise injury records, and UI copy |
+| `structure.json` | joints and antagonists per sub-region, plus the timing, rest and load constants |
 
 They are generated upstream and are **not modified** by this app. `loadData()` in
 [src/data/load.ts](src/data/load.ts) caches the fetch promise at module scope, so
@@ -108,6 +109,54 @@ and are badged. Emptied slots reuse the **existing** fallback cascade — no sec
 — but a slot lost to pain is labelled as a removal ("removed because you reported low back
 pain"), never as "no eligible exercise found". `injury.json`'s `reroute` table was used to
 understand which sub-regions empty, not to route anything.
+
+## Structure (straight / superset / triset)
+
+Second rule layer. It changes **how** the client performs the program, never what the
+program is: one setting for the whole program, volume held exactly, nothing ever blocked.
+Every structure is selectable; a structure is RECOMMENDED or AVAILABLE, never refused.
+
+[src/lib/structure.ts](src/lib/structure.ts) forms blocks in two passes — anchor every
+block on a genuine **antagonist** pair first, across the whole session, then a second pass
+on any legal reason, each block filled to size before the next begins. Both details matter:
+a single greedy pass lets a merely non-competing partner take a slot an antagonist pair
+needed, and pairing everything before growing to three consumes every candidate so trisets
+never form.
+
+Rejections are checked before reasons: protected main lifts (Get Stronger), two compounds
+sharing a joint, synergists, and correctives (which pair only with correctives).
+
+**The time model replaces the old `repsMid * 3 + restMid` formula everywhere**, per the
+spec. Rest is taken once per round for paired work, which is the only reading where a rest
+multiplier of 1.00 still produces a real time saving. Where a block's exercises carry
+different set counts the block runs for the longest of them, so `sets` is the max across
+the block.
+
+### One bug this layer surfaced
+
+The synergist rule compares an exercise's `alsoTrains` against the other's `sub` — but
+`alsoTrains` uses the **injury library's** spelling for eight sub-regions while `sub` uses
+the skeleton's. A literal string compare therefore missed the spec's own worked example:
+`Standing overhead press` lists `Lateral-medial (lockout)` while the pushdown's `sub` is
+`Lateral / medial (lockout)`, so the pair came back *non-competing* and would have been
+supersetted. Fixed by building an exact alias map from the two files **joined on `id`** — no
+fuzzy matching — and both spellings are now checked. The first version of the acceptance
+test repeated the same broken comparison and passed for the wrong reason; it now asserts
+that named pair directly. Superset coverage on the Reference client dropped from 80% to
+**75%** once the rule actually fired.
+
+### Expected behaviour, confirmed
+
+- **Triset is best-effort.** 45% of the Reference client's exercises land in a true triset;
+  the rest come out as pairs because no legal third exists. The selector says *"triset where
+  legal"*, and a two-exercise block is labelled `superset` even when triset is selected —
+  calling it a triset would be untrue.
+- **Bench press and row do not pair.** Both are compounds sharing shoulder and elbow, so the
+  second rejection fires. This follows the spec verbatim and is asserted by name.
+- **The three structures produce similar times for a Lose Fat client** — pairing saves the
+  rest you compress, and a fat-loss client resting 30–45 s has little to compress.
+- The **New client** preset now defaults to `superset`, since that is `recommendedDefault`
+  for Lose Fat; every other preset defaults to `straight`.
 
 ## Split recommendation
 
@@ -196,9 +245,9 @@ Places where the spec left a choice, and what was chosen:
 
 ## Acceptance criteria — current status
 
-`npm run acceptance` → **47 of 47 checks pass**. The five presets all run at `Full gym`, so
+`npm run acceptance` → **58 of 58 checks pass**. The five presets all run at `Full gym`, so
 the original criteria are unaffected by the equipment feature; the rest cover equipment
-tiers, split advice, set rounding and the injury layer. Note the count dropped to 22/22 at one point because
+tiers, split advice, set rounding, the injury layer and the structure layer. Note the count dropped to 22/22 at one point because
 the week criterion was **removed**, not because its failure was fixed — see below.
 
 | Criterion | Status |
@@ -231,6 +280,23 @@ the week criterion was **removed**, not because its failure was fixed — see be
 | **Injury:** SHOULDER + LOWBACK, neither resurrects the other's removals | **pass** |
 | **Injury:** ELBOW_LAT Left keeps unilateral work side-only | **pass, with a caveat** — see below |
 | **Injury:** unticking every pain returns to baseline | **pass** |
+| **Structure:** straight is the existing program, only the clock changes | **pass** — identical exercises and sets, no blocks |
+| **Structure:** volume audit identical across all three | **pass** |
+| **Structure:** switching structure changes session time and nothing else | **pass** — 84/61/82/60 → 74/52/68/52 |
+| **Structure:** Get Stronger never blocks a main lift | **pass** |
+| **Structure:** Build Muscle / Lose Fat do pair main lifts, by design | **pass** |
+| **Structure:** no synergist pair (press + pushdown) | **pass** — after the alias fix below |
+| **Structure:** a corrective is never blocked with a non-corrective | **pass** |
+| **Structure:** two compounds sharing a joint never pair | **pass** |
+
+### A Stage 1 criterion that no longer applies
+
+**"Reference: sessions roughly 54–75 min."** The structure layer replaced the
+`repsMid * 3 + restMid` session-length formula by instruction, so the same program now
+reads **84 / 61 / 82 / 60 min** at `straight`. Nothing about the program changed — only how
+its length is computed. The window was an artefact of the retired formula, so the check now
+asserts the sessions stay inside the goal's own 90 min ceiling and prints the superseded
+window alongside, rather than quietly widening the range.
 
 ### The two injury criteria that pass only with a caveat
 

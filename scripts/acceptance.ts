@@ -13,6 +13,7 @@ import { isEquipmentAvailable, libraryCoverage } from '../src/lib/equipment'
 import { splitAdvice } from '../src/lib/splitAdvice'
 import { roundSets } from '../src/lib/rounding'
 import { buildInjuryIndex, verdictForPain, type PainSelection } from '../src/lib/injury'
+import { buildSubAliases, pairReason, type Structure } from '../src/lib/structure'
 import type { ClientInput, DataBundle } from '../src/types'
 
 const dir = join(process.cwd(), 'public', 'data')
@@ -24,6 +25,7 @@ const data: DataBundle = {
   prescription: read('prescription.json'),
   splits: read('splits.json'),
   injury: read('injury.json'),
+  structure: read('structure.json'),
 }
 const injuryIndex = buildInjuryIndex(data.injury, data.exercises)
 const idOf = (name: string) => data.exercises.find((e) => e.name === name)!.id
@@ -31,6 +33,8 @@ const namesOf = (p: ReturnType<typeof run>) =>
   p.days.flatMap((d) => d.exercises.map((e) => e.exercise.name.toLowerCase()))
 
 const results: { name: string; pass: boolean; detail: string }[] = []
+const notes: string[] = []
+const log = (m: string) => notes.push(m)
 const check = (name: string, pass: boolean, detail = '') => results.push({ name, pass, detail })
 
 const run = (input: ClientInput) => {
@@ -50,13 +54,14 @@ const preset = (name: string) => PRESETS.find((p) => p.name === name)!
     p.exerciseCount >= 38 && p.exerciseCount <= 42,
     `got ${p.exerciseCount}`,
   )
-  // "roughly 54–75" — allow 1 min either side, and always print the exact figures.
+  // The Stage 1 window of "roughly 54–75 min" was computed from `repsMid * 3 + restMid`,
+  // which the structure layer replaced by instruction. Under the new work/rest model the
+  // same program reads longer. Checked against the goal's own ceiling instead, with the
+  // superseded window reported so the change stays visible rather than silently widened.
   check(
-    'Reference: sessions roughly 54–75 min',
-    mins.every((m) => m >= 53 && m <= 76),
-    `${mins.map((m) => m.toFixed(1)).join(', ')} min${
-      mins.some((m) => m < 54 || m > 75) ? '  (marginal: outside a strict 54–75 read)' : ''
-    }`,
+    `Reference: sessions inside the ${p.timeCeiling} min ceiling (new time model)`,
+    mins.every((m) => m <= p.timeCeiling),
+    `${mins.map((m) => m.toFixed(1)).join(', ')} min — Stage 1's 54–75 window came from the retired formula and no longer applies`,
   )
   check('Reference: no fallback warnings', p.warnings.length === 0, `${p.warnings.length} warning(s): ${p.warnings.slice(0, 3).map((w) => w.message).join(' | ')}`)
 }
@@ -369,6 +374,168 @@ const fingerprint = (p: ReturnType<typeof run>) =>
   )
 }
 
+// ---- Structure layer -------------------------------------------------------
+{
+  const withStructure = (s: Structure) => run({ ...REF, structure: s })
+  const straight = withStructure('straight')
+  const superset = withStructure('superset')
+  const triset = withStructure('triset')
+  const all = [straight, superset, triset]
+
+  // straight must be the program that already exists, only the clock changes
+  const picks = (p: ReturnType<typeof run>) =>
+    p.days.map((d) => d.exercises.map((e) => `${e.exercise.id}@${e.sets}`).join(',')).join(' | ')
+  check(
+    'Structure: all three produce identical exercises and sets',
+    picks(straight) === picks(superset) && picks(straight) === picks(triset),
+    picks(straight) === picks(superset) ? 'identical' : 'DIFFERS',
+  )
+  check(
+    'Structure: straight forms no blocks (it is the existing program)',
+    straight.days.every((d) => d.blocks.every((b) => b.indices.length === 1)),
+    `${straight.days.flatMap((d) => d.blocks).filter((b) => b.indices.length > 1).length} blocks`,
+  )
+
+  // volume audit must not move
+  const vol = (p: ReturnType<typeof run>) =>
+    buildAudit(p, data.exercises, REF.sex, data.config)
+      .rows.map((r) => r.delivered.toFixed(4))
+      .join(',')
+  check(
+    'Structure: volume audit is identical across all three',
+    vol(straight) === vol(superset) && vol(straight) === vol(triset),
+    vol(straight) === vol(superset) && vol(straight) === vol(triset) ? 'identical' : 'MOVED',
+  )
+
+  // session time must change
+  const mins = (p: ReturnType<typeof run>) => p.days.map((d) => Math.round(d.minutes)).join('/')
+  check(
+    'Structure: switching structure changes session time',
+    mins(straight) !== mins(superset),
+    `straight ${mins(straight)} | superset ${mins(superset)} | triset ${mins(triset)}`,
+  )
+
+  // Get Stronger protects main lifts; Build Muscle and Lose Fat deliberately do not
+  {
+    const gs = run({ ...preset('Youth strength').input, structure: 'superset' })
+    const blocked = gs.days.flatMap((d) =>
+      d.blocks
+        .filter((b) => b.indices.length > 1)
+        .flatMap((b) => b.indices.map((i) => d.exercises[i]))
+        .filter((e) => e.exercise.mainLift),
+    )
+    check(
+      'Structure (Get Stronger): no main lift is ever inside a block',
+      blocked.length === 0,
+      blocked.map((e) => e.exercise.name).join(', '),
+    )
+
+    const paired = [superset, run({ ...preset('New client').input, structure: 'superset' })].flatMap((p) =>
+      p.days.flatMap((d) =>
+        d.blocks
+          .filter((b) => b.indices.length > 1)
+          .flatMap((b) => b.indices.map((i) => d.exercises[i]))
+          .filter((e) => e.exercise.mainLift),
+      ),
+    )
+    check(
+      'Structure (Build Muscle / Lose Fat): main lifts are pairable, by design',
+      paired.length > 0,
+      `${paired.length} main lifts paired, e.g. ${paired.slice(0, 3).map((e) => e.exercise.name).join(', ')}`,
+    )
+  }
+
+  // Synergist rejection. Compared across BOTH spellings of a sub-region — `alsoTrains`
+  // uses the injury library's wording for eight of them, so a raw string compare would
+  // repeat the bug it is meant to catch and pass for the wrong reason.
+  {
+    const aliases = buildSubAliases(data.exercises, data.injury.exercises)
+    const names = (sub: string) => aliases.get(sub) ?? new Set([sub])
+    const bad: string[] = []
+    for (const p of all)
+      for (const d of p.days)
+        for (const b of d.blocks)
+          for (const i of b.indices)
+            for (const j of b.indices) {
+              if (i >= j) continue
+              const a = d.exercises[i].exercise
+              const c = d.exercises[j].exercise
+              if (
+                a.alsoTrains.some((t) => names(c.sub).has(t)) ||
+                c.alsoTrains.some((t) => names(a.sub).has(t))
+              )
+                bad.push(`${a.name} + ${c.name}`)
+            }
+    check('Structure: no block pairs a synergist', bad.length === 0, bad.join(', '))
+
+    // the spec's own worked example, asserted by name
+    const corrective = new Set(data.injury.exercises.filter((r) => r.corrective).map((r) => r.id))
+    const ctx = {
+      goal: 'Build Muscle',
+      structure: 'superset' as Structure,
+      data: data.structure,
+      corrective,
+      subAliases: aliases,
+    }
+    const ex = (n: string) => data.exercises.find((e) => e.name === n)!
+    const P = (n: string) => ({ exercise: ex(n), sets: 3, corrective: corrective.has(ex(n).id) })
+    check(
+      'Structure: shoulder press + triceps pushdown is rejected as a synergist pair',
+      pairReason(P('Standing overhead press'), P('Pushdown - rope, straight bar, V-bar'), ctx) === null,
+      'they share no joint, so only the synergist rule catches them',
+    )
+    check(
+      'Structure: bench press + row does not pair (two compounds sharing a joint)',
+      pairReason(P('Flat bench press'), P('Bent-over row'), ctx) === null,
+      'follows the spec verbatim, despite being the classic antagonist superset',
+    )
+  }
+
+  // correctives only with correctives
+  {
+    const corrective = new Set(data.injury.exercises.filter((r) => r.corrective).map((r) => r.id))
+    const bad: string[] = []
+    for (const p of [...all, run({ ...REF, structure: 'superset', pains: { SHOULDER: 'Both' } })])
+      for (const d of p.days)
+        for (const b of d.blocks) {
+          if (b.indices.length < 2) continue
+          const flags = b.indices.map((i) => corrective.has(d.exercises[i].exercise.id))
+          if (flags.some(Boolean) && !flags.every(Boolean))
+            bad.push(b.indices.map((i) => d.exercises[i].exercise.name).join(' + '))
+        }
+    check('Structure: a corrective is never blocked with a non-corrective', bad.length === 0, bad.join('; '))
+  }
+
+  // two compounds sharing a joint must never pair
+  {
+    const bad: string[] = []
+    for (const p of all)
+      for (const d of p.days)
+        for (const b of d.blocks)
+          for (const i of b.indices)
+            for (const j of b.indices) {
+              if (i >= j) continue
+              const a = d.exercises[i].exercise
+              const c = d.exercises[j].exercise
+              const ja = new Set(data.structure.joints[a.sub] ?? [])
+              const shares = (data.structure.joints[c.sub] ?? []).some((x) => ja.has(x))
+              if (a.type === 'compound' && c.type === 'compound' && shares)
+                bad.push(`${a.name} + ${c.name}`)
+            }
+    check('Structure: two compounds sharing a joint never pair', bad.length === 0, bad.join(', '))
+  }
+
+  // coverage, reported not asserted
+  const cover = (p: ReturnType<typeof run>, size: number) =>
+    p.days.flatMap((d) => d.blocks).filter((b) => b.indices.length === size).length * size
+  log(
+    `Structure coverage (Reference): superset pairs ${cover(superset, 2)}/${superset.exerciseCount} ` +
+      `(${Math.round((cover(superset, 2) / superset.exerciseCount) * 100)}%), ` +
+      `triset trios ${cover(triset, 3)}/${triset.exerciseCount} ` +
+      `(${Math.round((cover(triset, 3) / triset.exerciseCount) * 100)}%)`,
+  )
+}
+
 // ---- Report ----------------------------------------------------------------
 let failed = 0
 for (const r of results) {
@@ -376,6 +543,7 @@ for (const r of results) {
   console.log(`${r.pass ? 'PASS' : 'FAIL'}  ${r.name}${r.detail ? `\n        ${r.detail}` : ''}`)
 }
 console.log(`\n${results.length - failed}/${results.length} passing`)
+for (const n of notes) console.log(n)
 
 // Extra diagnostics (not pass/fail)
 for (const pr of PRESETS) {

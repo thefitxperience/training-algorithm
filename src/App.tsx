@@ -10,6 +10,7 @@ import { MedicalDisclaimer, PainPanel } from './components/PainPanel'
 import { AuditPanel } from './components/AuditPanel'
 import { EQUIPMENT_TIERS, type EquipmentTier } from './lib/equipment'
 import type { PainSelection, Side } from './lib/injury'
+import { STRUCTURES, structureBadges, type Structure } from './lib/structure'
 import type { ClientInput, DataBundle } from './types'
 
 export type View = 'simple' | 'detailed'
@@ -36,7 +37,14 @@ function inputFromUrl(): ClientInput {
   if (presetName) {
     const p = PRESETS.find((x) => x.name.toLowerCase() === presetName.toLowerCase())
     // a preset fixes the client, but pains layer on top of it
-    if (p) return { ...p.input, pains: painsFromUrl(q) ?? p.input.pains }
+    if (p)
+      return {
+        ...p.input,
+        pains: painsFromUrl(q) ?? p.input.pains,
+        structure: STRUCTURES.includes(q.get('structure') as Structure)
+          ? (q.get('structure') as Structure)
+          : p.input.structure,
+      }
   }
   const base = PRESETS[0].input
   return {
@@ -50,6 +58,9 @@ function inputFromUrl(): ClientInput {
       ? (q.get('equipment') as EquipmentTier)
       : base.equipment,
     pains: painsFromUrl(q) ?? base.pains,
+    structure: STRUCTURES.includes(q.get('structure') as Structure)
+      ? (q.get('structure') as Structure)
+      : base.structure,
   }
 }
 
@@ -91,6 +102,25 @@ export default function App() {
       data && result?.ok ? buildAudit(result.program, data.exercises, input.sex, data.config) : null,
     [data, result, input.sex],
   )
+
+  // What each structure would cost this client, so the change can be previewed before it
+  // is committed to. Volume is held, so a slower structure simply takes longer.
+  const structureInfo = useMemo(() => {
+    if (!data) return null
+    const badges = structureBadges(data.structure, {
+      goal: input.goal,
+      ageBracket: bracket,
+      level: input.level,
+    })
+    const options = STRUCTURES.map((s) => {
+      const r = generate(data, { ...input, structure: s })
+      const minutes = r.ok
+        ? r.program.days.reduce((sum, d) => sum + d.minutes, 0) / r.program.days.length
+        : 0
+      return { structure: s, badge: badges.badges[s], minutes }
+    })
+    return { options, note: badges.trisetDowngraded ? badges.downgradeReason : '' }
+  }, [data, input, bracket])
 
   // `pains` is an object, so it needs comparing by value rather than identity.
   const painsKey = (p: ClientInput) =>
@@ -163,6 +193,8 @@ export default function App() {
             ageBracket={bracket}
             activePreset={activePreset}
             layout="bar"
+            structureOptions={structureInfo?.options ?? []}
+            structureNote={structureInfo?.note ?? ''}
           />
           <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <PainPanel
@@ -187,6 +219,8 @@ export default function App() {
                 exercises={data.exercises}
                 ageBracket={bracket}
                 activePreset={activePreset}
+                structureOptions={structureInfo?.options ?? []}
+                structureNote={structureInfo?.note ?? ''}
               />
               <div className="mt-4 border-t border-slate-200 pt-3">
                 <PainPanel

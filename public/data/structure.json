@@ -1,0 +1,305 @@
+{
+ "joints": {
+  "Upper (incline)": [
+   "shoulder",
+   "elbow"
+  ],
+  "Mid (flat)": [
+   "shoulder",
+   "elbow"
+  ],
+  "Lower (decline/dip)": [
+   "shoulder",
+   "elbow"
+  ],
+  "Vertical pull": [
+   "shoulder",
+   "elbow"
+  ],
+  "Horizontal pull": [
+   "shoulder",
+   "elbow"
+  ],
+  "Stretch (pullover)": [
+   "shoulder"
+  ],
+  "Retraction (rhomboids, mid traps)": [
+   "scapula"
+  ],
+  "Lower traps": [
+   "scapula"
+  ],
+  "Serratus": [
+   "scapula"
+  ],
+  "Upper (shrugs, carries)": [
+   "scapula"
+  ],
+  "Front": [
+   "shoulder"
+  ],
+  "Side": [
+   "shoulder"
+  ],
+  "Rear": [
+   "shoulder"
+  ],
+  "External rotation": [
+   "shoulder"
+  ],
+  "Internal rotation": [
+   "shoulder"
+  ],
+  "Extension": [
+   "neck"
+  ],
+  "Flexion": [
+   "neck"
+  ],
+  "Lateral": [
+   "neck"
+  ],
+  "Long head (stretch)": [
+   "elbow",
+   "shoulder"
+  ],
+  "Short head (peak)": [
+   "elbow"
+  ],
+  "Brachialis / brachioradialis": [
+   "elbow"
+  ],
+  "Long head (overhead)": [
+   "elbow",
+   "shoulder"
+  ],
+  "Lateral / medial (lockout)": [
+   "elbow"
+  ],
+  "Flexors": [
+   "wrist"
+  ],
+  "Extensors": [
+   "wrist"
+  ],
+  "Grip & carry": [
+   "wrist",
+   "hand"
+  ],
+  "Flexion (upper/lower)": [
+   "lumbar",
+   "hip"
+  ],
+  "Anti-extension": [
+   "lumbar"
+  ],
+  "Obliques & anti-rotation": [
+   "lumbar"
+  ],
+  "Anti-lateral flexion": [
+   "lumbar"
+  ],
+  "Erectors": [
+   "lumbar",
+   "hip"
+  ],
+  "QL": [
+   "lumbar"
+  ],
+  "Max - hip extension": [
+   "hip"
+  ],
+  "Max - stretch": [
+   "hip",
+   "knee"
+  ],
+  "Abduction (med/min)": [
+   "hip"
+  ],
+  "Hip flexors": [
+   "hip"
+  ],
+  "External rotators": [
+   "hip"
+  ],
+  "Quads - knee-dominant": [
+   "knee",
+   "hip"
+  ],
+  "Quads - stretch": [
+   "knee"
+  ],
+  "Hams - hinge": [
+   "hip"
+  ],
+  "Hams - curl": [
+   "knee"
+  ],
+  "Adductors - magnus (extension)": [
+   "hip"
+  ],
+  "Adductors - short (adduction)": [
+   "hip"
+  ],
+  "Gastrocnemius": [
+   "ankle",
+   "knee"
+  ],
+  "Soleus": [
+   "ankle"
+  ],
+  "Tibialis anterior": [
+   "ankle"
+  ],
+  "Peroneals & tib posterior": [
+   "ankle"
+  ]
+ },
+ "antagonists": [
+  {
+   "a": [
+    "Upper (incline)",
+    "Mid (flat)",
+    "Lower (decline/dip)"
+   ],
+   "b": [
+    "Vertical pull",
+    "Horizontal pull",
+    "Stretch (pullover)",
+    "Retraction (rhomboids, mid traps)"
+   ]
+  },
+  {
+   "a": [
+    "Long head (stretch)",
+    "Short head (peak)",
+    "Brachialis / brachioradialis"
+   ],
+   "b": [
+    "Long head (overhead)",
+    "Lateral / medial (lockout)"
+   ]
+  },
+  {
+   "a": [
+    "Quads - knee-dominant",
+    "Quads - stretch"
+   ],
+   "b": [
+    "Hams - hinge",
+    "Hams - curl"
+   ]
+  },
+  {
+   "a": [
+    "Max - hip extension",
+    "Max - stretch"
+   ],
+   "b": [
+    "Hip flexors"
+   ]
+  },
+  {
+   "a": [
+    "Front"
+   ],
+   "b": [
+    "Rear"
+   ]
+  },
+  {
+   "a": [
+    "Flexion (upper/lower)",
+    "Anti-extension",
+    "Obliques & anti-rotation",
+    "Anti-lateral flexion"
+   ],
+   "b": [
+    "Erectors",
+    "QL"
+   ]
+  },
+  {
+   "a": [
+    "Gastrocnemius",
+    "Soleus"
+   ],
+   "b": [
+    "Tibialis anterior",
+    "Peroneals & tib posterior"
+   ]
+  },
+  {
+   "a": [
+    "Abduction (med/min)"
+   ],
+   "b": [
+    "Adductors - short (adduction)",
+    "Adductors - magnus (extension)"
+   ]
+  },
+  {
+   "a": [
+    "External rotation"
+   ],
+   "b": [
+    "Internal rotation"
+   ]
+  },
+  {
+   "a": [
+    "Flexors"
+   ],
+   "b": [
+    "Extensors"
+   ]
+  }
+ ],
+ "workSeconds": {
+  "Lose Fat": 35,
+  "Build Muscle": 45,
+  "Get Stronger": 30
+ },
+ "transitionSeconds": 15,
+ "restMultiplier": {
+  "straight": 1.0,
+  "superset": 1.0,
+  "triset": 1.15
+ },
+ "loadAdjustment": {
+  "straight": 0.0,
+  "superset": -0.03,
+  "triset": -0.08
+ },
+ "blockSize": {
+  "straight": 1,
+  "superset": 2,
+  "triset": 3
+ },
+ "recommendedDefault": {
+  "Lose Fat": "superset",
+  "Build Muscle": "straight",
+  "Get Stronger": "straight"
+ },
+ "trisetDowngradeAges": [
+  "6-12",
+  "65+"
+ ],
+ "trisetDowngradeLevels": [
+  "Beginner"
+ ],
+ "mainLiftProtectedGoals": [
+  "Get Stronger"
+ ],
+ "pairingReasons": [
+  "antagonist",
+  "non-competing",
+  "same muscle"
+ ],
+ "rejections": [
+  "main lift (Get Stronger only)",
+  "two compounds sharing a joint",
+  "synergist",
+  "correctives pair only with correctives"
+ ]
+}

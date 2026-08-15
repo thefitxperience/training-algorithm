@@ -4,6 +4,7 @@ import type { Program } from '../lib/generate'
 import { pickKey, roundSets } from '../lib/rounding'
 import { equipmentOptions, isTokenAvailable } from '../lib/equipment'
 import { copyFor, type Side } from '../lib/injury'
+import { sessionMinutes } from '../lib/structure'
 import type { ClientInput, InjuryData } from '../types'
 
 /** The side to actually train is the one the pain is NOT on. */
@@ -16,6 +17,15 @@ const otherSide = (painSide?: Side) =>
  * uses the whole numbers from lib/rounding.ts instead.
  */
 const fmtSets = (n: number) => String(n)
+
+/** Rest follows the structure: "60-90" at ×1.15 becomes "69-104". */
+function scaleRest(rest: string, multiplier: number): string {
+  if (multiplier === 1) return rest
+  return rest
+    .split('-')
+    .map((part) => Math.round(Number(part.trim()) * multiplier))
+    .join('-')
+}
 
 export function ProgramPanel({
   program,
@@ -37,10 +47,15 @@ export function ProgramPanel({
   const rounding = useMemo(() => roundSets(program), [program])
   const setsFor = (dayIndex: number, position: number, raw: number) =>
     detailed ? raw : (rounding.byPick.get(pickKey(dayIndex, position)) ?? raw)
+  // Simple view prescribes whole sets, so its session length follows from those.
   const minutesFor = (day: (typeof days)[number]) =>
     detailed
       ? day.minutes
-      : rounding.dayTotals[day.index] * program.minutesPerSet + program.warmupMinutes
+      : sessionMinutes(
+          day.blocks,
+          (i) => rounding.byPick.get(pickKey(day.index, i)) ?? day.exercises[i].sets,
+          program.timeParams,
+        )
 
   return (
     <div className="space-y-4">
@@ -228,13 +243,31 @@ export function ProgramPanel({
                 {detailed && <th className="px-3 py-1.5 font-semibold">Equipment</th>}
               </tr>
             </thead>
-            <tbody>
-              {day.exercises.map((c, i) => (
+            {/* One tbody per block, so paired work reads as a unit rather than a flat list. */}
+            {day.blocks.map((blk, bi) => (
+            <tbody key={bi} className={blk.indices.length > 1 ? 'border-l-4 border-l-violet-400' : ''}>
+              {blk.indices.length > 1 && (
+                <tr className="bg-violet-50/70">
+                  <td colSpan={detailed ? 6 : 3} className={detailed ? 'px-3 py-1' : 'px-4 py-1.5'}>
+                    <span className="rounded bg-violet-200 px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-violet-900 uppercase">
+                      {blk.structure}
+                    </span>
+                    <span className="ml-2 text-[11px] text-violet-900">
+                      {blk.indices.length} exercises back to back · {blk.reason}
+                      {program.loadAdjustment !== 0 &&
+                        ` · load ${(program.loadAdjustment * 100).toFixed(0)}%`}
+                      {program.restMultiplier !== 1 &&
+                        ` · rest ×${program.restMultiplier.toFixed(2)}`}
+                    </span>
+                  </td>
+                </tr>
+              )}
+              {blk.indices.map((i) => {
+                const c = day.exercises[i]
+                return (
                 <tr
                   key={`${c.exercise.id}-${i}`}
-                  className={`border-b border-slate-100 last:border-0 ${
-                    detailed ? '' : 'odd:bg-slate-50/60'
-                  }`}
+                  className={`border-b border-slate-100 ${detailed ? '' : 'odd:bg-slate-50/60'}`}
                 >
                   <td className={detailed ? 'px-3 py-1.5' : 'px-4 py-2'}>
                     <span className="font-medium text-slate-800">{c.exercise.name}</span>
@@ -306,7 +339,7 @@ export function ProgramPanel({
                       detailed ? 'px-3 py-1.5' : 'px-4 py-2 text-right'
                     }`}
                   >
-                    {c.rest}s
+                    {scaleRest(c.rest, program.restMultiplier)}s
                   </td>
                   {detailed && (
                     <td className="px-3 py-1.5 text-slate-600">
@@ -327,8 +360,10 @@ export function ProgramPanel({
                     </td>
                   )}
                 </tr>
-              ))}
+                )
+              })}
             </tbody>
+            ))}
           </table>
         </section>
         ))}

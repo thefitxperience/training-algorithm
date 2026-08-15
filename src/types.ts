@@ -1,5 +1,6 @@
 import type { EquipmentTier } from './lib/equipment'
 import type { PainSelection } from './lib/injury'
+import type { Structure } from './lib/structure'
 
 export type Sex = 'Male' | 'Female'
 export type Tier = 'primary' | 'secondary' | 'accessory'
@@ -116,6 +117,23 @@ export interface InjuryData {
   emptiedGroups: Record<string, unknown>
 }
 
+export interface StructureData {
+  /** sub-region -> joints involved, keyed on the skeleton spelling in exercises.json */
+  joints: Record<string, string[]>
+  antagonists: { a: string[]; b: string[] }[]
+  workSeconds: Record<string, number>
+  transitionSeconds: number
+  restMultiplier: Record<string, number>
+  loadAdjustment: Record<string, number>
+  blockSize: Record<string, number>
+  recommendedDefault: Record<string, string>
+  trisetDowngradeAges: string[]
+  trisetDowngradeLevels: string[]
+  mainLiftProtectedGoals: string[]
+  pairingReasons: string[]
+  rejections: string[]
+}
+
 export interface DataBundle {
   config: Config
   allocation: Allocation
@@ -123,6 +141,7 @@ export interface DataBundle {
   prescription: Prescription
   splits: Splits
   injury: InjuryData
+  structure: StructureData
 }
 
 export interface ClientInput {
@@ -136,4 +155,6 @@ export interface ClientInput {
   equipment: EquipmentTier
   /** ticked pains and their side — empty means the injury layer is a no-op */
   pains: PainSelection
+  /** how the work is performed; never changes what the work is */
+  structure: Structure
 }

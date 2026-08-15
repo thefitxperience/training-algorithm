@@ -2,6 +2,7 @@ import type { ClientInput, Config, Exercise, Sex, SplitBadge, Splits } from '../
 import { splitsKey } from '../lib/generate'
 import { PRESETS } from '../lib/presets'
 import { splitAdvice } from '../lib/splitAdvice'
+import { type Badge, type Structure } from '../lib/structure'
 import {
   EQUIPMENT_TIERS,
   TIER_DESCRIPTION,
@@ -43,6 +44,19 @@ const selectClass =
 /** 'sidebar' = the detailed view's left column. 'bar' = the simple view's horizontal strip. */
 export type PanelLayout = 'sidebar' | 'bar'
 
+export interface StructureOption {
+  structure: Structure
+  badge: Badge
+  /** average session length for this client under this structure */
+  minutes: number
+}
+
+const STRUCTURE_BLURB: Record<Structure, string> = {
+  straight: 'One exercise at a time, rest, repeat.',
+  superset: 'Two exercises back to back, then rest.',
+  triset: 'Three back to back where legal, then rest.',
+}
+
 export function ClientPanel({
   input,
   setInput,
@@ -52,6 +66,8 @@ export function ClientPanel({
   ageBracket,
   activePreset,
   layout = 'sidebar',
+  structureOptions,
+  structureNote,
 }: {
   input: ClientInput
   setInput: (i: ClientInput) => void
@@ -61,6 +77,9 @@ export function ClientPanel({
   ageBracket: string
   activePreset: string | null
   layout?: PanelLayout
+  structureOptions: StructureOption[]
+  /** why triset was stepped down, if it was */
+  structureNote: string
 }) {
   const set = <K extends keyof ClientInput>(k: K, v: ClientInput[K]) => setInput({ ...input, [k]: v })
 
@@ -193,6 +212,60 @@ export function ClientPanel({
     </Field>
   )
 
+  const current = structureOptions.find((o) => o.structure === input.structure)
+  const structureField = (className?: string) => (
+    <Field label="Structure" className={className}>
+      <div className="grid grid-cols-3 gap-1">
+        {structureOptions.map((o) => {
+          const selected = o.structure === input.structure
+          const delta = current ? Math.round(o.minutes - current.minutes) : 0
+          return (
+            <button
+              key={o.structure}
+              onClick={() => set('structure', o.structure)}
+              // The client sees what a change costs in time BEFORE committing to it.
+              title={`${STRUCTURE_BLURB[o.structure]} ${
+                selected
+                  ? `Sessions average ${Math.round(o.minutes)} min.`
+                  : `This will take about ${Math.round(o.minutes)} min a session instead of ${Math.round(
+                      current?.minutes ?? o.minutes,
+                    )}.`
+              }`}
+              className={`rounded border px-1.5 py-1 text-left transition ${
+                selected
+                  ? 'border-slate-800 bg-slate-800 text-white'
+                  : 'border-slate-300 bg-white hover:bg-slate-50'
+              }`}
+            >
+              <div className="text-[11px] font-semibold capitalize">{o.structure}</div>
+              <div
+                className={`text-[10px] font-bold ${
+                  selected
+                    ? 'text-slate-300'
+                    : o.badge === 'RECOMMENDED'
+                      ? 'text-green-700'
+                      : 'text-slate-400'
+                }`}
+              >
+                {o.badge === 'RECOMMENDED' ? 'Recommended' : 'Available'}
+              </div>
+              <div className={`text-[10px] ${selected ? 'text-slate-200' : 'text-slate-500'}`}>
+                ~{Math.round(o.minutes)} min
+                {!selected && delta !== 0 && ` (${delta > 0 ? '+' : ''}${delta})`}
+              </div>
+            </button>
+          )
+        })}
+      </div>
+      {input.structure === 'triset' && (
+        <div className="mt-1 text-[10px] text-slate-500">
+          Triset where legal — many blocks come out as pairs because no legal third exists.
+        </div>
+      )}
+      {structureNote && <div className="mt-1 text-[10px] text-amber-700">{structureNote}</div>}
+    </Field>
+  )
+
   const suggestionBlock = (
     <div className="rounded border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs">
       {suggestion?.row ? (
@@ -291,7 +364,8 @@ export function ClientPanel({
           {daysField}
           {splitField('md:col-span-2')}
           {equipmentField}
-          <div className="col-span-2 md:col-span-4">{suggestionBlock}</div>
+          {structureField('col-span-2 md:col-span-2')}
+          <div className="col-span-2 md:col-span-2">{suggestionBlock}</div>
         </div>
       </div>
     )
@@ -316,6 +390,7 @@ export function ClientPanel({
         {suggestionBlock}
         {badgeBlock}
         {equipmentField}
+        {structureField()}
       </section>
     </div>
   )

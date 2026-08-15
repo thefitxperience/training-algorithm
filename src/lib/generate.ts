@@ -14,6 +14,16 @@ import {
   type InjuryIndex,
   type PainVerdict,
 } from './injury'
+import {
+  buildSubAliases,
+  formBlocks,
+  sessionMinutes,
+  timeParams,
+  type Block,
+  type Structure,
+  type StructureContext,
+  type TimeParams,
+} from './structure'
 
 /** The injury index only depends on the loaded data, so build it once per bundle. */
 const indexCache = new WeakMap<Exercise[], InjuryIndex>()
@@ -43,6 +53,8 @@ export interface GeneratedDay {
   index: number
   label: string
   exercises: ChosenExercise[]
+  /** how the session is performed — one entry per straight exercise or paired block */
+  blocks: Block[]
   /** sum of sets across the day */
   totalSets: number
   minutes: number
@@ -75,10 +87,12 @@ export interface Program {
   prescriptionKey: string
   exerciseCount: number
   timeCeiling: number
-  /** minutes = totalSets * minutesPerSet + warmupMinutes — exposed so the simple view can
-   *  recompute session length from its whole-number sets */
-  minutesPerSet: number
-  warmupMinutes: number
+  /** exposed so the simple view can recompute session length from its whole-number sets */
+  timeParams: TimeParams
+  structure: Structure
+  /** how much lighter this structure runs, as a fraction (triset -0.08) */
+  loadAdjustment: number
+  restMultiplier: number
   /** verdict per exercise id across the whole library, for the audit and the UI */
   verdicts: Map<number, ExerciseVerdict>
   /** everything the injury layer took out of the pool, for the removals panel */
@@ -234,6 +248,24 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
 
   const eligibleIn = (sub: string): Exercise[] => baseEligibleIn(sub).filter((ex) => !isRemoved(ex))
 
+  // Structure layer: decides how the work is performed, never what it is. Sets, reps and
+  // selection are already fixed by this point.
+  const correctiveIds = new Set(data.injury.exercises.filter((r) => r.corrective).map((r) => r.id))
+  const structureCtx: StructureContext = {
+    goal: input.goal,
+    structure: input.structure,
+    data: data.structure,
+    corrective: correctiveIds,
+    subAliases: buildSubAliases(exercises, data.injury.exercises),
+  }
+  const tp = timeParams(
+    data.structure,
+    input.goal,
+    input.structure,
+    config.restMid[input.goal],
+    config.warmupMinutes,
+  )
+
   const warnings: Warning[] = []
   const usedThisWeek = new Set<number>()
   const days: GeneratedDay[] = []
@@ -347,15 +379,23 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
       return 0
     })
 
+    const blocks = formBlocks(
+      chosen.map((c) => ({
+        exercise: c.exercise,
+        sets: c.sets,
+        corrective: correctiveIds.has(c.exercise.id),
+      })),
+      structureCtx,
+    )
+
     const totalSets = chosen.reduce((s, c) => s + c.sets, 0)
-    const minutes =
-      (totalSets * (config.repsMid[input.goal] * 3 + config.restMid[input.goal])) / 60 +
-      config.warmupMinutes
+    const minutes = sessionMinutes(blocks, (i) => chosen[i].sets, tp)
 
     days.push({
       index: dayIndex,
       label: allocDay.label,
       exercises: chosen,
+      blocks,
       totalSets,
       minutes,
       overCeiling: minutes > config.timeCeiling[input.goal],
@@ -374,8 +414,10 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
       prescriptionKey: pKey,
       exerciseCount: days.reduce((s, d) => s + d.exercises.length, 0),
       timeCeiling: config.timeCeiling[input.goal],
-      minutesPerSet: (config.repsMid[input.goal] * 3 + config.restMid[input.goal]) / 60,
-      warmupMinutes: config.warmupMinutes,
+      timeParams: tp,
+      structure: input.structure,
+      loadAdjustment: data.structure.loadAdjustment[input.structure] ?? 0,
+      restMultiplier: tp.restMultiplier,
       verdicts,
       removedByPain,
     },

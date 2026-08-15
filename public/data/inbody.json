@@ -1,0 +1,439 @@
+{
+ "inputs": [
+  "smm",
+  "smmLow",
+  "smmHigh",
+  "pbf",
+  "pbfLow",
+  "pbfHigh",
+  "tbw",
+  "tbwLow",
+  "tbwHigh",
+  "fatLArm",
+  "fatRArm",
+  "fatTrunk",
+  "fatLLeg",
+  "fatRLeg"
+ ],
+ "thresholds": {
+  "tbwLow": 0.97,
+  "tbwHigh": 1.03,
+  "segmentalOver": 160,
+  "segmentalUnder": 80,
+  "hysteresis": 0.02
+ },
+ "baseTargets": {
+  "Chest": {
+   "Lose Fat": 8.0,
+   "Build Muscle": 12.0,
+   "Get Stronger": 10.0
+  },
+  "Lats": {
+   "Lose Fat": 10.0,
+   "Build Muscle": 14.0,
+   "Get Stronger": 12.0
+  },
+  "Upper back": {
+   "Lose Fat": 8.0,
+   "Build Muscle": 9.0,
+   "Get Stronger": 8.0
+  },
+  "Traps": {
+   "Lose Fat": 4.0,
+   "Build Muscle": 6.0,
+   "Get Stronger": 4.0
+  },
+  "Delts": {
+   "Lose Fat": 12.0,
+   "Build Muscle": 17.0,
+   "Get Stronger": 12.0
+  },
+  "Rotator cuff": {
+   "Lose Fat": 3.0,
+   "Build Muscle": 3.0,
+   "Get Stronger": 4.0
+  },
+  "Neck": {
+   "Lose Fat": 2.0,
+   "Build Muscle": 3.0,
+   "Get Stronger": 3.0
+  },
+  "Biceps": {
+   "Lose Fat": 6.0,
+   "Build Muscle": 12.0,
+   "Get Stronger": 6.0
+  },
+  "Triceps": {
+   "Lose Fat": 7.0,
+   "Build Muscle": 12.0,
+   "Get Stronger": 10.0
+  },
+  "Forearms & grip": {
+   "Lose Fat": 4.0,
+   "Build Muscle": 5.0,
+   "Get Stronger": 6.0
+  },
+  "Abs & core": {
+   "Lose Fat": 10.0,
+   "Build Muscle": 10.0,
+   "Get Stronger": 8.0
+  },
+  "Lower back": {
+   "Lose Fat": 4.0,
+   "Build Muscle": 5.0,
+   "Get Stronger": 6.0
+  },
+  "Glutes & hips": {
+   "Lose Fat": 11.0,
+   "Build Muscle": 13.0,
+   "Get Stronger": 11.0
+  },
+  "Quads, hams, adductors": {
+   "Lose Fat": 20.0,
+   "Build Muscle": 28.0,
+   "Get Stronger": 26.0
+  },
+  "Calves & ankle": {
+   "Lose Fat": 7.0,
+   "Build Muscle": 11.0,
+   "Get Stronger": 7.0
+  }
+ },
+ "goalVectors": {
+  "Lose Fat:1.0|Build Muscle:0.0|Get Stronger:0.0": {
+   "weights": {
+    "Lose Fat": 1.0,
+    "Build Muscle": 0.0,
+    "Get Stronger": 0.0
+   },
+   "volume": {
+    "Chest": 8.0,
+    "Lats": 10.0,
+    "Upper back": 8.0,
+    "Traps": 4.0,
+    "Delts": 12.0,
+    "Rotator cuff": 3.0,
+    "Neck": 2.0,
+    "Biceps": 6.0,
+    "Triceps": 7.0,
+    "Forearms & grip": 4.0,
+    "Abs & core": 10.0,
+    "Lower back": 4.0,
+    "Glutes & hips": 11.0,
+    "Quads, hams, adductors": 20.0,
+    "Calves & ankle": 7.0
+   }
+  },
+  "Lose Fat:0.4|Build Muscle:0.6|Get Stronger:0.0": {
+   "weights": {
+    "Lose Fat": 0.4,
+    "Build Muscle": 0.6,
+    "Get Stronger": 0.0
+   },
+   "volume": {
+    "Chest": 10.5,
+    "Lats": 12.5,
+    "Upper back": 8.5,
+    "Traps": 5.0,
+    "Delts": 15.0,
+    "Rotator cuff": 3.0,
+    "Neck": 2.5,
+    "Biceps": 9.5,
+    "Triceps": 10.0,
+    "Forearms & grip": 4.5,
+    "Abs & core": 10.0,
+    "Lower back": 4.5,
+    "Glutes & hips": 12.0,
+    "Quads, hams, adductors": 25.0,
+    "Calves & ankle": 9.5
+   }
+  },
+  "Lose Fat:0.0|Build Muscle:1.0|Get Stronger:0.0": {
+   "weights": {
+    "Lose Fat": 0.0,
+    "Build Muscle": 1.0,
+    "Get Stronger": 0.0
+   },
+   "volume": {
+    "Chest": 12.0,
+    "Lats": 14.0,
+    "Upper back": 9.0,
+    "Traps": 6.0,
+    "Delts": 17.0,
+    "Rotator cuff": 3.0,
+    "Neck": 3.0,
+    "Biceps": 12.0,
+    "Triceps": 12.0,
+    "Forearms & grip": 5.0,
+    "Abs & core": 10.0,
+    "Lower back": 5.0,
+    "Glutes & hips": 13.0,
+    "Quads, hams, adductors": 28.0,
+    "Calves & ankle": 11.0
+   }
+  },
+  "Lose Fat:0.6|Build Muscle:0.4|Get Stronger:0.0": {
+   "weights": {
+    "Lose Fat": 0.6,
+    "Build Muscle": 0.4,
+    "Get Stronger": 0.0
+   },
+   "volume": {
+    "Chest": 9.5,
+    "Lats": 11.5,
+    "Upper back": 8.5,
+    "Traps": 5.0,
+    "Delts": 14.0,
+    "Rotator cuff": 3.0,
+    "Neck": 2.5,
+    "Biceps": 8.5,
+    "Triceps": 9.0,
+    "Forearms & grip": 4.5,
+    "Abs & core": 10.0,
+    "Lower back": 4.5,
+    "Glutes & hips": 12.0,
+    "Quads, hams, adductors": 23.0,
+    "Calves & ankle": 8.5
+   }
+  },
+  "Lose Fat:0.0|Build Muscle:0.0|Get Stronger:1.0": {
+   "weights": {
+    "Lose Fat": 0.0,
+    "Build Muscle": 0.0,
+    "Get Stronger": 1.0
+   },
+   "volume": {
+    "Chest": 10.0,
+    "Lats": 12.0,
+    "Upper back": 8.0,
+    "Traps": 4.0,
+    "Delts": 12.0,
+    "Rotator cuff": 4.0,
+    "Neck": 3.0,
+    "Biceps": 6.0,
+    "Triceps": 10.0,
+    "Forearms & grip": 6.0,
+    "Abs & core": 8.0,
+    "Lower back": 6.0,
+    "Glutes & hips": 11.0,
+    "Quads, hams, adductors": 26.0,
+    "Calves & ankle": 7.0
+   }
+  },
+  "Lose Fat:0.6|Build Muscle:0.0|Get Stronger:0.4": {
+   "weights": {
+    "Lose Fat": 0.6,
+    "Build Muscle": 0.0,
+    "Get Stronger": 0.4
+   },
+   "volume": {
+    "Chest": 9.0,
+    "Lats": 11.0,
+    "Upper back": 8.0,
+    "Traps": 4.0,
+    "Delts": 12.0,
+    "Rotator cuff": 3.5,
+    "Neck": 2.5,
+    "Biceps": 6.0,
+    "Triceps": 8.0,
+    "Forearms & grip": 5.0,
+    "Abs & core": 9.0,
+    "Lower back": 5.0,
+    "Glutes & hips": 11.0,
+    "Quads, hams, adductors": 22.5,
+    "Calves & ankle": 7.0
+   }
+  },
+  "Lose Fat:0.0|Build Muscle:0.6|Get Stronger:0.4": {
+   "weights": {
+    "Lose Fat": 0.0,
+    "Build Muscle": 0.6,
+    "Get Stronger": 0.4
+   },
+   "volume": {
+    "Chest": 11.0,
+    "Lats": 13.0,
+    "Upper back": 8.5,
+    "Traps": 5.0,
+    "Delts": 15.0,
+    "Rotator cuff": 3.5,
+    "Neck": 3.0,
+    "Biceps": 9.5,
+    "Triceps": 11.0,
+    "Forearms & grip": 5.5,
+    "Abs & core": 9.0,
+    "Lower back": 5.5,
+    "Glutes & hips": 12.0,
+    "Quads, hams, adductors": 27.0,
+    "Calves & ankle": 9.5
+   }
+  },
+  "Lose Fat:0.3|Build Muscle:0.3|Get Stronger:0.4": {
+   "weights": {
+    "Lose Fat": 0.3,
+    "Build Muscle": 0.3,
+    "Get Stronger": 0.4
+   },
+   "volume": {
+    "Chest": 10.0,
+    "Lats": 12.0,
+    "Upper back": 8.5,
+    "Traps": 4.5,
+    "Delts": 13.5,
+    "Rotator cuff": 3.5,
+    "Neck": 2.5,
+    "Biceps": 8.0,
+    "Triceps": 9.5,
+    "Forearms & grip": 5.0,
+    "Abs & core": 9.0,
+    "Lower back": 5.0,
+    "Glutes & hips": 11.5,
+    "Quads, hams, adductors": 25.0,
+    "Calves & ankle": 8.0
+   }
+  }
+ },
+ "restFloor": {
+  "6-12": {
+   "Lose Fat": 45,
+   "Build Muscle": 60,
+   "Get Stronger": 60
+  },
+  "13-17": {
+   "Lose Fat": 30,
+   "Build Muscle": 60,
+   "Get Stronger": 90
+  },
+  "18-29": {
+   "Lose Fat": 30,
+   "Build Muscle": 60,
+   "Get Stronger": 120
+  },
+  "30-39": {
+   "Lose Fat": 30,
+   "Build Muscle": 60,
+   "Get Stronger": 120
+  },
+  "40-49": {
+   "Lose Fat": 40,
+   "Build Muscle": 60,
+   "Get Stronger": 120
+  },
+  "50-64": {
+   "Lose Fat": 45,
+   "Build Muscle": 75,
+   "Get Stronger": 150
+  },
+  "65+": {
+   "Lose Fat": 60,
+   "Build Muscle": 90,
+   "Get Stronger": 150
+  }
+ },
+ "beginnerRestFloor": {
+  "Lose Fat": 45,
+  "Build Muscle": 60,
+  "Get Stronger": 120
+ },
+ "regionOfGroup": {
+  "Chest": "TRUNK",
+  "Lats": "TRUNK",
+  "Upper back": "TRUNK",
+  "Traps": "TRUNK",
+  "Abs & core": "TRUNK",
+  "Delts": "ARMS",
+  "Biceps": "ARMS",
+  "Triceps": "ARMS",
+  "Quads, hams, adductors": "LEGS",
+  "Glutes & hips": "LEGS",
+  "Calves & ankle": "LEGS"
+ },
+ "unownedGroups": [
+  "Rotator cuff",
+  "Neck",
+  "Forearms & grip",
+  "Lower back"
+ ],
+ "rule4": {
+  "structure": "superset",
+  "restMultiplier": 0.75,
+  "loadAdjustment": -0.03
+ },
+ "modifiers": {
+  "pbfUnderVolume": 0.9,
+  "pbfUnderLoad": -0.05,
+  "tbwLowLoad": -0.1,
+  "tbwLowRest": 1.15
+ },
+ "loadClamp": -0.2,
+ "filler": {
+  "default": {
+   "movement": "Jump rope (rotate with pogo hops / low box step-overs)",
+   "bouts": 4,
+   "seconds": 40
+  },
+  "age": {
+   "movement": "Marching in place, step-ups, rope turns without the jump",
+   "bouts": 4,
+   "seconds": 30
+  },
+  "beginner": {
+   "movement": "Default movement",
+   "bouts": 2,
+   "seconds": 30
+  },
+  "non_impact": {
+   "movement": "Bike sprint, sled push, band fast-feet",
+   "bouts": null,
+   "seconds": null
+  }
+ },
+ "fillerNonImpactPains": [
+  "ANKLE",
+  "KNEE",
+  "ACHILLES",
+  "FOOT"
+ ],
+ "baseSets": {
+  "Lose Fat": [
+   3,
+   4
+  ],
+  "Build Muscle": [
+   3,
+   4
+  ],
+  "Get Stronger": [
+   4,
+   5
+  ]
+ },
+ "baseReps": {
+  "Lose Fat": [
+   12,
+   15
+  ],
+  "Build Muscle": [
+   8,
+   12
+  ],
+  "Get Stronger": [
+   3,
+   6
+  ]
+ },
+ "baseRest": {
+  "Lose Fat": [
+   30,
+   45
+  ],
+  "Build Muscle": [
+   60,
+   90
+  ],
+  "Get Stronger": [
+   120,
+   180
+  ]
+ }
+}

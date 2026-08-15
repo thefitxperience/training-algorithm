@@ -1,6 +1,7 @@
 import type { EquipmentTier } from './lib/equipment'
 import type { PainSelection } from './lib/injury'
 import type { Structure } from './lib/structure'
+import type { InBodyInput } from './lib/inbody'
 
 export type Sex = 'Male' | 'Female'
 export type Tier = 'primary' | 'secondary' | 'accessory'
@@ -134,6 +135,36 @@ export interface StructureData {
   rejections: string[]
 }
 
+export interface InBodyData {
+  inputs: string[]
+  thresholds: {
+    tbwLow: number
+    tbwHigh: number
+    segmentalOver: number
+    segmentalUnder: number
+    hysteresis: number
+  }
+  baseTargets: Record<string, Record<string, number>>
+  goalVectors: Record<string, { weights: Record<string, number>; volume: Record<string, number> }>
+  restFloor: Record<string, Record<string, number>>
+  beginnerRestFloor: Record<string, number>
+  regionOfGroup: Record<string, string>
+  unownedGroups: string[]
+  rule4: { structure: string; restMultiplier: number; loadAdjustment: number }
+  modifiers: {
+    pbfUnderVolume: number
+    pbfUnderLoad: number
+    tbwLowLoad: number
+    tbwLowRest: number
+  }
+  loadClamp: number
+  filler: Record<string, { movement: string; bouts: number | null; seconds: number | null }>
+  fillerNonImpactPains: string[]
+  baseSets: Record<string, number[]>
+  baseReps: Record<string, number[]>
+  baseRest: Record<string, number[]>
+}
+
 export interface DataBundle {
   config: Config
   allocation: Allocation
@@ -142,6 +173,7 @@ export interface DataBundle {
   splits: Splits
   injury: InjuryData
   structure: StructureData
+  inbody: InBodyData
 }
 
 export interface ClientInput {
@@ -157,4 +189,6 @@ export interface ClientInput {
   pains: PainSelection
   /** how the work is performed; never changes what the work is */
   structure: Structure
+  /** body-composition scan; empty means the InBody layer is inert */
+  inbody: InBodyInput
 }

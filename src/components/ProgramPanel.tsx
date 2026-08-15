@@ -307,6 +307,22 @@ export function ProgramPanel({
                         {copyFor(injury, 'Caution badge', { pain: c.verdict.decidedBy.painLabel })}
                       </span>
                     )}
+                    {c.rule4 && (
+                      <span
+                        className="ml-1.5 rounded bg-violet-100 px-1 py-0.5 text-[10px] font-bold text-violet-800"
+                        title="Your scan shows high fat in this body region, so these slots run as supersets with shorter rest and reps at the top of the range. Volume and exercise choice are unchanged."
+                      >
+                        FAT-BURN
+                      </span>
+                    )}
+                    {c.loadAdjustment !== undefined && c.loadAdjustment !== 0 && (
+                      <span
+                        className="ml-1.5 rounded bg-slate-200 px-1 py-0.5 text-[10px] font-bold text-slate-700"
+                        title="Load adjustment for this slot — a faster structure means slightly less weight on the bar."
+                      >
+                        {(c.loadAdjustment * 100).toFixed(0)}%
+                      </span>
+                    )}
                     {detailed && c.flag === 'reused' && (
                       <span className="ml-1.5 rounded bg-orange-100 px-1 py-0.5 text-[10px] font-bold text-orange-800">
                         REUSED

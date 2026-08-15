@@ -14,6 +14,7 @@ import { splitAdvice } from '../src/lib/splitAdvice'
 import { roundSets } from '../src/lib/rounding'
 import { buildInjuryIndex, verdictForPain, type PainSelection } from '../src/lib/injury'
 import { buildSubAliases, pairReason, type Structure } from '../src/lib/structure'
+import { WORKED_EXAMPLE, goalWeights, type InBodyInput } from '../src/lib/inbody'
 import type { ClientInput, DataBundle } from '../src/types'
 
 const dir = join(process.cwd(), 'public', 'data')
@@ -26,6 +27,7 @@ const data: DataBundle = {
   splits: read('splits.json'),
   injury: read('injury.json'),
   structure: read('structure.json'),
+  inbody: read('inbody.json'),
 }
 const injuryIndex = buildInjuryIndex(data.injury, data.exercises)
 const idOf = (name: string) => data.exercises.find((e) => e.name === name)!.id
@@ -534,6 +536,182 @@ const fingerprint = (p: ReturnType<typeof run>) =>
       `triset trios ${cover(triset, 3)}/${triset.exerciseCount} ` +
       `(${Math.round((cover(triset, 3) / triset.exerciseCount) * 100)}%)`,
   )
+}
+
+// ---- InBody layer ----------------------------------------------------------
+{
+  const slotsOf = (p: ReturnType<typeof run>) =>
+    p.days.map((d) => d.exercises.map((e) => e.exercise.id).join(',')).join(' | ')
+
+  // inert with no scan
+  {
+    const bad = PRESETS.filter(
+      (pr) => slotsOf(run(pr.input)) !== slotsOf(run({ ...pr.input, inbody: {} })),
+    )
+    const ref = run(REF)
+    check(
+      'InBody: with no scan entered the program is unchanged',
+      bad.length === 0 && !ref.inbody.active,
+      `active=${ref.inbody.active}`,
+    )
+  }
+
+  // the worked example, resolved end to end
+  {
+    const client: ClientInput = {
+      sex: 'Male',
+      age: 34,
+      level: 'Intermediate',
+      goal: 'Get Stronger',
+      days: 4,
+      split: 'Upper / Lower',
+      equipment: 'Full gym',
+      pains: {},
+      structure: 'straight',
+      inbody: WORKED_EXAMPLE,
+    }
+    const p = run(client)
+    const ib = p.inbody
+    const slots = p.days.flatMap((d) => d.exercises)
+    const rule4Slots = slots.filter((s) => s.rule4)
+    const regions = new Set(
+      rule4Slots.map((s) => data.inbody.regionOfGroup[s.exercise.group]),
+    )
+
+    check(
+      'InBody (worked example): states resolve to SMM Under, PBF Over, TBW High, TRUNK Over',
+      ib.states.smm === 'Under' &&
+        ib.states.pbf === 'Over' &&
+        ib.states.tbw === 'High' &&
+        ib.states.TRUNK === 'Over' &&
+        ib.states.ARMS === 'Normal' &&
+        ib.states.LEGS === 'Normal',
+      JSON.stringify(ib.states),
+    )
+    check(
+      'InBody (worked example): TBW ratio 1.072',
+      Math.abs((ib.tbwRatio ?? 0) - 1.072) < 0.001,
+      `${ib.tbwRatio?.toFixed(4)}`,
+    )
+    check(
+      'InBody (worked example): goal vector 30 / 30 / 40',
+      ib.weights['Lose Fat'] === 0.3 &&
+        ib.weights['Build Muscle'] === 0.3 &&
+        ib.weights['Get Stronger'] === 0.4,
+      ib.vectorKey,
+    )
+    check('InBody (worked example): rest floor 120s', ib.restFloor === 120, `${ib.restFloor}s`)
+    check(
+      'InBody (worked example): TRUNK is the only region supersetted',
+      regions.size === 1 && regions.has('TRUNK'),
+      `${[...regions].join(', ')} — ${rule4Slots.length} slots`,
+    )
+    check(
+      'InBody (worked example): straight slot 0%, rule-4 slot -3%',
+      slots.some((s) => !s.rule4 && s.loadAdjustment === 0) &&
+        rule4Slots.every((s) => Math.abs((s.loadAdjustment ?? 0) + 0.03) < 1e-9),
+      `loads seen: ${[...new Set(slots.map((s) => s.loadAdjustment))].join(', ')}`,
+    )
+    check(
+      'InBody (worked example): filler 4 x 40s',
+      ib.filler?.bouts === 4 && ib.filler?.seconds === 40,
+      `${ib.filler?.bouts} x ${ib.filler?.seconds}s`,
+    )
+    check(
+      'InBody: rule 4 never forces a structure change on a main lift',
+      rule4Slots.every((s) => !s.exercise.mainLift),
+      `${rule4Slots.filter((s) => s.exercise.mainLift).length} main lifts caught`,
+    )
+    check(
+      'InBody: unowned groups are never touched by rule 4',
+      rule4Slots.every((s) => !data.inbody.unownedGroups.includes(s.exercise.group)),
+      data.inbody.unownedGroups.join(', '),
+    )
+    // Get Stronger client with TRUNK Over: the 120s floor binds, so the 0.75 multiplier
+    // has no visible effect. Correct, not a bug.
+    check(
+      'InBody: Get Stronger + TRUNK Over leaves rest at the 120s floor',
+      slots.every((s) => s.rest === '120'),
+      `rest values: ${[...new Set(slots.map((s) => s.rest))].join(', ')}`,
+    )
+  }
+
+  // the golden rule, across presets and several scans
+  {
+    const scans: InBodyInput[] = [
+      WORKED_EXAMPLE,
+      { smm: 45, smmLow: 31.6, smmHigh: 38.6, pbf: 8, pbfLow: 10, pbfHigh: 20, tbw: 30, tbwLow: 38.4, tbwHigh: 46.9, fatLArm: 70, fatRArm: 75, fatTrunk: 90, fatLLeg: 200, fatRLeg: 90 },
+      { pbf: 30, pbfLow: 10, pbfHigh: 20 },
+      { smm: 20, smmLow: 31.6, smmHigh: 38.6 },
+    ]
+    const bad: string[] = []
+    for (const pr of PRESETS)
+      for (const [i, scan] of scans.entries()) {
+        const base = run(pr.input)
+        const withScan = run({ ...pr.input, inbody: scan })
+        if (slotsOf(base) !== slotsOf(withScan) || base.exerciseCount !== withScan.exerciseCount)
+          bad.push(`${pr.name}/scan${i}`)
+      }
+    check(
+      'InBody: slot count and exercise selection are identical for every scan',
+      bad.length === 0,
+      bad.length ? bad.join(', ') : `${PRESETS.length} presets x ${scans.length} scans`,
+    )
+  }
+
+  // weights always legal
+  {
+    const bad: string[] = []
+    for (const goal of data.config.goals)
+      for (const smm of ['Under', 'Normal', 'Over'] as const)
+        for (const pbf of ['Under', 'Normal', 'Over'] as const) {
+          const w = goalWeights(goal, { smm, pbf, tbw: null, ARMS: null, TRUNK: null, LEGS: null })
+          const sum = Object.values(w).reduce((a, b) => a + b, 0)
+          if (Math.abs(sum - 1) > 1e-9 || w[goal] < 0.4 - 1e-9) bad.push(`${goal}/${smm}/${pbf}`)
+        }
+    check(
+      'InBody: goal weights always sum to 1.00 and the stated goal keeps >= 0.40',
+      bad.length === 0,
+      bad.length ? bad.join(', ') : 'all 27 state combinations',
+    )
+  }
+
+  // injury still outranks InBody, and pain drives the filler movement
+  {
+    const client: ClientInput = {
+      ...REF,
+      goal: 'Get Stronger',
+      pains: { ANKLE: 'Both' },
+      inbody: WORKED_EXAMPLE,
+    }
+    const p = run(client)
+    const chosenIds = new Set(p.days.flatMap((d) => d.exercises.map((e) => e.exercise.id)))
+    const removed = p.removedByPain.map((r) => r.exercise.id)
+    check(
+      'InBody: injury REMOVE verdicts still hold with InBody active',
+      removed.every((id) => !chosenIds.has(id)) && removed.length > 0,
+      `${removed.length} removed, none resurrected`,
+    )
+    check(
+      'InBody: ankle pain + high TBW gives the non-impact filler',
+      p.inbody.filler?.movement === data.inbody.filler.non_impact.movement,
+      `${p.inbody.filler?.bouts} x ${p.inbody.filler?.seconds}s — ${p.inbody.filler?.movement}`,
+    )
+  }
+
+  // most-restrictive filler fields, taken independently
+  {
+    const p = run({
+      ...preset('Stress test').input, // age 10, Beginner
+      inbody: WORKED_EXAMPLE,
+    })
+    const f = p.inbody.filler
+    check(
+      'InBody: a 6-12 Beginner gets 2 bouts x 30s of the non-impact movement',
+      f?.bouts === 2 && f?.seconds === 30 && f?.movement === data.inbody.filler.age.movement,
+      `${f?.bouts} x ${f?.seconds}s — ${f?.movement}`,
+    )
+  }
 }
 
 // ---- Report ----------------------------------------------------------------

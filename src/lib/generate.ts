@@ -15,9 +15,15 @@ import {
   type PainVerdict,
 } from './injury'
 import {
+  evaluateInBody,
+  groupsForRegions,
+  slotLoad,
+  type InBodyResult,
+} from './inbody'
+import {
+  blockSeconds,
   buildSubAliases,
   formBlocks,
-  sessionMinutes,
   timeParams,
   type Block,
   type Structure,
@@ -47,6 +53,10 @@ export interface ChosenExercise {
   flag?: 'reused' | 'substituted'
   /** injury-layer verdict for this exercise against the ticked pains */
   verdict: ExerciseVerdict
+  /** InBody rule 4 forced the fat-burning structure on this slot */
+  rule4?: boolean
+  /** per-slot load adjustment, as a fraction — two slots can legitimately differ */
+  loadAdjustment?: number
 }
 
 export interface GeneratedDay {
@@ -93,6 +103,8 @@ export interface Program {
   /** how much lighter this structure runs, as a fraction (triset -0.08) */
   loadAdjustment: number
   restMultiplier: number
+  /** everything the InBody layer derived and changed; inert when no scan was entered */
+  inbody: InBodyResult
   /** verdict per exercise id across the whole library, for the audit and the UI */
   verdicts: Map<number, ExerciseVerdict>
   /** everything the injury layer took out of the pool, for the removals panel */
@@ -268,7 +280,7 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
 
   const warnings: Warning[] = []
   const usedThisWeek = new Set<number>()
-  const days: GeneratedDay[] = []
+  const selected: { index: number; label: string; chosen: ChosenExercise[] }[] = []
 
   block.days.forEach((allocDay, dayIndex) => {
     const chosen: ChosenExercise[] = []
@@ -379,27 +391,122 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
       return 0
     })
 
-    const blocks = formBlocks(
-      chosen.map((c) => ({
-        exercise: c.exercise,
-        sets: c.sets,
-        corrective: correctiveIds.has(c.exercise.id),
-      })),
-      structureCtx,
-    )
+    selected.push({ index: dayIndex, label: allocDay.label, chosen })
+  })
+
+  // ---- InBody -------------------------------------------------------------
+  // Runs after selection because it solves sets against the exercises actually chosen. It
+  // never changes the split, the frequency, the slot count or the selection — only the
+  // values in those slots, plus a forced structure on high-fat regions.
+  const allChosen = selected.flatMap((d) => d.chosen)
+  const inbody = evaluateInBody(input.inbody, data.inbody, {
+    statedGoal: input.goal,
+    ageBracket: ageBr,
+    level: input.level,
+    chosen: allChosen.map((c) => ({ exercise: c.exercise, group: c.exercise.group })),
+    indirectCredit: config.indirectCredit,
+    subToGroup,
+    pains: Object.keys(input.pains),
+  })
+  const rule4Groups = inbody.active
+    ? groupsForRegions(data.inbody, inbody.rule4Regions)
+    : new Set<string>()
+
+  /** rule 4 never forces a structure change on a main lift, for any goal */
+  const onRule4 = (c: ChosenExercise) =>
+    inbody.active && rule4Groups.has(c.exercise.group) && !c.exercise.mainLift
+
+  const rule4Rest = Math.max(
+    inbody.restFloor,
+    Math.round(inbody.rest * data.inbody.rule4.restMultiplier),
+  )
+
+  const days: GeneratedDay[] = selected.map(({ index: dayIndex, label, chosen }) => {
+    // InBody replaces the goal-keyed values on each slot. Sets come from the resolved
+    // per-group figure; reps and rest from the blended, floored numbers.
+    if (inbody.active) {
+      for (const c of chosen) {
+        const resolved = inbody.sets[c.exercise.group]
+        if (resolved !== undefined) c.sets = resolved
+        c.reps = onRule4(c) ? String(inbody.reps[1]) : `${inbody.reps[0]}-${inbody.reps[1]}`
+        c.rest = String(onRule4(c) ? rule4Rest : inbody.rest)
+        c.rule4 = onRule4(c)
+      }
+    }
+
+    const pairable = chosen.map((c) => ({
+      exercise: c.exercise,
+      sets: c.sets,
+      corrective: correctiveIds.has(c.exercise.id),
+    }))
+
+    // The structure is now per region: rule-4 slots are supersetted while the rest keep the
+    // client's own choice, so blocks are formed within each pool and merged.
+    let blocks: Block[]
+    if (inbody.active && rule4Groups.size > 0) {
+      const rule4Idx = chosen.map((c, i) => (onRule4(c) ? i : -1)).filter((i) => i >= 0)
+      const otherIdx = chosen.map((_, i) => i).filter((i) => !rule4Idx.includes(i))
+      const remap = (subset: number[], b: Block): Block => ({
+        ...b,
+        indices: b.indices.map((i) => subset[i]),
+      })
+      blocks = [
+        ...formBlocks(
+          rule4Idx.map((i) => pairable[i]),
+          { ...structureCtx, structure: data.inbody.rule4.structure as Structure },
+        ).map((b) => remap(rule4Idx, b)),
+        ...formBlocks(
+          otherIdx.map((i) => pairable[i]),
+          structureCtx,
+        ).map((b) => remap(otherIdx, b)),
+      ].sort((a, b) => a.indices[0] - b.indices[0])
+    } else {
+      blocks = formBlocks(pairable, structureCtx)
+    }
+
+    // Step 8 — load is per slot, not per program: two slots in one session can carry
+    // different adjustments because their structures differ.
+    for (const b of blocks) {
+      const blockLoad = b.indices.length > 1 ? (data.structure.loadAdjustment[b.structure] ?? 0) : 0
+      for (const i of b.indices) {
+        // A rule-4 slot carries the fat-burning structure by instruction, so it takes that
+        // load adjustment whether or not a legal partner happened to be found for it.
+        const structureLoad = chosen[i].rule4 ? data.inbody.rule4.loadAdjustment : blockLoad
+        chosen[i].loadAdjustment = inbody.active
+          ? slotLoad(data.inbody, inbody, structureLoad)
+          : structureLoad
+      }
+    }
 
     const totalSets = chosen.reduce((s, c) => s + c.sets, 0)
-    const minutes = sessionMinutes(blocks, (i) => chosen[i].sets, tp)
+    // Per-block timing, since one region can be supersetted while another is straight.
+    const minutes =
+      blocks.reduce((sum, b) => {
+        const isRule4 = onRule4(chosen[b.indices[0]])
+        const params = inbody.active
+          ? {
+              ...tp,
+              restSeconds: isRule4 ? rule4Rest : inbody.rest,
+              restMultiplier:
+                b.indices.length > 1
+                  ? (data.structure.restMultiplier[b.structure] ?? 1)
+                  : tp.restMultiplier,
+            }
+          : tp
+        return sum + blockSeconds(b, (i) => chosen[i].sets, params)
+      }, 0) /
+        60 +
+      config.warmupMinutes
 
-    days.push({
+    return {
       index: dayIndex,
-      label: allocDay.label,
+      label,
       exercises: chosen,
       blocks,
       totalSets,
       minutes,
       overCeiling: minutes > config.timeCeiling[input.goal],
-    })
+    }
   })
 
   return {
@@ -418,6 +525,7 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
       structure: input.structure,
       loadAdjustment: data.structure.loadAdjustment[input.structure] ?? 0,
       restMultiplier: tp.restMultiplier,
+      inbody,
       verdicts,
       removedByPain,
     },

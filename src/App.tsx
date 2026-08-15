@@ -7,6 +7,8 @@ import { PRESETS } from './lib/presets'
 import { ClientPanel } from './components/ClientPanel'
 import { ProgramPanel } from './components/ProgramPanel'
 import { MedicalDisclaimer, PainPanel } from './components/PainPanel'
+import { InBodyPanel } from './components/InBodyPanel'
+import { WORKED_EXAMPLE, hasAnyInput, type InBodyInput } from './lib/inbody'
 import { AuditPanel } from './components/AuditPanel'
 import { EQUIPMENT_TIERS, type EquipmentTier } from './lib/equipment'
 import type { PainSelection, Side } from './lib/injury'
@@ -31,6 +33,22 @@ function painsFromUrl(q: URLSearchParams): PainSelection | null {
   ) as PainSelection
 }
 
+/** inbody=smm:30.1,pbf:26.4,… or inbody=example for the spec's worked client */
+function inbodyFromUrl(q: URLSearchParams): InBodyInput | null {
+  const raw = q.get('inbody')
+  if (raw === null) return null
+  if (raw === 'example') return WORKED_EXAMPLE
+  return Object.fromEntries(
+    raw
+      .split(',')
+      .filter(Boolean)
+      .map((entry) => {
+        const [k, v] = entry.split(':')
+        return [k, Number(v)]
+      }),
+  ) as InBodyInput
+}
+
 function inputFromUrl(): ClientInput {
   const q = new URLSearchParams(window.location.search)
   const presetName = q.get('preset')
@@ -41,6 +59,7 @@ function inputFromUrl(): ClientInput {
       return {
         ...p.input,
         pains: painsFromUrl(q) ?? p.input.pains,
+        inbody: inbodyFromUrl(q) ?? p.input.inbody,
         structure: STRUCTURES.includes(q.get('structure') as Structure)
           ? (q.get('structure') as Structure)
           : p.input.structure,
@@ -58,6 +77,7 @@ function inputFromUrl(): ClientInput {
       ? (q.get('equipment') as EquipmentTier)
       : base.equipment,
     pains: painsFromUrl(q) ?? base.pains,
+    inbody: inbodyFromUrl(q) ?? base.inbody,
     structure: STRUCTURES.includes(q.get('structure') as Structure)
       ? (q.get('structure') as Structure)
       : base.structure,
@@ -81,11 +101,18 @@ export default function App() {
   useEffect(() => {
     const q = new URLSearchParams(
       Object.entries(input)
-        .filter(([k]) => k !== 'pains')
+        .filter(([k]) => k !== 'pains' && k !== 'inbody')
         .map(([k, v]) => [k, String(v)]) as [string, string][],
     )
     const pains = Object.entries(input.pains)
     if (pains.length) q.set('pains', pains.map(([id, side]) => `${id}:${side}`).join(','))
+    if (hasAnyInput(input.inbody))
+      q.set(
+        'inbody',
+        Object.entries(input.inbody)
+          .map(([k, v]) => `${k}:${v}`)
+          .join(','),
+      )
     q.set('view', view)
     window.history.replaceState(null, '', `?${q.toString()}`)
   }, [input, view])
@@ -195,7 +222,19 @@ export default function App() {
             layout="bar"
             structureOptions={structureInfo?.options ?? []}
             structureNote={structureInfo?.note ?? ''}
+            effectiveGoal={result?.ok ? result.program.inbody.dominantGoal || undefined : undefined}
           />
+          {result?.ok && (
+            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <InBodyPanel
+                data={data.inbody}
+                input={input.inbody}
+                setInput={(inbody) => setInput({ ...input, inbody })}
+                result={result.program.inbody}
+                compact
+              />
+            </div>
+          )}
           <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <PainPanel
               injury={data.injury}
@@ -221,7 +260,18 @@ export default function App() {
                 activePreset={activePreset}
                 structureOptions={structureInfo?.options ?? []}
                 structureNote={structureInfo?.note ?? ''}
+                effectiveGoal={result?.ok ? result.program.inbody.dominantGoal || undefined : undefined}
               />
+              {result?.ok && (
+                <div className="mt-4 border-t border-slate-200 pt-3">
+                  <InBodyPanel
+                    data={data.inbody}
+                    input={input.inbody}
+                    setInput={(inbody) => setInput({ ...input, inbody })}
+                    result={result.program.inbody}
+                  />
+                </div>
+              )}
               <div className="mt-4 border-t border-slate-200 pt-3">
                 <PainPanel
                   injury={data.injury}

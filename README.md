@@ -43,7 +43,7 @@ To publish:
 
 The push triggers the workflow; the URL appears under Actions once the deploy job finishes.
 
-**Everything in `public/data/` becomes publicly downloadable** — all seven JSON files,
+**Everything in `public/data/` becomes publicly downloadable** — all eight JSON files,
 including the 3 MB `allocation.json`. It's a static site, so the browser has to be able to
 fetch them; there is no way to publish this and keep the data private. GitHub Pages on a
 free account also requires a **public repo**. If either matters, this needs a host with
@@ -51,7 +51,7 @@ access control rather than Pages.
 
 ## Data
 
-Seven files in `public/data/`, served as static assets and fetched once at startup:
+Eight files in `public/data/`, served as static assets and fetched once at startup:
 
 | File | What it is |
 |---|---|
@@ -62,6 +62,7 @@ Seven files in `public/data/`, served as static assets and fetched once at start
 | `splits.json` | split badges keyed `{goal}\|{days}\|{level}\|{split}` (age 18-29 only) |
 | `injury.json` | 18 pains, their rules, load-tag glossary, per-exercise injury records, and UI copy |
 | `structure.json` | joints and antagonists per sub-region, plus the timing, rest and load constants |
+| `inbody.json` | scan thresholds, the 8 pre-blended goal vectors, rest floors, region map and filler rules |
 
 They are generated upstream and are **not modified** by this app. `loadData()` in
 [src/data/load.ts](src/data/load.ts) caches the fetch promise at module scope, so
@@ -70,7 +71,9 @@ They are generated upstream and are **not modified** by this app. `loadData()` i
 Client state and the view mode are mirrored into the query string, so any program is a
 linkable regression case: `?preset=Stress%20test&view=detailed`, or
 `?sex=Male&age=28&level=Intermediate&…`. Pains ride along too, and layer on top of a preset:
-`?preset=Reference&pains=SHOULDER:Left,LOWBACK:Both`.
+`?preset=Reference&pains=SHOULDER:Left,LOWBACK:Both`. So does a scan —
+`?inbody=example` loads the spec's worked client, or pass the values as
+`?inbody=smm:30.1,pbf:26.4,…`.
 
 ## Layout
 
@@ -157,6 +160,55 @@ that named pair directly. Superset coverage on the Reference client dropped from
   rest you compress, and a fat-loss client resting 30–45 s has little to compress.
 - The **New client** preset now defaults to `superset`, since that is `recommendedDefault`
   for Lose Fat; every other preset defaults to `straight`.
+
+## InBody
+
+Third rule layer. It reads a body-composition scan and shifts the program's **values** —
+volume, reps, rest, load — and forces a faster structure on body regions carrying high fat.
+
+**The golden rule holds: InBody never changes the requested frequency, the split, the slot
+count, or which exercises are selected.** `allocation.json` is still looked up with the
+client's *stated* goal; the blend only changes what fills those slots. Asserted across every
+preset × four scans.
+
+[src/lib/inbody.ts](src/lib/inbody.ts) applies the ten steps in order. The state space is
+factorised, not tabulated — 8 goal vectors × independent modifiers, no 2,187-row lookup.
+Sets are solved iteratively against the same delivered calculation the volume audit uses, so
+the blended weekly target and the audit agree by construction.
+
+Everything that fires gets a visible line in the panel: what was measured, what changed, and
+that it is overridable.
+
+### Three consequences worth knowing
+
+- **A main lift can be prescribed at 1 set.** On the worked example, Lower back has a
+  blended target of 5 sets but picks up **3.9 sets of indirect credit** from other
+  exercises' `alsoTrains`. With one slot, step 4 solves (5 − 3.9) / 1 = 1.1 → **1 set**, and
+  that slot happens to be Rack pull. This follows step 4 verbatim: the solver treats indirect
+  credit as fungible with direct work, and the golden rule forbids adding a slot to spread
+  the load. Flagged rather than special-cased, since capping it would mean overshooting the
+  blended target.
+- **Volume undershoots where the sets clamp binds.** Glutes & hips wants 11.5 weekly sets
+  but has one slot, and sets are capped at the blended range's top (4.4), so it delivers
+  7.2. Again structural: InBody cannot add slots.
+- **Rest often looks untouched.** For the worked example the 120s floor absorbs both the
+  rule-4 × 0.75 multiplier and the ×1.15 hydration multiplier. Correct, not a bug — a floor
+  is never blended.
+
+### Readings the spec left open
+
+1. **Hysteresis needs a previous scan.** The 2% band widens what a value must cross to leave
+   an established state; with no scan history stored, a first scan classifies directly. The
+   comparison is implemented and honoured whenever a previous state is supplied.
+2. **The step 5 floor.** "Re-apply every floor" is read as the blended sets range's lower
+   bound, which is what makes the cut "frequently cancelled" as the spec predicts. A group
+   already below that bound keeps its own value — a volume *cut* must never push a group
+   upward.
+3. **Rule-4 load.** A rule-4 slot takes `rule4.loadAdjustment` (−3%) whether or not a legal
+   partner was found for it, since the structure is forced by instruction. That is what makes
+   the worked example's "rule-4 superset slot −3%" hold even where pairing failed.
+4. **Split re-badging** uses the dominant blended goal, and the panel says so when it differs
+   from the stated goal.
 
 ## Split recommendation
 
@@ -245,9 +297,9 @@ Places where the spec left a choice, and what was chosen:
 
 ## Acceptance criteria — current status
 
-`npm run acceptance` → **58 of 58 checks pass**. The five presets all run at `Full gym`, so
+`npm run acceptance` → **74 of 74 checks pass**. The five presets all run at `Full gym`, so
 the original criteria are unaffected by the equipment feature; the rest cover equipment
-tiers, split advice, set rounding, the injury layer and the structure layer. Note the count dropped to 22/22 at one point because
+tiers, split advice, set rounding, the injury, structure and InBody layers. Note the count dropped to 22/22 at one point because
 the week criterion was **removed**, not because its failure was fixed — see below.
 
 | Criterion | Status |
@@ -288,6 +340,21 @@ the week criterion was **removed**, not because its failure was fixed — see be
 | **Structure:** no synergist pair (press + pushdown) | **pass** — after the alias fix below |
 | **Structure:** a corrective is never blocked with a non-corrective | **pass** |
 | **Structure:** two compounds sharing a joint never pair | **pass** |
+| **InBody:** no scan entered leaves the program unchanged | **pass** |
+| **InBody:** worked example states — SMM Under, PBF Over, TBW High, TRUNK Over | **pass** |
+| **InBody:** worked example TBW ratio 1.072 | **pass** — 1.0718 |
+| **InBody:** worked example goal vector 30 / 30 / 40 | **pass** |
+| **InBody:** worked example rest floor 120s | **pass** |
+| **InBody:** TRUNK the only region supersetted | **pass** — 5 slots |
+| **InBody:** straight slot 0%, rule-4 slot −3% | **pass** |
+| **InBody:** worked example filler 4 × 40s | **pass** |
+| **InBody:** rule 4 never touches a main lift or an unowned group | **pass** |
+| **InBody:** Get Stronger + TRUNK Over leaves rest at the 120s floor | **pass** |
+| **InBody:** slot count and selection identical for every scan | **pass** — 5 presets × 4 scans |
+| **InBody:** weights sum to 1.00, stated goal keeps ≥ 0.40 | **pass** — all 27 state combinations |
+| **InBody:** injury REMOVE verdicts still hold | **pass** |
+| **InBody:** ankle pain + high TBW gives the non-impact filler | **pass** |
+| **InBody:** a 6-12 Beginner gets 2 × 30s non-impact | **pass** — fields taken independently |
 
 ### A Stage 1 criterion that no longer applies
 

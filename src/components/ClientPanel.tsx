@@ -68,6 +68,7 @@ export function ClientPanel({
   layout = 'sidebar',
   structureOptions,
   structureNote,
+  effectiveGoal,
 }: {
   input: ClientInput
   setInput: (i: ClientInput) => void
@@ -80,10 +81,19 @@ export function ClientPanel({
   structureOptions: StructureOption[]
   /** why triset was stepped down, if it was */
   structureNote: string
+  /** dominant goal after any InBody blend — split badges are recomputed against it */
+  effectiveGoal?: string
 }) {
   const set = <K extends keyof ClientInput>(k: K, v: ClientInput[K]) => setInput({ ...input, [k]: v })
 
-  const advice = splitAdvice(splits, input, config.splits, ageBracket)
+  // Step 9 — the blended goal feeds the split engine, so a badge can move.
+  const advice = splitAdvice(
+    splits,
+    { ...input, goal: effectiveGoal ?? input.goal },
+    config.splits,
+    ageBracket,
+  )
+  const rebadged = Boolean(effectiveGoal && effectiveGoal !== input.goal)
   const suggestion = advice.recommended[0] ?? advice.best
   const isBadged = suggestion?.row?.badge === 'Recommended'
   const onSuggestion = suggestion?.split === input.split
@@ -317,6 +327,12 @@ export function ClientPanel({
         <span className="text-slate-500">
           No split ratings are available for {input.goal} / {input.days} days / {input.level}.
         </span>
+      )}
+      {rebadged && (
+        <div className="mt-1 border-t border-slate-200 pt-1 text-[10px] text-violet-700">
+          Re-rated against your blended goal ({effectiveGoal}) rather than your stated one, because
+          your scan shifted the balance.
+        </div>
       )}
       {advice.fromReferenceBracket && (
         <div className="mt-1 border-t border-slate-200 pt-1 text-[10px] text-amber-700">

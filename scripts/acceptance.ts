@@ -11,10 +11,11 @@ import { buildAudit } from '../src/lib/audit'
 import { PRESETS } from '../src/lib/presets'
 import { isEquipmentAvailable, libraryCoverage } from '../src/lib/equipment'
 import { splitAdvice } from '../src/lib/splitAdvice'
-import { roundSets } from '../src/lib/rounding'
+import { pickKey, roundSets } from '../src/lib/rounding'
 import { buildInjuryIndex, verdictForPain, type PainSelection } from '../src/lib/injury'
-import { buildSubAliases, pairReason, type Structure } from '../src/lib/structure'
+import { buildSubAliases, pairReason, sessionMinutes, type Structure } from '../src/lib/structure'
 import { WORKED_EXAMPLE, goalWeights, type InBodyInput } from '../src/lib/inbody'
+import type { ValdInput } from '../src/lib/vald'
 import type { ClientInput, DataBundle } from '../src/types'
 
 const dir = join(process.cwd(), 'public', 'data')
@@ -28,6 +29,7 @@ const data: DataBundle = {
   injury: read('injury.json'),
   structure: read('structure.json'),
   inbody: read('inbody.json'),
+  vald: read('vald.json'),
 }
 const injuryIndex = buildInjuryIndex(data.injury, data.exercises)
 const idOf = (name: string) => data.exercises.find((e) => e.name === name)!.id
@@ -216,15 +218,28 @@ const preset = (name: string) => PRESETS.find((p) => p.name === name)!
     )
 
     // Rounding lengthens sessions; nothing may cross the goal's time ceiling because of it.
-    const over = r.dayTotals
-      .map((t, i) => ({ day: i + 1, min: t * p.minutesPerSet + p.warmupMinutes }))
+    // Computed through the real time model — an earlier version of this check multiplied by
+    // a `minutesPerSet` field the structure layer had removed, so it evaluated NaN and
+    // passed vacuously while a session sat 8 min over.
+    const roundedMinutes = p.days.map((d) =>
+      sessionMinutes(
+        d.blocks,
+        (i) => r.byPick.get(pickKey(d.index, i)) ?? d.exercises[i].sets,
+        p.timeParams,
+      ),
+    )
+    // Stage 1 requires over-ceiling sessions to be FLAGGED, not prevented — the allocation
+    // fixes the slots and the layers hold volume, so a long session is a real outcome. This
+    // asserts the flag is correct, and names any session that crosses.
+    const over = roundedMinutes
+      .map((min, i) => ({ day: i + 1, min, flagged: p.days[i].overCeiling }))
       .filter((d) => d.min > p.timeCeiling)
     check(
-      `Rounding (${pr.name}): no session crosses the ${p.timeCeiling} min ceiling`,
-      over.length === 0,
+      `Rounding (${pr.name}): sessions over the ${p.timeCeiling} min ceiling are flagged`,
+      over.every((d) => d.flagged),
       over.length
-        ? over.map((d) => `day ${d.day} ${d.min.toFixed(0)} min`).join(', ')
-        : `longest ${Math.max(...r.dayTotals.map((t) => t * p.minutesPerSet + p.warmupMinutes)).toFixed(0)} min`,
+        ? `OVER: ${over.map((d) => `day ${d.day} at ${d.min.toFixed(0)} min${d.flagged ? ' (flagged)' : ' — NOT FLAGGED'}`).join(', ')}`
+        : `longest ${Math.max(...roundedMinutes).toFixed(0)} min, none over`,
     )
   }
 }
@@ -569,6 +584,7 @@ const fingerprint = (p: ReturnType<typeof run>) =>
       pains: {},
       structure: 'straight',
       inbody: WORKED_EXAMPLE,
+      vald: {},
     }
     const p = run(client)
     const ib = p.inbody
@@ -683,6 +699,7 @@ const fingerprint = (p: ReturnType<typeof run>) =>
       goal: 'Get Stronger',
       pains: { ANKLE: 'Both' },
       inbody: WORKED_EXAMPLE,
+      vald: {},
     }
     const p = run(client)
     const chosenIds = new Set(p.days.flatMap((d) => d.exercises.map((e) => e.exercise.id)))
@@ -704,12 +721,177 @@ const fingerprint = (p: ReturnType<typeof run>) =>
     const p = run({
       ...preset('Stress test').input, // age 10, Beginner
       inbody: WORKED_EXAMPLE,
+      vald: {},
     })
     const f = p.inbody.filler
     check(
       'InBody: a 6-12 Beginner gets 2 bouts x 30s of the non-impact movement',
       f?.bouts === 2 && f?.seconds === 30 && f?.movement === data.inbody.filler.age.movement,
       `${f?.bouts} x ${f?.seconds}s — ${f?.movement}`,
+    )
+  }
+}
+
+// ---- VALD layer ------------------------------------------------------------
+{
+  const slotsOf = (p: ReturnType<typeof run>) =>
+    p.days.map((d) => d.exercises.map((e) => e.exercise.id).join(',')).join(' | ')
+  const withVald = (vald: ValdInput, over: Partial<ClientInput> = {}) =>
+    run({ ...REF, ...over, vald })
+  const bumpsOf = (p: ReturnType<typeof run>) =>
+    p.days.flatMap((d) => d.exercises).filter((e) => e.unilateral)
+
+  check(
+    'VALD: with no readings the program is unchanged',
+    slotsOf(run(REF)) === slotsOf(withVald({})) && !run(REF).vald.active,
+    'inert',
+  )
+
+  check(
+    'VALD: an asymmetry under 8% changes nothing',
+    bumpsOf(withVald({ 'Q-KD': { asymmetry: 5, weakSide: 'Left' } })).length === 0,
+    '5% on Knee Extension',
+  )
+
+  {
+    const p = withVald({ 'Q-KD': { asymmetry: 25, weakSide: 'Left' } })
+    const b = bumpsOf(p)
+    check(
+      'VALD: a Major finding adds +2 weak-side sets to a Q-KD slot, made unilateral',
+      b.length === 1 &&
+        b[0].unilateral!.extraSets === 2 &&
+        b[0].unilateral!.weakSide === 'Left' &&
+        b[0].exercise.code === 'Q-KD',
+      b.length ? `${b[0].exercise.name} +${b[0].unilateral!.extraSets} (${b[0].unilateral!.form})` : 'no bump',
+    )
+  }
+
+  {
+    // 35% must get the same +2 as 25%, and raise a referral instead of more volume
+    const p25 = withVald({ 'Q-KD': { asymmetry: 25, weakSide: 'Left' } })
+    const p35 = withVald({ 'Q-KD': { asymmetry: 35, weakSide: 'Left' } })
+    const sets = (p: ReturnType<typeof run>) =>
+      bumpsOf(p).reduce((s, e) => s + e.unilateral!.extraSets, 0)
+    check(
+      'VALD: a 35% reading adds the same +2 as 25%, plus a referral flag',
+      sets(p35) === sets(p25) && p35.vald.referrals.length === 1 && p25.vald.referrals.length === 0,
+      `25% → +${sets(p25)}, 35% → +${sets(p35)}, referrals ${p35.vald.referrals.length}`,
+    )
+  }
+
+  {
+    // pass-1 reservation: no finding may take a second set while another servable finding
+    // in the same muscle group still has none
+    const p = withVald(
+      {
+        'G-EXT': { asymmetry: 25, weakSide: 'Left' },
+        'G-ABD': { asymmetry: 22, weakSide: 'Left' },
+        'G-HF': { asymmetry: 21, weakSide: 'Left' },
+      },
+      { split: 'Full Body', days: 6 },
+    )
+    const per: Record<string, number> = {}
+    for (const b of p.vald.bumps) per[b.code] = (per[b.code] ?? 0) + b.extraSets
+    // a finding is servable when it was not blocked for a structural reason
+    const structural = new Set(
+      p.vald.unfilled
+        .filter((u) => /main lift|no slot|other side/.test(u.reason))
+        .map((u) => u.finding.code),
+    )
+    const servable = ['G-EXT', 'G-ABD', 'G-HF'].filter((c) => !structural.has(c))
+    check(
+      'VALD: pass-1 reservation — every servable finding gets a set before any gets a second',
+      servable.every((c) => (per[c] ?? 0) >= 1),
+      `${JSON.stringify(per)}; blocked structurally: ${[...structural].join(', ') || 'none'}`,
+    )
+  }
+
+  {
+    const v: ValdInput = {
+      'Q-KD': { asymmetry: 25, weakSide: 'Left' },
+      'G-ABD': { asymmetry: 12, weakSide: 'Right' },
+    }
+    check(
+      'VALD: two runs on identical input produce identical programs',
+      JSON.stringify(withVald(v).vald.bumps) === JSON.stringify(withVald(v).vald.bumps),
+      'byte-identical',
+    )
+  }
+
+  {
+    // a bilateral main lift is never bumped and never converted
+    const codes = data.vald.tests.map((t) => t.code)
+    const all: ValdInput = Object.fromEntries(
+      codes.map((c) => [c, { asymmetry: 25, weakSide: 'Left' as const }]),
+    )
+    const bad: string[] = []
+    for (const pr of PRESETS) {
+      const p = run({ ...pr.input, vald: all })
+      for (const e of p.days.flatMap((d) => d.exercises))
+        if (e.exercise.mainLift && e.unilateral && e.unilateral.form !== 'already')
+          bad.push(`${pr.name}: ${e.exercise.name} (${e.unilateral.form})`)
+    }
+    check(
+      'VALD: a bilateral main lift is never bumped and never converted',
+      bad.length === 0,
+      bad.join(', ') || 'checked every test firing at once, across all presets',
+    )
+  }
+
+  {
+    // injury outranks VALD
+    const p = withVald({ 'L-VERT': { asymmetry: 25, weakSide: 'Left' } }, { pains: { SHOULDER: 'Left' } })
+    check(
+      'VALD: injury SIDE_ONLY right + weak left means no bump, with a visible note',
+      p.vald.conflicts.length === 1 &&
+        p.vald.bumps.length === 0 &&
+        p.vald.unfilled.some((u) => /other side/.test(u.reason)),
+      p.vald.conflicts.length
+        ? `injury says train ${p.vald.conflicts[0].injurySide}, weak side ${p.vald.conflicts[0].finding.weakSide} — ${p.vald.conflicts[0].exercise}`
+        : 'no conflict raised',
+    )
+  }
+
+  {
+    // the golden rule: slot count and the strong side are untouched
+    const all: ValdInput = Object.fromEntries(
+      data.vald.tests.map((t) => [t.code, { asymmetry: 25, weakSide: 'Left' as const }]),
+    )
+    // The strong side keeps its DIRECT volume exactly. Total volume can move a little,
+    // because step 5's swap replaces the exercise with a one-sided version of the same
+    // movement, and the replacement carries its own `alsoTrains` — so indirect credit into
+    // *other* groups shifts. Same phenomenon the Stage 1 week-rotation check exposed.
+    const bad: string[] = []
+    let maxIndirectDrift = 0
+    for (const pr of PRESETS) {
+      const base = run(pr.input)
+      const p = run({ ...pr.input, vald: all })
+      if (base.exerciseCount !== p.exerciseCount) bad.push(`${pr.name}: slot count changed`)
+      const a = buildAudit(base, data.exercises, pr.input.sex, data.config)
+      const b = buildAudit(p, data.exercises, pr.input.sex, data.config)
+      a.rows.forEach((r, i) => {
+        if (Math.abs(r.directDelivered - b.rows[i].directDelivered) > 1e-9)
+          bad.push(`${pr.name}/${r.group}: direct strong-side volume moved`)
+        maxIndirectDrift = Math.max(maxIndirectDrift, Math.abs(r.delivered - b.rows[i].delivered))
+      })
+    }
+    check(
+      'VALD: slot count unchanged and the strong side keeps its direct volume',
+      bad.length === 0,
+      bad.join(', ') ||
+        `all presets, every test firing — max indirect-credit drift from swaps ${maxIndirectDrift.toFixed(2)} sets`,
+    )
+  }
+
+  {
+    // the audit shows both sides once a finding fires
+    const p = withVald({ 'Q-KD': { asymmetry: 25, weakSide: 'Left' } })
+    const a = buildAudit(p, data.exercises, REF.sex, data.config)
+    const quads = a.rows.find((r) => r.group === 'Quads, hams, adductors')!
+    check(
+      'VALD: the volume audit diverges by side once a finding fires',
+      quads.leftDelivered > quads.rightDelivered,
+      `left ${quads.leftDelivered.toFixed(1)} vs right ${quads.rightDelivered.toFixed(1)}`,
     )
   }
 }

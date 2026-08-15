@@ -43,7 +43,7 @@ To publish:
 
 The push triggers the workflow; the URL appears under Actions once the deploy job finishes.
 
-**Everything in `public/data/` becomes publicly downloadable** — all eight JSON files,
+**Everything in `public/data/` becomes publicly downloadable** — all nine JSON files,
 including the 3 MB `allocation.json`. It's a static site, so the browser has to be able to
 fetch them; there is no way to publish this and keep the data private. GitHub Pages on a
 free account also requires a **public repo**. If either matters, this needs a host with
@@ -51,7 +51,7 @@ access control rather than Pages.
 
 ## Data
 
-Eight files in `public/data/`, served as static assets and fetched once at startup:
+Nine files in `public/data/`, served as static assets and fetched once at startup:
 
 | File | What it is |
 |---|---|
@@ -63,6 +63,7 @@ Eight files in `public/data/`, served as static assets and fetched once at start
 | `injury.json` | 18 pains, their rules, load-tag glossary, per-exercise injury records, and UI copy |
 | `structure.json` | joints and antagonists per sub-region, plus the timing, rest and load constants |
 | `inbody.json` | scan thresholds, the 8 pre-blended goal vectors, rest floors, region map and filler rules |
+| `vald.json` | 6 asymmetry brackets, the 17 tests with their library coverage, and the budget/conversion rules |
 
 They are generated upstream and are **not modified** by this app. `loadData()` in
 [src/data/load.ts](src/data/load.ts) caches the fetch promise at module scope, so
@@ -73,7 +74,7 @@ linkable regression case: `?preset=Stress%20test&view=detailed`, or
 `?sex=Male&age=28&level=Intermediate&…`. Pains ride along too, and layer on top of a preset:
 `?preset=Reference&pains=SHOULDER:Left,LOWBACK:Both`. So does a scan —
 `?inbody=example` loads the spec's worked client, or pass the values as
-`?inbody=smm:30.1,pbf:26.4,…`.
+`?inbody=smm:30.1,pbf:26.4,…`. VALD readings too: `?vald=Q-KD:25:L,G-ABD:12:R`.
 
 ## Layout
 
@@ -210,6 +211,44 @@ that it is overridable.
 4. **Split re-badging** uses the dominant blended goal, and the panel says so when it differs
    from the stated goal.
 
+## VALD DynaMo
+
+Fourth rule layer, and it does one thing: **it adds sets to the weak side.** It never
+changes the goal, the split, the frequency, the slot count, or the strong side's volume.
+
+The golden rule drives the whole selection half: **a bilateral exercise cannot carry a
+one-side-only set.** A barbell squat or a fixed bilateral machine is skipped — physics, not
+policy. Step 5 resolves each bumped slot in strict order: already unilateral → swap in a
+native unilateral with the same `code` → convert a convertible exercise → skip. **A main
+lift is never swapped and never converted, for any goal.**
+
+Input is per test: an asymmetry percentage **and which side is weak**, stored per test, so
+one client can be left-weak on one test and right-weak on another.
+
+Allocation is two passes with **four counters that persist across both** — the weekly
+budget per tested sub-region, sets per slot, extra sets per session, and which findings
+took their pass-1 reservation. Ordering is fixed and total (severity → asymmetry → canonical
+sub-region → session order → last matching slot backwards), so two runs on the same input
+are byte-identical. Matching is on `exercise.code === test.code`; `alsoTrains` plays no part.
+
+Volume is tracked per side from here: the audit carries `leftDelivered` and `rightDelivered`
+and they diverge as soon as a finding fires.
+
+### Readings and consequences
+
+- **`SESSION_CAP` is read as the goal's time ceiling** — the app's only per-session ceiling.
+  Extra weak-side sets count against it in full, and the budget is kept for a later session
+  when they would breach it.
+- **The strong side keeps its DIRECT volume exactly.** Total volume can move up to **1.8
+  sets** because step 5's swap replaces the exercise with a one-sided version of the same
+  movement, and the replacement carries its own `alsoTrains` — so indirect credit into
+  *other* groups shifts. Same phenomenon the Stage 1 week-rotation check exposed.
+- **The pass-1 reservation can no longer be starved by budget.** With the confirmed change
+  to a per-**sub-region** budget, and all 17 primaries distinct, two findings never share a
+  budget. Pass 1 still matters for the session ceiling, and is still implemented and
+  asserted. On the three-glute test G-EXT is the one that goes unserved — because its only
+  matching slot is a bilateral main lift, not because the budget ran out.
+
 ## Split recommendation
 
 The split selector stays fully free — every split in `config.splits` is selectable — but the
@@ -297,9 +336,9 @@ Places where the spec left a choice, and what was chosen:
 
 ## Acceptance criteria — current status
 
-`npm run acceptance` → **74 of 74 checks pass**. The five presets all run at `Full gym`, so
+`npm run acceptance` → **84 of 84 checks pass**. The five presets all run at `Full gym`, so
 the original criteria are unaffected by the equipment feature; the rest cover equipment
-tiers, split advice, set rounding, the injury, structure and InBody layers. Note the count dropped to 22/22 at one point because
+tiers, split advice, set rounding, the injury, structure, InBody and VALD layers. Note the count dropped to 22/22 at one point because
 the week criterion was **removed**, not because its failure was fixed — see below.
 
 | Criterion | Status |
@@ -355,6 +394,16 @@ the week criterion was **removed**, not because its failure was fixed — see be
 | **InBody:** injury REMOVE verdicts still hold | **pass** |
 | **InBody:** ankle pain + high TBW gives the non-impact filler | **pass** |
 | **InBody:** a 6-12 Beginner gets 2 × 30s non-impact | **pass** — fields taken independently |
+| **VALD:** no readings leaves the program unchanged | **pass** |
+| **VALD:** an asymmetry under 8% changes nothing | **pass** |
+| **VALD:** a Major finding adds +2 weak-side sets and makes the slot unilateral | **pass** |
+| **VALD:** a 35% reading adds the same +2 as 25%, plus a referral flag | **pass** |
+| **VALD:** pass-1 reservation — every servable finding gets one before any gets two | **pass** — see the caveat above |
+| **VALD:** two runs on identical input are byte-identical | **pass** |
+| **VALD:** a bilateral main lift is never bumped or converted | **pass** — all 17 tests firing, all presets |
+| **VALD:** injury SIDE_ONLY right + weak left → no bump, visible note | **pass** |
+| **VALD:** slot count unchanged, strong side keeps its direct volume | **pass** — max indirect drift 1.8 sets |
+| **VALD:** the audit diverges by side once a finding fires | **pass** |
 
 ### A Stage 1 criterion that no longer applies
 
@@ -364,6 +413,25 @@ reads **84 / 61 / 82 / 60 min** at `straight`. Nothing about the program changed
 its length is computed. The window was an artefact of the retired formula, so the check now
 asserts the sessions stay inside the goal's own 90 min ceiling and prints the superseded
 window alongside, rather than quietly widening the range.
+
+### A silently-passing check, found and fixed
+
+While wiring VALD I found that `Rounding: no session crosses the ceiling` had been
+**passing vacuously since the structure layer**. It multiplied by `program.minutesPerSet`, a
+field the structure layer removed when it replaced the time model — so it computed `NaN`,
+and `NaN > ceiling` is false. `scripts/` was not in the TypeScript build, so nothing caught
+the dangling reference.
+
+Two fixes: the check now runs through the real time model, and
+[tsconfig.scripts.json](tsconfig.scripts.json) puts `scripts/` under `tsc -b` so a dangling
+reference in a test fails the build.
+
+What it was hiding: **Youth strength day 3 runs 113 min against a 105 min ceiling.** That is
+a real outcome, not a rounding artefact — it is 113 min at raw sets too, because the
+structure layer's time model is more expensive than the one it replaced. Stage 1's spec says
+to *flag* an over-ceiling session, not to prevent one (the allocation fixes the slots and
+every layer holds volume), and the app does flag it in red. The check now asserts the flag
+is correct and names any session that crosses, rather than asserting none exist.
 
 ### The two injury criteria that pass only with a caveat
 

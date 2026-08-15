@@ -2,6 +2,7 @@ import type { EquipmentTier } from './lib/equipment'
 import type { PainSelection } from './lib/injury'
 import type { Structure } from './lib/structure'
 import type { InBodyInput } from './lib/inbody'
+import type { ValdInput } from './lib/vald'
 
 export type Sex = 'Male' | 'Female'
 export type Tier = 'primary' | 'secondary' | 'accessory'
@@ -165,6 +166,33 @@ export interface InBodyData {
   baseRest: Record<string, number[]>
 }
 
+export interface ValdTest {
+  test: string
+  group: string
+  code: string
+  subRegion: string
+  totalExercises: number
+  nativeUnilateral: number
+  convertible: number
+  verdict: string
+  caveat: string
+}
+
+export interface ValdData {
+  brackets: { name: string; min: number; max: number | null; setsAdded: number }[]
+  hysteresis: number
+  tests: ValdTest[]
+  budgetPerTestedSubRegion: number
+  unilateralNamePattern: string
+  convertibleEquipmentPattern: string
+  unilateralFormPreference: string[]
+  timeCost: { unilateralWorkMultiplier: number; note: string }
+  trimOrder: string[]
+  precedence: string
+  referralThreshold: number
+  readAsRatios: string[][]
+}
+
 export interface DataBundle {
   config: Config
   allocation: Allocation
@@ -174,6 +202,7 @@ export interface DataBundle {
   injury: InjuryData
   structure: StructureData
   inbody: InBodyData
+  vald: ValdData
 }
 
 export interface ClientInput {
@@ -191,4 +220,6 @@ export interface ClientInput {
   structure: Structure
   /** body-composition scan; empty means the InBody layer is inert */
   inbody: InBodyInput
+  /** asymmetry readings per test code; empty means the VALD layer is inert */
+  vald: ValdInput
 }

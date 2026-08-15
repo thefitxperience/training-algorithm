@@ -11,6 +11,9 @@ export interface AuditRow {
   delivered: number
   /** sets from exercises whose own group is this one — no indirect credit */
   directDelivered: number
+  /** per-side delivered volume — the two diverge once a VALD finding fires */
+  leftDelivered: number
+  rightDelivered: number
   /** what the allocation block claims it delivers */
   expected: number
   ratio: number | null
@@ -93,6 +96,17 @@ export function buildAudit(
     }
   }
 
+  // VALD adds sets to the weak side only, so the two sides diverge from here.
+  const extraLeft: Record<string, number> = {}
+  const extraRight: Record<string, number> = {}
+  for (const day of program.days) {
+    for (const c of day.exercises) {
+      if (!c.unilateral) continue
+      const bucket = c.unilateral.weakSide === 'Left' ? extraLeft : extraRight
+      bucket[c.exercise.group] = (bucket[c.exercise.group] ?? 0) + c.unilateral.extraSets
+    }
+  }
+
   const targets = applyOverrides(program.block.targets, sex, config)
 
   // A group counts as removed by pain when the injury layer took out every exercise in it.
@@ -122,6 +136,8 @@ export function buildAudit(
       rawTarget: program.block.targets[group] ?? 0,
       delivered: del,
       directDelivered: direct[group] ?? 0,
+      leftDelivered: del + (extraLeft[group] ?? 0),
+      rightDelivered: del + (extraRight[group] ?? 0),
       expected: program.block.delivered[group] ?? 0,
       ratio,
       band: painLabels ? 'removed' : ratio === null ? 'none' : band(ratio),

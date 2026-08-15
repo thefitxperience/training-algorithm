@@ -8,7 +8,9 @@ import { ClientPanel } from './components/ClientPanel'
 import { ProgramPanel } from './components/ProgramPanel'
 import { MedicalDisclaimer, PainPanel } from './components/PainPanel'
 import { InBodyPanel } from './components/InBodyPanel'
+import { ValdPanel } from './components/ValdPanel'
 import { WORKED_EXAMPLE, hasAnyInput, type InBodyInput } from './lib/inbody'
+import { hasAnyReading, type ValdInput } from './lib/vald'
 import { AuditPanel } from './components/AuditPanel'
 import { EQUIPMENT_TIERS, type EquipmentTier } from './lib/equipment'
 import type { PainSelection, Side } from './lib/injury'
@@ -49,6 +51,21 @@ function inbodyFromUrl(q: URLSearchParams): InBodyInput | null {
   ) as InBodyInput
 }
 
+/** vald=Q-KD:25:L,G-ABD:12:R — asymmetry % and weak side, per test code */
+function valdFromUrl(q: URLSearchParams): ValdInput | null {
+  const raw = q.get('vald')
+  if (raw === null) return null
+  return Object.fromEntries(
+    raw
+      .split(',')
+      .filter(Boolean)
+      .map((entry) => {
+        const [code, pct, side] = entry.split(':')
+        return [code, { asymmetry: Number(pct), weakSide: side === 'R' ? 'Right' : 'Left' }]
+      }),
+  ) as ValdInput
+}
+
 function inputFromUrl(): ClientInput {
   const q = new URLSearchParams(window.location.search)
   const presetName = q.get('preset')
@@ -60,6 +77,7 @@ function inputFromUrl(): ClientInput {
         ...p.input,
         pains: painsFromUrl(q) ?? p.input.pains,
         inbody: inbodyFromUrl(q) ?? p.input.inbody,
+        vald: valdFromUrl(q) ?? p.input.vald,
         structure: STRUCTURES.includes(q.get('structure') as Structure)
           ? (q.get('structure') as Structure)
           : p.input.structure,
@@ -78,6 +96,7 @@ function inputFromUrl(): ClientInput {
       : base.equipment,
     pains: painsFromUrl(q) ?? base.pains,
     inbody: inbodyFromUrl(q) ?? base.inbody,
+    vald: valdFromUrl(q) ?? base.vald,
     structure: STRUCTURES.includes(q.get('structure') as Structure)
       ? (q.get('structure') as Structure)
       : base.structure,
@@ -101,7 +120,7 @@ export default function App() {
   useEffect(() => {
     const q = new URLSearchParams(
       Object.entries(input)
-        .filter(([k]) => k !== 'pains' && k !== 'inbody')
+        .filter(([k]) => k !== 'pains' && k !== 'inbody' && k !== 'vald')
         .map(([k, v]) => [k, String(v)]) as [string, string][],
     )
     const pains = Object.entries(input.pains)
@@ -111,6 +130,13 @@ export default function App() {
         'inbody',
         Object.entries(input.inbody)
           .map(([k, v]) => `${k}:${v}`)
+          .join(','),
+      )
+    if (hasAnyReading(input.vald))
+      q.set(
+        'vald',
+        Object.entries(input.vald)
+          .map(([code, r]) => `${code}:${r.asymmetry}:${r.weakSide[0]}`)
           .join(','),
       )
     q.set('view', view)
@@ -149,18 +175,16 @@ export default function App() {
     return { options, note: badges.trisetDowngraded ? badges.downgradeReason : '' }
   }, [data, input, bracket])
 
-  // `pains` is an object, so it needs comparing by value rather than identity.
-  const painsKey = (p: ClientInput) =>
-    Object.entries(p.pains)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([id, side]) => `${id}:${side}`)
-      .join(',')
+  // pains / inbody / vald are objects, so they need comparing by value, not identity.
+  const OBJECT_FIELDS: (keyof ClientInput)[] = ['pains', 'inbody', 'vald']
+  const objectKey = (p: ClientInput) =>
+    OBJECT_FIELDS.map((f) => JSON.stringify(Object.entries(p[f] ?? {}).sort())).join('|')
   const activePreset =
     PRESETS.find(
       (p) =>
         (Object.keys(p.input) as (keyof ClientInput)[])
-          .filter((k) => k !== 'pains')
-          .every((k) => p.input[k] === input[k]) && painsKey(p.input) === painsKey(input),
+          .filter((k) => !OBJECT_FIELDS.includes(k))
+          .every((k) => p.input[k] === input[k]) && objectKey(p.input) === objectKey(input),
     )?.name ?? null
 
   if (loadError) {
@@ -235,6 +259,17 @@ export default function App() {
               />
             </div>
           )}
+          {result?.ok && (
+            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <ValdPanel
+                data={data.vald}
+                input={input.vald}
+                setInput={(vald) => setInput({ ...input, vald })}
+                result={result.program.vald}
+                compact
+              />
+            </div>
+          )}
           <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <PainPanel
               injury={data.injury}
@@ -269,6 +304,16 @@ export default function App() {
                     input={input.inbody}
                     setInput={(inbody) => setInput({ ...input, inbody })}
                     result={result.program.inbody}
+                  />
+                </div>
+              )}
+              {result?.ok && (
+                <div className="mt-4 border-t border-slate-200 pt-3">
+                  <ValdPanel
+                    data={data.vald}
+                    input={input.vald}
+                    setInput={(vald) => setInput({ ...input, vald })}
+                    result={result.program.vald}
                   />
                 </div>
               )}

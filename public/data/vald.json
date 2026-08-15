@@ -1,0 +1,268 @@
+{
+ "brackets": [
+  {
+   "name": "Perfect symmetry",
+   "min": 0.0,
+   "max": 4.0,
+   "setsAdded": 0
+  },
+  {
+   "name": "Normal symmetry",
+   "min": 4.0,
+   "max": 8.0,
+   "setsAdded": 0
+  },
+  {
+   "name": "Weakness",
+   "min": 8.0,
+   "max": 15.0,
+   "setsAdded": 1
+  },
+  {
+   "name": "Problem",
+   "min": 15.0,
+   "max": 20.0,
+   "setsAdded": 1
+  },
+  {
+   "name": "Major problem",
+   "min": 20.0,
+   "max": 30.0,
+   "setsAdded": 2
+  },
+  {
+   "name": "Risk of injury",
+   "min": 30.0,
+   "max": null,
+   "setsAdded": 2
+  }
+ ],
+ "hysteresis": 0.02,
+ "tests": [
+  {
+   "test": "Shoulder Push Strength Asymmetry",
+   "group": "Chest",
+   "code": "C-MID",
+   "subRegion": "Mid",
+   "totalExercises": 10,
+   "nativeUnilateral": 0,
+   "convertible": 6,
+   "verdict": "CONVERT ONLY",
+   "caveat": "Push-to-pull ratio against the Shoulder Pull test is the useful read for shoulder health."
+  },
+  {
+   "test": "Shoulder Adduction Strength Asymmetry",
+   "group": "Lats",
+   "code": "L-VERT",
+   "subRegion": "Vertical pull",
+   "totalExercises": 7,
+   "nativeUnilateral": 1,
+   "convertible": 6,
+   "verdict": "THIN",
+   "caveat": "Teres major is a prime mover here and has no sub-region of its own; it rides inside L-VERT."
+  },
+  {
+   "test": "Shoulder Pull Strength Asymmetry",
+   "group": "Lats",
+   "code": "L-HOR",
+   "subRegion": "Horizontal pull",
+   "totalExercises": 11,
+   "nativeUnilateral": 3,
+   "convertible": 4,
+   "verdict": "OK",
+   "caveat": "Confirm the test direction against your VALD protocol: a vertical pull setup would shift the primary to L-VERT."
+  },
+  {
+   "test": "Shoulder Flexion Strength Asymmetry",
+   "group": "Delts",
+   "code": "D-FR",
+   "subRegion": "Front",
+   "totalExercises": 7,
+   "nativeUnilateral": 0,
+   "convertible": 5,
+   "verdict": "CONVERT ONLY",
+   "caveat": "Serratus drives scapular upward rotation; weakness here often shows as a flexion deficit rather than a delt problem."
+  },
+  {
+   "test": "Shoulder Abduction Strength Asymmetry",
+   "group": "Delts",
+   "code": "D-SIDE",
+   "subRegion": "Side",
+   "totalExercises": 8,
+   "nativeUnilateral": 2,
+   "convertible": 6,
+   "verdict": "OK",
+   "caveat": "Supraspinatus initiates the first 15-30 deg. This taxonomy has no supraspinatus slot, so it sits inside RC-ER."
+  },
+  {
+   "test": "Shoulder External Rotation Strength Asymmetry",
+   "group": "Rotator cuff",
+   "code": "RC-ER",
+   "subRegion": "External rotation",
+   "totalExercises": 12,
+   "nativeUnilateral": 4,
+   "convertible": 8,
+   "verdict": "OK",
+   "caveat": "The ER-to-IR ratio is the meaningful output, not the raw ER number. Read the two tests together."
+  },
+  {
+   "test": "Shoulder Internal Rotation Strength Asymmetry",
+   "group": "Rotator cuff",
+   "code": "RC-IR",
+   "subRegion": "Internal rotation",
+   "totalExercises": 6,
+   "nativeUnilateral": 4,
+   "convertible": 2,
+   "verdict": "OK",
+   "caveat": "Lat and pec are powerful internal rotators; a strong IR number can mask a weak subscapularis."
+  },
+  {
+   "test": "Elbow Flexion Strength Asymmetry",
+   "group": "Biceps",
+   "code": "B-SHORT",
+   "subRegion": "Short head (peak)",
+   "totalExercises": 10,
+   "nativeUnilateral": 1,
+   "convertible": 6,
+   "verdict": "THIN",
+   "caveat": "Grip position decides which head dominates: supinated favours biceps, neutral favours brachialis / brachioradialis."
+  },
+  {
+   "test": "Elbow Extension Strength Asymmetry",
+   "group": "Triceps",
+   "code": "TRI-LAT",
+   "subRegion": "Lateral-medial (lockout)",
+   "totalExercises": 10,
+   "nativeUnilateral": 1,
+   "convertible": 7,
+   "verdict": "THIN",
+   "caveat": "At 90 deg the lateral and medial heads dominate. If the deficit is overhead, test and train TRI-LONG separately."
+  },
+  {
+   "test": "Hand Grip Squeeze Strength Asymmetry",
+   "group": "Forearms & grip",
+   "code": "F-GRIP",
+   "subRegion": "Grip & carry",
+   "totalExercises": 4,
+   "nativeUnilateral": 0,
+   "convertible": 3,
+   "verdict": "CONVERT ONLY",
+   "caveat": "Grip is also a general strength and health proxy - a bilateral drop matters even when the asymmetry is small."
+  },
+  {
+   "test": "Trunk Lateral Flexion Strength Asymmetry",
+   "group": "Abs & core",
+   "code": "AC-ALF",
+   "subRegion": "Anti-lateral flexion",
+   "totalExercises": 3,
+   "nativeUnilateral": 3,
+   "convertible": 0,
+   "verdict": "OK",
+   "caveat": "The only trunk test in the set. It says nothing about flexion, anti-extension or anti-rotation strength."
+  },
+  {
+   "test": "Hip Extension Strength Asymmetry",
+   "group": "Glutes & hips",
+   "code": "G-EXT",
+   "subRegion": "Max - hip extension",
+   "totalExercises": 8,
+   "nativeUnilateral": 1,
+   "convertible": 6,
+   "verdict": "THIN",
+   "caveat": "Glute-vs-hamstring share is not separable by this test. Pair it with Knee Flexion to infer which is deficient."
+  },
+  {
+   "test": "Hip Abduction Strength Asymmetry",
+   "group": "Glutes & hips",
+   "code": "G-ABD",
+   "subRegion": "Abduction (med-min)",
+   "totalExercises": 11,
+   "nativeUnilateral": 5,
+   "convertible": 5,
+   "verdict": "OK",
+   "caveat": "TFL contributes heavily and is not a separate sub-region in this taxonomy; it rides inside G-ABD."
+  },
+  {
+   "test": "Hip Flexion Strength Asymmetry",
+   "group": "Glutes & hips",
+   "code": "G-HF",
+   "subRegion": "Hip flexors",
+   "totalExercises": 4,
+   "nativeUnilateral": 2,
+   "convertible": 2,
+   "verdict": "OK",
+   "caveat": "G-HF is one of the thinnest sub-regions in the exercise library - see the library Gaps sheet before prescribing."
+  },
+  {
+   "test": "Knee Extension Strength Asymmetry",
+   "group": "Quads, hams, adductors",
+   "code": "Q-KD",
+   "subRegion": "Quads - knee-dominant",
+   "totalExercises": 20,
+   "nativeUnilateral": 6,
+   "convertible": 5,
+   "verdict": "OK",
+   "caveat": "The hamstring-to-quad ratio from this plus Knee Flexion is the classic injury-risk read."
+  },
+  {
+   "test": "Knee Flexion Strength Asymmetry",
+   "group": "Quads, hams, adductors",
+   "code": "H-CURL",
+   "subRegion": "Hams - curl",
+   "totalExercises": 7,
+   "nativeUnilateral": 1,
+   "convertible": 3,
+   "verdict": "THIN",
+   "caveat": "Gastrocnemius crosses the knee and contributes; knee angle changes its share."
+  },
+  {
+   "test": "Hip Adduction Strength Asymmetry",
+   "group": "Quads, hams, adductors",
+   "code": "AD-SHORT",
+   "subRegion": "Adductors - short (adduction)",
+   "totalExercises": 5,
+   "nativeUnilateral": 2,
+   "convertible": 2,
+   "verdict": "OK",
+   "caveat": "Adductor-to-abductor ratio matters more than either side alone - read this test together with Hip Abduction."
+  }
+ ],
+ "budgetPerTestedSubRegion": 5,
+ "unilateralNamePattern": "single-arm|one-arm|single-leg|one-leg|unilateral|side-lying|lean-away|split squat|bulgarian|step-up|lunge|suitcase|waiter|concentration|cross-body|skater|pistol|kickback|bottoms-up|side plank|side bend|egyptian|belly press|lift-off|standing internal rotation|standing external rotation|half-kneeling",
+ "convertibleEquipmentPattern": "\\bDB\\b|\\bC\\b|\\bBd\\b|\\bBW\\b|\\bKB\\b|Smith",
+ "unilateralFormPreference": [
+  "already unilateral",
+  "swap native unilateral same sub-region",
+  "convert existing exercise",
+  "skip - bilateral only"
+ ],
+ "timeCost": {
+  "unilateralWorkMultiplier": 2,
+  "note": "slot_seconds = sets x (k x work + rest) + extraWeakSets x (work + rest); k=2 unilateral, 1 bilateral"
+ },
+ "trimOrder": [
+  "InBody high-TBW filler bouts",
+  "VALD conversion (revert slot to bilateral)",
+  "VALD extra weak-side sets, lowest severity first"
+ ],
+ "precedence": "injury > InBody > VALD",
+ "referralThreshold": 30.0,
+ "readAsRatios": [
+  [
+   "Shoulder External Rotation Strength Asymmetry",
+   "Shoulder Internal Rotation Strength Asymmetry"
+  ],
+  [
+   "Knee Flexion Strength Asymmetry",
+   "Knee Extension Strength Asymmetry"
+  ],
+  [
+   "Hip Adduction Strength Asymmetry",
+   "Hip Abduction Strength Asymmetry"
+  ],
+  [
+   "Shoulder Push Strength Asymmetry",
+   "Shoulder Pull Strength Asymmetry"
+  ]
+ ]
+}

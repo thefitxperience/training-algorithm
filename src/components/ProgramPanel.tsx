@@ -307,6 +307,23 @@ export function ProgramPanel({
                         {copyFor(injury, 'Caution badge', { pain: c.verdict.decidedBy.painLabel })}
                       </span>
                     )}
+                    {c.unilateral && (
+                      <span
+                        className="ml-1.5 rounded bg-teal-100 px-1 py-0.5 text-[10px] font-bold text-teal-800"
+                        title={`One side at a time. ${c.unilateral.extraSets} extra set${
+                          c.unilateral.extraSets === 1 ? '' : 's'
+                        } on the ${c.unilateral.weakSide.toLowerCase()} side, which tested weaker. ${
+                          c.unilateral.form === 'already'
+                            ? 'This exercise is already one-sided.'
+                            : c.unilateral.form === 'swapped'
+                              ? 'Swapped in for a one-sided version of the same movement.'
+                              : 'Run one side at a time — a bilateral exercise cannot carry a one-side-only set.'
+                        }`}
+                      >
+                        {c.unilateral.weakSide.toUpperCase()} +{c.unilateral.extraSets}
+                        <span className="ml-1 font-normal opacity-70">{c.unilateral.form}</span>
+                      </span>
+                    )}
                     {c.rule4 && (
                       <span
                         className="ml-1.5 rounded bg-violet-100 px-1 py-0.5 text-[10px] font-bold text-violet-800"

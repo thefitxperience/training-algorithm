@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.scripts.tsbuildinfo",
+    "types": ["node"],
+    "lib": ["ES2023"],
+    "jsx": "preserve"
+  },
+  "include": ["scripts", "src/lib", "src/types.ts"]
+}

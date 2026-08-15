@@ -6,6 +6,7 @@ import type {
   InjuryData,
   StructureData,
   InBodyData,
+  ValdData,
   Prescription,
   Splits,
 } from '../types'
@@ -30,7 +31,7 @@ async function fetchJson<T>(file: string): Promise<T> {
 export function loadData(): Promise<DataBundle> {
   if (!bundlePromise) {
     bundlePromise = (async () => {
-      const [config, allocation, exercises, prescription, splits, injury, structure, inbody] = await Promise.all([
+      const [config, allocation, exercises, prescription, splits, injury, structure, inbody, vald] = await Promise.all([
         fetchJson<Config>('config.json'),
         fetchJson<Allocation>('allocation.json'),
         fetchJson<Exercise[]>('exercises.json'),
@@ -39,8 +40,9 @@ export function loadData(): Promise<DataBundle> {
         fetchJson<InjuryData>('injury.json'),
         fetchJson<StructureData>('structure.json'),
         fetchJson<InBodyData>('inbody.json'),
+        fetchJson<ValdData>('vald.json'),
       ])
-      return { config, allocation, exercises, prescription, splits, injury, structure, inbody }
+      return { config, allocation, exercises, prescription, splits, injury, structure, inbody, vald }
     })()
   }
   return bundlePromise

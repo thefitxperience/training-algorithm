@@ -15,6 +15,16 @@ import {
   type PainVerdict,
 } from './injury'
 import {
+  INERT_VALD,
+  allocate,
+  buildFindings,
+  hasAnyReading,
+  type AllocationDay as ValdAllocationDay,
+  type UnilateralForm,
+  type ValdResult,
+  type WeakSide,
+} from './vald'
+import {
   evaluateInBody,
   groupsForRegions,
   slotLoad,
@@ -57,6 +67,8 @@ export interface ChosenExercise {
   rule4?: boolean
   /** per-slot load adjustment, as a fraction — two slots can legitimately differ */
   loadAdjustment?: number
+  /** VALD made this slot one-sided and added sets to the weak side */
+  unilateral?: { form: UnilateralForm; weakSide: WeakSide; extraSets: number }
 }
 
 export interface GeneratedDay {
@@ -105,6 +117,8 @@ export interface Program {
   restMultiplier: number
   /** everything the InBody layer derived and changed; inert when no scan was entered */
   inbody: InBodyResult
+  /** VALD findings, bumps and anything it could not fill; inert with no readings */
+  vald: ValdResult
   /** verdict per exercise id across the whole library, for the audit and the UI */
   verdicts: Map<number, ExerciseVerdict>
   /** everything the injury layer took out of the pool, for the removals panel */
@@ -398,6 +412,9 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
   // Runs after selection because it solves sets against the exercises actually chosen. It
   // never changes the split, the frequency, the slot count or the selection — only the
   // values in those slots, plus a forced structure on high-fat regions.
+  /** seconds already committed to a day by VALD, so the ceiling guard stays honest */
+  const pendingSeconds = new Map<number, number>()
+
   const allChosen = selected.flatMap((d) => d.chosen)
   const inbody = evaluateInBody(input.inbody, data.inbody, {
     statedGoal: input.goal,
@@ -420,6 +437,73 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
     inbody.restFloor,
     Math.round(inbody.rest * data.inbody.rule4.restMultiplier),
   )
+
+  // ---- VALD ---------------------------------------------------------------
+  // Adds sets to the weak side. Never changes the goal, split, frequency, slot count, or
+  // the strong side's volume. Precedence is injury > InBody > VALD.
+  const valdFindings = hasAnyReading(input.vald) ? buildFindings(input.vald, data.vald) : []
+  let vald: ValdResult = INERT_VALD
+  if (valdFindings.length > 0) {
+    const injuryUnilateral = new Set(
+      data.injury.exercises.filter((r) => r.unilateral).map((r) => r.id),
+    )
+    const allocDays: ValdAllocationDay[] = selected.map((d) => ({
+      index: d.index,
+      slots: d.chosen.map((c) => ({
+        exercise: c.exercise,
+        sets: c.sets,
+        mainLift: c.exercise.mainLift,
+        injurySideOnly:
+          c.verdict.verdict === 'SIDE_ONLY' && c.verdict.decidedBy?.side
+            ? c.verdict.decidedBy.side === 'Left'
+              ? 'Right'
+              : 'Left'
+            : undefined,
+      })),
+    }))
+
+    const work = data.structure.workSeconds[input.goal] ?? 40
+    const restSec = inbody.active ? inbody.rest : config.restMid[input.goal]
+    const ceilingSeconds = (config.timeCeiling[input.goal] - config.warmupMinutes) * 60
+
+    const { bumps, unfilled, conflicts } = allocate(valdFindings, allocDays, {
+      data: data.vald,
+      library: exercises,
+      injuryUnilateral,
+      // Extra weak-side sets are real local fatigue and count in full against the session
+      // ceiling. The app's only per-session ceiling is the goal's time ceiling.
+      wouldBreachSessionCap: (dayIndex, extraSets, newUnilateralSlots) => {
+        const day = selected[dayIndex]
+        if (!day) return true
+        const base = day.chosen.reduce((s, c) => s + c.sets * (work + restSec), 0)
+        const spent = pendingSeconds.get(dayIndex) ?? 0
+        const addition = extraSets * (work + restSec) + newUnilateralSlots * work
+        const ok = base + spent + addition <= ceilingSeconds
+        if (ok) pendingSeconds.set(dayIndex, spent + addition)
+        return !ok
+      },
+    })
+
+    // Apply the swaps back onto the chosen slots, then record the bumps.
+    for (const b of bumps) {
+      const slot = selected[b.dayIndex]?.chosen[b.slotIndex]
+      const allocSlot = allocDays[b.dayIndex]?.slots[b.slotIndex]
+      if (!slot || !allocSlot) continue
+      slot.exercise = allocSlot.exercise
+      slot.unilateral = { form: b.form, weakSide: b.weakSide, extraSets: b.extraSets }
+    }
+
+    vald = {
+      active: true,
+      findings: valdFindings,
+      firing: valdFindings.filter((f) => f.setsAdded > 0),
+      bumps,
+      unfilled,
+      conflicts,
+      referrals: valdFindings.filter((f) => f.referral),
+      trimmed: [],
+    }
+  }
 
   const days: GeneratedDay[] = selected.map(({ index: dayIndex, label, chosen }) => {
     // InBody replaces the goal-keyed values on each slot. Sets come from the resolved
@@ -496,7 +580,15 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
         return sum + blockSeconds(b, (i) => chosen[i].sets, params)
       }, 0) /
         60 +
-      config.warmupMinutes
+      config.warmupMinutes +
+      // Step 6 — a unilateral set works both sides before the rest interval, so it costs
+      // 2 x work + 1 x rest, not 2 x (work + rest). Extra weak-side sets cost work + rest.
+      chosen.reduce((sum, c) => {
+        if (!c.unilateral) return sum
+        const work = data.structure.workSeconds[input.goal] ?? 40
+        const restSec = inbody.active ? inbody.rest : config.restMid[input.goal]
+        return sum + (c.sets * work + c.unilateral.extraSets * (work + restSec)) / 60
+      }, 0)
 
     return {
       index: dayIndex,
@@ -526,6 +618,7 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
       loadAdjustment: data.structure.loadAdjustment[input.structure] ?? 0,
       restMultiplier: tp.restMultiplier,
       inbody,
+      vald,
       verdicts,
       removedByPain,
     },

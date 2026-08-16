@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { InjuryData } from '../types'
-import { copyFor, type PainSelection, type Side } from '../lib/injury'
+import { copyFor, withProductName, type PainSelection, type Side } from '../lib/injury'
 
 const SIDES: Side[] = ['Left', 'Right', 'Both']
 
@@ -132,7 +132,7 @@ export function MedicalDisclaimer({ injury }: { injury: InjuryData }) {
   return (
     <div className="rounded-lg border-2 border-amber-400 bg-amber-50 px-4 py-3 text-sm text-amber-900">
       <span className="font-bold">Important. </span>
-      {injury.copy['Medical disclaimer']}
+      {withProductName(injury.copy['Medical disclaimer'])}
     </div>
   )
 }

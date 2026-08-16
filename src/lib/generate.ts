@@ -603,6 +603,11 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
     // different adjustments because their structures differ.
     for (const b of blocks) {
       const blockLoad = b.indices.length > 1 ? (data.structure.loadAdjustment[b.structure] ?? 0) : 0
+      // Resolve the block's own figures once, here, so the time model and the table can
+      // never disagree about what structure a given block is being charged as.
+      b.loadAdjustment = blockLoad
+      b.restMultiplier =
+        b.indices.length > 1 ? (data.structure.restMultiplier[b.structure] ?? 1) : 1
       for (const i of b.indices) {
         // A rule-4 slot carries the fat-burning structure by instruction, so it takes that
         // load adjustment whether or not a legal partner happened to be found for it.
@@ -618,15 +623,10 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
     const minutes =
       blocks.reduce((sum, b) => {
         const isRule4 = onRule4(chosen[b.indices[0]])
+        // blockSeconds now takes the multiplier off the block itself, so only the InBody
+        // rest override has to be threaded through here.
         const params = inbody.active
-          ? {
-              ...tp,
-              restSeconds: isRule4 ? rule4Rest : inbody.rest,
-              restMultiplier:
-                b.indices.length > 1
-                  ? (data.structure.restMultiplier[b.structure] ?? 1)
-                  : tp.restMultiplier,
-            }
+          ? { ...tp, restSeconds: isRule4 ? rule4Rest : inbody.rest }
           : tp
         return sum + blockSeconds(b, (i) => chosen[i].sets, params)
       }, 0) /

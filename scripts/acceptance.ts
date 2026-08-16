@@ -13,7 +13,7 @@ import { EQUIPMENT_TIERS, isEquipmentAvailable, libraryCoverage } from '../src/l
 import { splitAdvice } from '../src/lib/splitAdvice'
 import { pickKey, roundSets } from '../src/lib/rounding'
 import { buildInjuryIndex, verdictForPain, type PainSelection } from '../src/lib/injury'
-import { buildSubAliases, pairReason, sessionMinutes, type Structure } from '../src/lib/structure'
+import { STRUCTURES, buildSubAliases, pairReason, sessionMinutes, type Structure } from '../src/lib/structure'
 import { WORKED_EXAMPLE, goalWeights, type InBodyInput } from '../src/lib/inbody'
 import type { ValdInput } from '../src/lib/vald'
 import { applyChain, roundTo } from '../src/lib/weight'
@@ -954,6 +954,55 @@ const fingerprint = (p: ReturnType<typeof run>) =>
       'VALD: the volume audit diverges by side once a finding fires',
       quads.leftDelivered > quads.rightDelivered,
       `left ${quads.leftDelivered.toFixed(1)} vs right ${quads.rightDelivered.toFixed(1)}`,
+    )
+  }
+}
+
+// ---- a block is charged and labelled as the structure it actually IS --------
+// Under triset a block that found only one legal partner is a superset, and an InBody rule-4
+// region is supersetted whatever the client picked. The rest multiplier and load adjustment
+// used to come off the PROGRAM, so those blocks were charged and labelled as trisets: the
+// table printed rest x1.15 on straight rows the time model charged at x1.00.
+{
+  const mismatched: string[] = []
+  let differing = 0
+  let blocks = 0
+  for (const pr of PRESETS) {
+    for (const structure of STRUCTURES) {
+      for (const inbody of [{}, WORKED_EXAMPLE]) {
+        const p = run({ ...pr.input, structure, inbody })
+        for (const d of p.days) {
+          for (const b of d.blocks) {
+            blocks++
+            const paired = b.indices.length > 1
+            const wantRest = paired ? (data.structure.restMultiplier[b.structure] ?? 1) : 1
+            const wantLoad = paired ? (data.structure.loadAdjustment[b.structure] ?? 0) : 0
+            if (b.structure !== structure && paired) differing++
+            if (b.restMultiplier !== wantRest || b.loadAdjustment !== wantLoad)
+              mismatched.push(
+                `${pr.name}/${structure} day ${d.index + 1}: a ${b.structure} block carries rest x${b.restMultiplier}, load ${b.loadAdjustment}`,
+              )
+          }
+        }
+      }
+    }
+  }
+  check(
+    'Structure: every block carries its own rest multiplier and load, not the program’s',
+    mismatched.length === 0 && differing > 0,
+    mismatched.length
+      ? mismatched.slice(0, 3).join('; ')
+      : `${blocks} blocks swept, ${differing} of them a different structure from the program they sit in`,
+  )
+
+  {
+    // The displayed rest and the charged rest come from the same number now.
+    const p = run({ ...REF, structure: 'triset' })
+    const straight = p.days.flatMap((d) => d.blocks).filter((b) => b.indices.length === 1)
+    check(
+      'Structure: a straight block inside a triset program takes no rest multiplier',
+      straight.length > 0 && straight.every((b) => b.restMultiplier === 1),
+      `${straight.length} straight blocks in a triset program, all at x1.00 — the table scales rest by this same figure`,
     )
   }
 }

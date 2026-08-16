@@ -163,6 +163,18 @@ export function evaluateAll(
 }
 
 /** Badge/tooltip text from injury.json's copy block, with the placeholders filled in. */
+/**
+ * The product name the UI ships under. injury.json still carries the old working title in
+ * its disclaimer text, and the data files are generated upstream and never edited here — so
+ * the name is substituted at render time instead.
+ */
+export const PRODUCT_NAME = 'UDRA Training Program Generator'
+const LEGACY_NAMES = /DEEP FIT/g
+
+export function withProductName(text: string): string {
+  return text.replace(LEGACY_NAMES, PRODUCT_NAME)
+}
+
 export function copyFor(
   injury: InjuryData,
   key: string,
@@ -170,5 +182,5 @@ export function copyFor(
 ): string {
   let out = injury.copy[key] ?? ''
   for (const [k, v] of Object.entries(vars)) out = out.replaceAll(`{${k}}`, String(v))
-  return out
+  return withProductName(out)
 }

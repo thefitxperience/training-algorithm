@@ -6,6 +6,7 @@ import { equipmentOptions, isTokenAvailable } from '../lib/equipment'
 import { copyFor, type Side } from '../lib/injury'
 import { sessionMinutes } from '../lib/structure'
 import { LoadCell } from './LoadPanel'
+import { CORRECTIVE_REST_SECONDS } from '../lib/bodydot'
 import type { ClientInput, InjuryData } from '../types'
 
 /** The side to actually train is the one the pain is NOT on. */
@@ -184,7 +185,7 @@ export function ProgramPanel({
         {days.map((day) => (
         <section
           key={day.index}
-          className={`overflow-hidden border border-slate-200 bg-white ${
+          className={`border border-slate-200 bg-white ${
             detailed ? 'rounded shadow-sm' : 'rounded-xl shadow-sm ring-1 ring-slate-900/5'
           }`}
         >
@@ -214,7 +215,27 @@ export function ProgramPanel({
               <span className={detailed ? '' : 'rounded-full bg-slate-100 px-2 py-0.5 font-medium'}>
                 {day.exercises.length} exercises
               </span>
-              {detailed && <span>{fmtSets(day.totalSets)} sets</span>}
+              {detailed &&
+                (() => {
+                  // totalSets is the planned muscle-group volume. Weak-side and corrective
+                  // sets are deliberately outside it (so the audit is not inflated), but the
+                  // client still performs them, so the header has to account for them.
+                  const extra =
+                    day.exercises.reduce((s, e) => s + (e.unilateral?.extraSets ?? 0), 0) +
+                    day.correctives.reduce((s, c) => s + c.sets, 0)
+                  return (
+                    <span
+                      title={
+                        extra > 0
+                          ? `${day.totalSets} sets of planned muscle-group volume, plus ${extra} weak-side and corrective sets that sit outside it.`
+                          : undefined
+                      }
+                    >
+                      {fmtSets(day.totalSets)}
+                      {extra > 0 && <span className="text-slate-400"> + {fmtSets(extra)}</span>} sets
+                    </span>
+                  )
+                })()}
               <span
                 className={
                   day.overCeiling && detailed
@@ -230,6 +251,7 @@ export function ProgramPanel({
             </div>
           </div>
 
+          <div className="overflow-x-auto">
           <table className={`w-full text-left ${detailed ? 'text-xs' : 'text-[13px]'}`}>
             <thead className="text-[10px] tracking-wide text-slate-500 uppercase">
               <tr className="border-b border-slate-200">
@@ -267,11 +289,15 @@ export function ProgramPanel({
                       {blk.structure}
                     </span>
                     <span className="ml-2 text-[11px] text-violet-900">
+                      {/* This block's own figures. Under triset a block that found only one
+                          legal partner IS a superset, and an InBody rule-4 region is
+                          supersetted whatever the client picked — the program-level numbers
+                          would mislabel both. */}
                       {blk.indices.length} exercises back to back · {blk.reason}
-                      {program.loadAdjustment !== 0 &&
-                        ` · load ${(program.loadAdjustment * 100).toFixed(0)}%`}
-                      {program.restMultiplier !== 1 &&
-                        ` · rest ×${program.restMultiplier.toFixed(2)}`}
+                      {(blk.loadAdjustment ?? 0) !== 0 &&
+                        ` · load ${((blk.loadAdjustment ?? 0) * 100).toFixed(0)}%`}
+                      {(blk.restMultiplier ?? 1) !== 1 &&
+                        ` · rest ×${(blk.restMultiplier ?? 1).toFixed(2)}`}
                     </span>
                   </td>
                 </tr>
@@ -408,7 +434,9 @@ export function ProgramPanel({
                       detailed ? 'px-3 py-1.5' : 'px-4 py-2 text-right'
                     }`}
                   >
-                    {scaleRest(c.rest, program.restMultiplier)}s
+                    {/* Scaled by the block this exercise is actually in. A straight block
+                        takes no multiplier, which is exactly what the time model charges it. */}
+                    {scaleRest(c.rest, blk.restMultiplier ?? 1)}s
                   </td>
                   {showLoad && (
                     <td
@@ -443,6 +471,7 @@ export function ProgramPanel({
             </tbody>
             ))}
           </table>
+          </div>
 
           {/* Corrective work sits at the end of every session, visually apart from the main
               work — it is added volume, not part of the muscle-group allocation. */}
@@ -456,6 +485,7 @@ export function ProgramPanel({
                   end of session · every session · {day.correctiveMinutes.toFixed(0)} min
                 </span>
               </div>
+              <div className="overflow-x-auto">
               <table className={`w-full text-left ${detailed ? 'text-xs' : 'text-[13px]'}`}>
                 <tbody>
                   {day.correctives.map((c, ci) => (
@@ -490,7 +520,7 @@ export function ProgramPanel({
                           detailed ? 'px-3 py-1.5' : 'px-4 py-2 text-right'
                         }`}
                       >
-                        30s
+                        {CORRECTIVE_REST_SECONDS}s
                       </td>
                       {showLoad && (
                         <td
@@ -535,6 +565,7 @@ export function ProgramPanel({
                   ))}
                 </tbody>
               </table>
+              </div>
             </div>
           )}
         </section>

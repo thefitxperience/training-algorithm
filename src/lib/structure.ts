@@ -20,6 +20,14 @@ export interface Block {
   structure: Structure
   /** why the anchor pair was legal; absent on straight blocks */
   reason?: PairReason
+  /**
+   * Resolved for THIS block, not for the program. A block that could only find one legal
+   * partner is a superset even when the client picked triset, and an InBody rule-4 region is
+   * supersetted regardless of what the client picked — so the program-level figure is the
+   * wrong one to charge it or to label it with. Set by generate.ts once the blocks are known.
+   */
+  restMultiplier?: number
+  loadAdjustment?: number
 }
 
 export interface StructureContext {
@@ -265,9 +273,11 @@ export function blockSeconds(block: Block, setsFor: (i: number) => number, p: Ti
   const size = block.indices.length
   const sets = Math.max(...block.indices.map(setsFor))
   if (size === 1) return sets * (p.workSeconds + p.restSeconds)
+  // The block's own multiplier wins where it has been resolved; `p.restMultiplier` is the
+  // program-level fallback and is only correct when the two happen to agree.
+  const restMultiplier = block.restMultiplier ?? p.restMultiplier
   return (
-    sets *
-    (size * p.workSeconds + (size - 1) * p.transitionSeconds + p.restSeconds * p.restMultiplier)
+    sets * (size * p.workSeconds + (size - 1) * p.transitionSeconds + p.restSeconds * restMultiplier)
   )
 }
 

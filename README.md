@@ -581,7 +581,7 @@ Places where the spec left a choice, and what was chosen:
 
 ## Acceptance criteria — current status
 
-`npm run acceptance` → **150 of 150 checks pass**. The five presets all run at `Full gym`, so
+`npm run acceptance` → **152 of 152 checks pass**. The five presets all run at `Full gym`, so
 the original criteria are unaffected by the equipment feature; the rest cover equipment
 tiers, split advice, set rounding, and the injury, structure, InBody, VALD, BodyDot and Load
 layers. Note the count dropped to 22/22 at one point because
@@ -748,6 +748,40 @@ it. Two real bugs fell out, neither of which the 148 checks in place at the time
 
 Both are now pinned by checks that sweep pains and equipment tiers rather than testing the
 happy path.
+
+### Six display bugs, found by looking rather than by testing
+
+The suite renders nothing, so after the last layer landed I swept the built site across
+structures, ages, equipment tiers and every combination of the six layers. Six problems, none
+of which any check would have caught, and one of which turned out to be a logic bug too:
+
+1. **Rest was scaled by the program's structure, not the block's.** `blockSeconds` applies the
+   rest multiplier only to *paired* blocks, but the table applied the program's to every row.
+   On a triset client every exercise that ended up in a straight block displayed rest ×1.15
+   against a time model charging ×1.00 — 12 of 23 rows on the reference client, and Youth
+   strength showing **138–207s where the model charged 120–180s**.
+2. **The same mismatch existed inside the time model.** With InBody active it charged each
+   block by its own structure; with InBody off it used the program's for everything. So a
+   superset block inside a triset program was charged as a triset — and the figure changed
+   depending on whether a body scan happened to be entered. Both now read one resolved figure
+   off the block itself, so the model and the table cannot disagree.
+3. **Block headers were labelled with the program's figures.** 8 blocks read "superset" while
+   showing the triset load (−8% instead of −3%) and rest (×1.15 instead of ×1) — contradicting
+   the per-slot load badge on the very same row.
+4. **The day header understated the work.** `totalSets` is the planned muscle-group volume,
+   which deliberately excludes weak-side and corrective sets so the audit is not inflated — but
+   the header printed it as plain "sets". A day reading *26.5 sets* had 40.5 performed. It now
+   reads `26.5 + 14 sets`.
+5. **"DEEP FIT" was still on the page.** The old working title survives in one `injury.json`
+   copy string, the medical disclaimer. The data files are generated upstream and never edited
+   here, so the product name is substituted at render time instead.
+6. **The Weight column was clipped, not scrollable.** The day card carried `overflow-hidden`
+   for its rounded corners; adding a seventh column made that reachable, so at narrower widths
+   the weights were simply unreachable. The tables now scroll inside the card.
+
+Items 1–3 share one root cause and are pinned by two checks (a 545-block sweep, 48 of them a
+different structure from the program they sit in). Items 4–6 are presentational and remain
+verifiable only by looking.
 
 ### A display bug the suite structurally cannot catch
 

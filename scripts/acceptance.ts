@@ -6,10 +6,10 @@
  */
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { generate } from '../src/lib/generate'
+import { generate, isEligible } from '../src/lib/generate'
 import { buildAudit } from '../src/lib/audit'
 import { PRESETS } from '../src/lib/presets'
-import { isEquipmentAvailable, libraryCoverage } from '../src/lib/equipment'
+import { EQUIPMENT_TIERS, isEquipmentAvailable, libraryCoverage } from '../src/lib/equipment'
 import { splitAdvice } from '../src/lib/splitAdvice'
 import { pickKey, roundSets } from '../src/lib/rounding'
 import { buildInjuryIndex, verdictForPain, type PainSelection } from '../src/lib/injury'
@@ -956,6 +956,70 @@ const fingerprint = (p: ReturnType<typeof run>) =>
       `left ${quads.leftDelivered.toFixed(1)} vs right ${quads.rightDelivered.toFixed(1)}`,
     )
   }
+}
+
+// ---- VALD swaps must clear every gate selection cleared ---------------------
+// Step 5's swap searches the whole library. Before this was guarded it reached around the
+// injury layer AND around the Stage 1 age/level/equipment rules — 343 swaps across the sweep
+// below included 37 injury-removed exercises, 82 barred by age or level, and 154 unavailable
+// at the client's own equipment tier. None of the other 148 checks caught it, because every
+// one of them tested VALD on a full-gym adult with no pain.
+{
+  const ALL: ValdInput = Object.fromEntries(
+    data.vald.tests.map((t) => [t.code, { asymmetry: 25, weakSide: 'Left' as const }]),
+  )
+  const violations: string[] = []
+  let swaps = 0
+  for (const pr of PRESETS) {
+    for (const pains of [{}, { LOWBACK: 'Both' }, { SHOULDER: 'Both' }, { KNEE_ANT: 'Both' }]) {
+      for (const equipment of EQUIPMENT_TIERS) {
+        const input: ClientInput = { ...pr.input, pains: pains as PainSelection, equipment, vald: ALL }
+        const p = run(input)
+        const removed = new Set(p.removedByPain.map((r) => r.exercise.id))
+        for (const d of p.days) {
+          for (const e of d.exercises) {
+            if (e.unilateral?.form !== 'swapped') continue
+            swaps++
+            const where = `${pr.name}/${Object.keys(pains)[0] ?? 'no pain'}/${equipment}`
+            if (removed.has(e.exercise.id))
+              violations.push(`${where}: "${e.exercise.name}" is removed for this pain`)
+            if (!isEligible(e.exercise, input.level, p.ageBracket, equipment))
+              violations.push(`${where}: "${e.exercise.name}" fails the age/level/equipment screen`)
+          }
+        }
+      }
+    }
+  }
+  check(
+    'VALD: a swapped-in exercise clears injury, age, level and equipment, like a selected one',
+    violations.length === 0 && swaps > 0,
+    violations.length
+      ? `${violations.length} violations, e.g. ${violations.slice(0, 3).join('; ')}`
+      : `${swaps} swaps across ${PRESETS.length} presets x 4 pain sets x ${EQUIPMENT_TIERS.length} equipment tiers`,
+  )
+}
+
+{
+  // `swappedFrom` was read after the slot had already been mutated, so it recorded the
+  // exercise swapped TO under a field that means swapped FROM.
+  const p = run({
+    ...preset('Stress test').input,
+    vald: { 'G-ABD': { asymmetry: 25, weakSide: 'Left' } },
+  })
+  const swapped = p.vald.bumps.filter((b) => b.swappedFrom)
+  const bad = swapped.filter((b) => {
+    const slot = p.days[b.dayIndex].exercises[b.slotIndex]
+    return b.swappedFrom === slot.exercise.name
+  })
+  check(
+    'VALD: a swap records the exercise it replaced, not the one it replaced it with',
+    bad.length === 0 && swapped.length > 0,
+    bad.length
+      ? bad.map((b) => `"${b.swappedFrom}" is also the slot's current exercise`).join('; ')
+      : swapped
+          .map((b) => `"${b.swappedFrom}" -> "${p.days[b.dayIndex].exercises[b.slotIndex].exercise.name}"`)
+          .join('; '),
+  )
 }
 
 // ---- BodyDot layer ---------------------------------------------------------

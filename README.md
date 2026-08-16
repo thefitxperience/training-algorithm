@@ -581,7 +581,7 @@ Places where the spec left a choice, and what was chosen:
 
 ## Acceptance criteria — current status
 
-`npm run acceptance` → **148 of 148 checks pass**. The five presets all run at `Full gym`, so
+`npm run acceptance` → **150 of 150 checks pass**. The five presets all run at `Full gym`, so
 the original criteria are unaffected by the equipment feature; the rest cover equipment
 tiers, split advice, set rounding, and the injury, structure, InBody, VALD, BodyDot and Load
 layers. Note the count dropped to 22/22 at one point because
@@ -714,6 +714,8 @@ the week criterion was **removed**, not because its failure was fixed — see be
 | **Load:** the correction factor defaults to 1.00 and scales when set | **pass** — hook wired, nothing sets it |
 | **Load:** all 315 exercises have a pre-computed record, codes matching | **pass** |
 | **Load:** every figure lands on a 2.5 kg step | **pass** — awkward inputs still round cleanly |
+| **VALD:** a swapped-in exercise clears injury, age, level and equipment | **pass** — after the fix below; 231 swaps swept |
+| **VALD:** a swap records the exercise it replaced, not the replacement | **pass** — after the fix below |
 
 ### A Stage 1 criterion that no longer applies
 
@@ -723,6 +725,54 @@ reads **84 / 61 / 82 / 60 min** at `straight`. Nothing about the program changed
 its length is computed. The window was an artefact of the retired formula, so the check now
 asserts the sessions stay inside the goal's own 90 min ceiling and prints the superseded
 window alongside, rather than quietly widening the range.
+
+### Two bugs the cross-layer sweep found
+
+Every layer was tested largely on its own, so after the last one landed I ran a **leave-one-out**
+sweep — all six on, then each removed in turn — plus a precedence sweep over 40 fully-stacked
+programs. All five input layers still moved the program in the stack, and Load still annotated
+it. Two real bugs fell out, neither of which the 148 checks in place at the time caught:
+
+1. **VALD's swap reached around the injury layer and the Stage 1 safety rules.** Step 5 searches
+   the whole library for a native-unilateral exercise with the same `code`, and filtered on
+   nothing but the code and laterality. Across a sweep of 5 presets × 4 pain sets × 3 equipment
+   tiers, **343 swaps included 37 injury-REMOVEd exercises, 82 barred by the client's age or
+   level, and 154 unavailable at their equipment tier** — a 10-year-old being handed a Kroc row,
+   a bodyweight-only client a cable exercise. Every one of the existing VALD checks tested a
+   full-gym adult with no pain, which is exactly the client the hole cannot show up on.
+   `AllocateContext` now carries a `canSwapIn` predicate and a swapped-in exercise clears
+   precisely what a selected one clears; 112 illegal swaps disappear and the count settles at 231.
+2. **`swappedFrom` recorded the wrong exercise.** It was read after `slot.exercise` had already
+   been reassigned, so it named the exercise swapped *to* under a field meaning swapped *from*.
+   Cosmetic — it only feeds a tooltip — but it made the first bug harder to see.
+
+Both are now pinned by checks that sweep pains and equipment tiers rather than testing the
+happy path.
+
+### A gap this surfaced, not yet closed: InBody is age-blind on volume
+
+`inbody.json`'s `baseSets` is keyed **by goal only** — `{"Lose Fat":[3,4], "Build Muscle":[3,4],
+"Get Stronger":[4,5]}`. The age bracket is consulted for the rest floor and the filler movement,
+and **never for set counts**. Since InBody's resolved sets replace the allocation's age-adjusted
+ones wholesale, any scan on a young or older client overrides the volume the age bracket was
+holding down:
+
+| Client | Weekly sets, no scan | With a plausible scan | Volume audit |
+|---|---|---|---|
+| Reference (18-29) | 127.5 | 107 (×0.84) | 10/11 → 9/11 |
+| Older adult (65+) | 45.5 | **88.5 (×1.95)** | 10/11 → **1/11** |
+| Stress test (6-12) | 25.5 | **82 (×3.22)** | 7/11 → **0/11** |
+
+On the reference adult it behaves — it trims volume slightly and the audit barely moves. On a
+68-year-old it **doubles the weekly volume**, and the scan used there is an entirely plausible
+one for that client (low muscle, high body fat, normal water), not a nonsense input. Exercise
+*selection* stays safe throughout, since the age and load caps run before InBody and are not
+touched; this is purely a volume question.
+
+This is left as reported rather than fixed, because the InBody stage specified that the layer
+replaces the goal-keyed values and `baseSets` ships with no age dimension to clamp against —
+adding one is a design decision, not a bug fix. The options are to key `baseSets` by age
+upstream, or to clamp InBody's resolved sets to the allocation's age-derived figure.
 
 ### Audit of the acceptance suite itself
 

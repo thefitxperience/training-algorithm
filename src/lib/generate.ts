@@ -516,6 +516,8 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
       data: data.vald,
       library: exercises,
       injuryUnilateral,
+      // A swapped-in exercise has to clear exactly what a selected one cleared.
+      canSwapIn: (ex) => !isRemoved(ex) && isEligible(ex, input.level, ageBr, input.equipment),
       // Extra weak-side sets are real local fatigue and count in full against the session
       // ceiling. The app's only per-session ceiling is the goal's time ceiling.
       wouldBreachSessionCap: (dayIndex, extraSets, newUnilateralSlots) => {

@@ -250,6 +250,12 @@ export interface AllocateContext {
   data: ValdData
   library: Exercise[]
   injuryUnilateral: Set<number>
+  /**
+   * Every gate the base generator applies at selection — injury REMOVE, age, level and the
+   * client's equipment tier. Step 5's swap searches the whole library, so without this it
+   * reaches around the injury layer and around the Stage 1 safety rules both.
+   */
+  canSwapIn: (ex: Exercise) => boolean
   /** returns true if adding `extraSets` to this day would breach its ceiling */
   wouldBreachSessionCap: (dayIndex: number, extraSets: number, newUnilateralSlots: number) => boolean
 }
@@ -309,6 +315,7 @@ export function allocate(
         ex.code === f.code &&
         ex.id !== slot.exercise.id &&
         !usedForSwap.has(ex.id) &&
+        ctx.canSwapIn(ex) &&
         isNativeUnilateral(ex, data, ctx.injuryUnilateral),
     )
     if (swap) return { form: 'swapped', swapTo: swap }
@@ -353,6 +360,9 @@ export function allocate(
       const newUnilateral = existing ? 0 : form === 'already' ? 0 : 1
       if (ctx.wouldBreachSessionCap(day.index, 1, newUnilateral)) continue
 
+      // Captured before the mutation below — reading it after records the exercise swapped
+      // TO under a field that means swapped FROM.
+      const replaced = slot.exercise.name
       if (swapTo) {
         usedForSwap.add(swapTo.id)
         slot.exercise = swapTo
@@ -367,7 +377,7 @@ export function allocate(
           weakSide: f.weakSide,
           extraSets: 1,
           form: form!,
-          swappedFrom: swapTo ? slot.exercise.name : undefined,
+          swappedFrom: swapTo ? replaced : undefined,
         })
       }
       addedPerSlot.set(key, already + 1)

@@ -334,8 +334,10 @@ export function ProgramPanel({
                               : 'Run one side at a time — a bilateral exercise cannot carry a one-side-only set.'
                         }`}
                       >
-                        {c.unilateral.weakSide.toUpperCase()} +{c.unilateral.extraSets}
-                        <span className="ml-1 font-normal opacity-70">{c.unilateral.form}</span>
+                        ONE SIDE AT A TIME
+                        <span className="ml-1 font-normal opacity-70">
+                          {c.unilateral.weakSide.toLowerCase()} +{c.unilateral.extraSets}
+                        </span>
                       </span>
                     )}
                     {c.rule4 && (
@@ -379,7 +381,27 @@ export function ProgramPanel({
                       detailed ? 'px-3 py-1.5' : 'px-4 py-2 text-right font-semibold'
                     }`}
                   >
-                    {fmtSets(setsFor(day.index, i, c.sets))} × {c.reps}
+                    {/* The extra sets go to ONE side, so a single figure here would read as
+                        "this many per side" and lose the whole point of the layer. Both sides
+                        are spelled out, the same way the weight column does it. */}
+                    {c.unilateral ? (
+                      <span className="inline-flex flex-col items-end leading-tight">
+                        {(['Left', 'Right'] as const).map((side) => {
+                          const base = setsFor(day.index, i, c.sets)
+                          const weak = side === c.unilateral!.weakSide
+                          const n = weak ? base + c.unilateral!.extraSets : base
+                          return (
+                            <span key={side} className={weak ? 'text-teal-800' : 'text-slate-500'}>
+                              {side[0]} {fmtSets(n)} × {c.reps}
+                            </span>
+                          )
+                        })}
+                      </span>
+                    ) : (
+                      <>
+                        {fmtSets(setsFor(day.index, i, c.sets))} × {c.reps}
+                      </>
+                    )}
                   </td>
                   <td
                     className={`whitespace-nowrap text-slate-600 ${

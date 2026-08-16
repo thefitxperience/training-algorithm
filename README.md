@@ -749,6 +749,27 @@ it. Two real bugs fell out, neither of which the 148 checks in place at the time
 Both are now pinned by checks that sweep pains and equipment tiers rather than testing the
 happy path.
 
+### A display bug the suite structurally cannot catch
+
+VALD's one job is putting extra sets on **one side**, and the program table was hiding it. The
+`Sets × reps` column printed the base figure only — `4 × 8–12` — with the extra sets relegated
+to a badge and a hover tooltip. A coach reading the column would prescribe 4 sets per side and
+miss the weak side's extra work entirely, which is the whole output of the layer. The Load
+column had been showing both sides since it was built, so the two disagreed on the same row.
+
+Both sides are now spelled out in the column, weak side first and highlighted:
+
+```
+Bulgarian split squat        L 6 × 8–12       L 25–40 · R 32.5–52.5 kg
+  ONE SIDE AT A TIME left +2 R 4 × 8–12
+```
+
+Sets and weight now tell one story — the weak side gets more sets at less weight.
+
+Worth stating plainly: **`npm run acceptance` runs headless and renders no components, so no
+number of checks there would have caught this.** The data was correct the whole time; only the
+presentation was wrong. Rendering is verified by screenshotting the built site, not by the suite.
+
 ### A gap this surfaced, not yet closed: InBody is age-blind on volume
 
 `inbody.json`'s `baseSets` is keyed **by goal only** — `{"Lose Fat":[3,4], "Build Muscle":[3,4],

@@ -43,7 +43,7 @@ To publish:
 
 The push triggers the workflow; the URL appears under Actions once the deploy job finishes.
 
-**Everything in `public/data/` becomes publicly downloadable** — all eleven JSON files,
+**Everything in `public/data/` becomes publicly downloadable** — all twelve JSON files,
 including the 3 MB `allocation.json`. It's a static site, so the browser has to be able to
 fetch them; there is no way to publish this and keep the data private. GitHub Pages on a
 free account also requires a **public repo**. If either matters, this needs a host with
@@ -51,7 +51,7 @@ access control rather than Pages.
 
 ## Data
 
-Eleven files in `public/data/`, served as static assets and fetched once at startup:
+Twelve files in `public/data/`, served as static assets and fetched once at startup:
 
 | File | What it is |
 |---|---|
@@ -66,6 +66,7 @@ Eleven files in `public/data/`, served as static assets and fetched once at star
 | `vald.json` | 6 asymmetry brackets, the 17 tests with their library coverage, and the budget/conversion rules |
 | `bodydot.json` | 26 posture indicators with their bands, and 18 arsenal entries covering 13 of them, pre-resolved to library ids |
 | `load.json` | 17 newtons-to-kilograms constants, 17 anchors, 30 bridges, and a pre-computed class/modifier/laterality record for all 315 exercises |
+| `amend.json` | the three amend types, four blocks, seven ranking rules, sibling sub-regions for all 47 codes, and the sub-regions each pain empties |
 
 They are generated upstream and are **not modified** by this app. `loadData()` in
 [src/data/load.ts](src/data/load.ts) caches the fetch promise at module scope, so
@@ -79,7 +80,9 @@ linkable regression case: `?preset=Stress%20test&view=detailed`, or
 `?inbody=smm:30.1,pbf:26.4,…`. VALD readings too, with all four fields positional and optional —
 `?vald=Q-KD:25:L:400:380` is percentage, weak side, left newtons and right newtons, and
 `?vald=Q-KD:::400:380` is forces only. And posture readings, with the side on the
-lateral indicators: `?bodydot=S02:60,F05:6:L`.
+lateral indicators: `?bodydot=S02:60,F05:6:L`. Amends ride along as pins —
+`?pins=1|Quads - knee-dominant|0;229;278;;client;1;1755300000000` is slot, from, to, equipment,
+actor, accepted, timestamp.
 
 ## Layout
 
@@ -362,6 +365,97 @@ Each is pinned by a check, so a later "correction" back toward the sheet fails t
    classifier called them `ISO_FREE`. Both are multi-joint presses and the library carries an
    explicit compound flag that classifier did not have.
 
+## Amend — changing an exercise after the program is generated
+
+**An amend is a pin, not an edit.** It pins a slot to an exercise and the generator re-runs
+holding the pin; it never modifies the generated output in place. That is the whole design:
+a re-test, a goal change or a new InBody scan re-runs the generator, and an edit would be
+silently discarded — the worst failure available here, because the client would never know
+their change had been undone.
+
+A slot's identity has to survive that re-run, so it is keyed on the allocation's own
+structure (`dayIndex|subRegion|n`) rather than on a position in the output — the session is
+re-sorted after selection, so an output index would drift. **No day repeats a sub-region in
+any of the 2,205 allocation blocks**, which is what makes that key both unique and readable.
+
+Three types, detected from the two exercises rather than chosen: **A** same exercise on a
+different implement, **B** a different exercise in the same primary sub-region
+(`to.code === from.code`), **C** a different sub-region. Only C requires acceptance, and it
+does nothing at all until accepted — the pin is held in `pending`, not applied.
+
+Four blocks, in the data file's precedence: **injury** (REMOVE or SIDE ONLY — the only hard
+refusal), **age**, **main slot** (must hold a compound), **corrective** (BodyDot slots are
+prescribed by the screening, so they carry no amend control at all). Everything else is
+allowed and merely badged, the same way a split is never refused.
+
+### Pin lifecycle
+
+- **A pin the current injury screen would refuse is never applied.** Re-running with a newly
+  reported pain drops it and says so — pinning a lateral-raise variant, then reporting
+  shoulder pain, retires the pin with *"ruled out by a pain you reported"*.
+- **A pin that outlives its slot is retired.** Moving from 4 days Upper/Lower to 3 days Full
+  Body retires it with the slot named.
+
+`actor` and `timestamp` are kept on every pin, so a trainer can see what the client changed
+and vice versa. Permissions are **not** enforced — `amend.json` flags them PROPOSED, so any
+actor may make any type; that is a decision, not an omission.
+
+### Three corrections to the source spec, implemented as corrected
+
+1. **The main-slot rule reads the library's movement type**, not the Load layer's mechanical
+   class. They disagree on exactly one case that matters — **push-up**, which the library
+   calls compound and the Load layer calls BODYWEIGHT after the "weighted token reads as
+   loadable" fix. The spec's own worked example needs the library reading, and it has to be
+   one field rather than two. Asserted both ways.
+2. **The chest main-lift count is four**, not two — incline, flat, paused and decline bench
+   press. The argument built on it still holds; the number was wrong. Asserted.
+3. **Worked example 3 is not achievable and the engine says so.** All eight exercises in the
+   lateral-raise sub-region carry `SH_IMPINGE`, which is on the SHOULDER REMOVE list, so the
+   real output is **7 REMOVE, 1 SIDE ONLY, zero freely available** — verified exactly. The
+   list then widens to sibling delt sub-regions badged ADAPTED, and the reason is stated. The
+   one SIDE ONLY exercise is Lean-away single-arm cable lateral raise, and Lu raise is REMOVE,
+   both as the correction says.
+
+### Readings the spec left open
+
+- **The cap is applied per group, not to the union.** "Cap the shortlist at 8" sounds like
+  one list, but Q-KD alone has more than eight same-sub-region options, so type C would never
+  survive a union cap — and the spec's own worked example (leg press → lying leg curl) is a
+  type C on a sub-region that is nowhere near empty. Each group is capped at 8 instead, which
+  bounds the list while keeping every route reachable. Type A entries sit outside the cap
+  entirely: they are the same exercise on a different implement, already bounded by that
+  exercise's own equipment list, and four tokens would otherwise crowd out half the real
+  alternatives.
+- **Blocked entries are not counted against the cap either.** They are the explanation for a
+  short list, not choices in it; truncating them leaves the client staring at three options
+  with no reason given.
+- **Sibling sub-regions are always offered**, ranked below the same-sub-region ones, not only
+  when the shortlist is empty. Ranking rule 2 ("type B before type C") only means anything if
+  both are in one list. `widened` still marks the case the data file cares about — nothing in
+  the sub-region is available, so the siblings are all that is left.
+- **SIDE_ONLY blocks alongside REMOVE.** The main program keeps a side-only exercise and
+  badges it, but deliberately *choosing* one as a replacement is a different act — and it is
+  what makes the shoulder-pain shortlist come back with nothing available, as corrected above.
+- **Equipment availability filters the shortlist** although it is not one of the four blocks.
+  Offering a barbell to a client with no barbell is noise rather than choice. Level and skill
+  caps are *not* applied — the spec blocks age but deliberately not level, so a
+  level-inappropriate choice stays the client's to make.
+- **Drift is measured per sub-region, off the allocation's own slots.** `targets` in the
+  allocation block is per muscle *group*, which is too coarse to see the thing the spec asks
+  about: a leg-press-to-leg-curl swap moves two sub-regions inside one group and leaves the
+  group total untouched.
+
+### Expect these, they are not bugs
+
+- **A single type C swap moves two sub-regions 50-100% off target.** Swapping the Q-KD slot
+  for a lying leg curl reports Q-KD at **−50%** and H-CURL at **+100%**. Reported, never
+  blocked — the client asked for this — but it is why unlimited type C amends let someone
+  rebuild the program into something the engine never validated. There is no amend budget;
+  `amend.json` flags that as open too.
+- **17 of the 18 pains leave at least one sub-region with nothing available**, medial elbow
+  pain seven of them. The suite checks every pain/sub-region pair the data file lists against
+  the engine rather than trusting the list.
+
 ## BodyDot posture
 
 Fifth and last rule layer, and the only one in the stack that **adds slots**. It runs last,
@@ -581,7 +675,7 @@ Places where the spec left a choice, and what was chosen:
 
 ## Acceptance criteria — current status
 
-`npm run acceptance` → **152 of 152 checks pass**. The five presets all run at `Full gym`, so
+`npm run acceptance` → **171 of 171 checks pass**. The five presets all run at `Full gym`, so
 the original criteria are unaffected by the equipment feature; the rest cover equipment
 tiers, split advice, set rounding, and the injury, structure, InBody, VALD, BodyDot and Load
 layers. Note the count dropped to 22/22 at one point because
@@ -716,6 +810,25 @@ the week criterion was **removed**, not because its failure was fixed — see be
 | **Load:** every figure lands on a 2.5 kg step | **pass** — awkward inputs still round cleanly |
 | **VALD:** a swapped-in exercise clears injury, age, level and equipment | **pass** — after the fix below; 231 swaps swept |
 | **VALD:** a swap records the exercise it replaced, not the replacement | **pass** — after the fix below |
+| **Amend:** with no pins the program is identical | **pass** — whole acceptance output byte-identical to the previous commit |
+| **Amend:** main slot — Paused bench RECOMMENDED, non-compounds blocked | **pass** — 4 named, 5 in total |
+| **Amend:** push-up stays available on a main slot | **pass** — library movement type, one field not two |
+| **Amend:** the chest main-lift count is four, not two | **pass** |
+| **Amend:** lateral raise, healthy 30-year-old — 7 swaps, none blocked | **pass** |
+| **Amend:** shoulder pain empties the sub-region and the list widens | **pass** — 7 REMOVE + 1 SIDE ONLY, widened to D-REAR |
+| **Amend:** a widened list still shows the blocked options, never blank | **pass** |
+| **Amend:** every sub-region the data says a pain empties really is empty | **pass** — 43 pain/sub-region pairs |
+| **Amend:** a type C swap does nothing until accepted | **pass** |
+| **Amend:** that swap reports drift on both Q-KD and H-CURL | **pass** — −50% and +100% |
+| **Amend:** drift is reported, never blocked | **pass** |
+| **Amend:** a pin that becomes injury-blocked is dropped with a reason | **pass** |
+| **Amend:** a pin that outlives its slot is retired and reported | **pass** |
+| **Amend:** two identical amend sequences produce identical programs | **pass** |
+| **Amend:** a pinned exercise is not also selected elsewhere in the week | **pass** — pinned ids reserved before selection |
+| **Amend:** a corrective slot is not amendable at all | **pass** |
+| **Amend:** the three types are detected, never chosen | **pass** |
+| **Amend:** the selectable shortlist is capped at 8 | **pass** — per group, see above |
+| **Amend:** the shortlist never offers unavailable equipment | **pass** |
 
 ### A Stage 1 criterion that no longer applies
 

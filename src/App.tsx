@@ -14,6 +14,8 @@ import { hasAnyReading, type ValdInput } from './lib/vald'
 import { hasAnyBodyDot, type BodyDotInput } from './lib/bodydot'
 import { BodyDotPanel } from './components/BodyDotPanel'
 import { LoadPanel } from './components/LoadPanel'
+import { PinsPanel, type AmendWiring } from './components/AmendPanel'
+import type { Pin } from './lib/amend'
 import { AuditPanel } from './components/AuditPanel'
 import { EQUIPMENT_TIERS, type EquipmentTier } from './lib/equipment'
 import type { PainSelection, Side } from './lib/injury'
@@ -97,6 +99,27 @@ function bodydotFromUrl(q: URLSearchParams): BodyDotInput | null {
   ) as BodyDotInput
 }
 
+/** pins=0|Extension|0;123;124;;client;1;1755300000000 — one pin per comma-separated entry */
+function pinsFromUrl(q: URLSearchParams): Pin[] | null {
+  const raw = q.get('pins')
+  if (raw === null) return null
+  return raw
+    .split(',')
+    .filter(Boolean)
+    .map((entry) => {
+      const [slotId, from, to, equipment, actor, accepted, timestamp] = entry.split(';')
+      return {
+        slotId,
+        from: Number(from),
+        to: Number(to),
+        equipment: equipment || undefined,
+        actor: actor || 'client',
+        timestamp: new Date(Number(timestamp) || 0).toISOString(),
+        ...(accepted === '1' ? { accepted: true } : accepted === '0' ? { accepted: false } : {}),
+      } as Pin
+    })
+}
+
 function inputFromUrl(): ClientInput {
   const q = new URLSearchParams(window.location.search)
   const presetName = q.get('preset')
@@ -110,6 +133,7 @@ function inputFromUrl(): ClientInput {
         inbody: inbodyFromUrl(q) ?? p.input.inbody,
         vald: valdFromUrl(q) ?? p.input.vald,
         bodydot: bodydotFromUrl(q) ?? p.input.bodydot,
+        pins: pinsFromUrl(q) ?? p.input.pins,
         structure: STRUCTURES.includes(q.get('structure') as Structure)
           ? (q.get('structure') as Structure)
           : p.input.structure,
@@ -130,6 +154,7 @@ function inputFromUrl(): ClientInput {
     inbody: inbodyFromUrl(q) ?? base.inbody,
     vald: valdFromUrl(q) ?? base.vald,
     bodydot: bodydotFromUrl(q) ?? base.bodydot,
+    pins: pinsFromUrl(q) ?? base.pins,
     structure: STRUCTURES.includes(q.get('structure') as Structure)
       ? (q.get('structure') as Structure)
       : base.structure,
@@ -153,7 +178,7 @@ export default function App() {
   useEffect(() => {
     const q = new URLSearchParams(
       Object.entries(input)
-        .filter(([k]) => k !== 'pains' && k !== 'inbody' && k !== 'vald' && k !== 'bodydot')
+        .filter(([k]) => k !== 'pains' && k !== 'inbody' && k !== 'vald' && k !== 'bodydot' && k !== 'pins')
         .map(([k, v]) => [k, String(v)]) as [string, string][],
     )
     const pains = Object.entries(input.pains)
@@ -181,6 +206,23 @@ export default function App() {
         'bodydot',
         Object.entries(input.bodydot)
           .map(([code, r]) => `${code}:${r.value}${r.side ? `:${r.side[0]}` : ''}`)
+          .join(','),
+      )
+    if (input.pins.length)
+      q.set(
+        'pins',
+        input.pins
+          .map((p) =>
+            [
+              p.slotId,
+              p.from,
+              p.to,
+              p.equipment ?? '',
+              p.actor,
+              p.accepted === true ? '1' : p.accepted === false ? '0' : '',
+              Date.parse(p.timestamp) || 0,
+            ].join(';'),
+          )
           .join(','),
       )
     q.set('view', view)
@@ -220,7 +262,7 @@ export default function App() {
   }, [data, input, bracket])
 
   // pains / inbody / vald are objects, so they need comparing by value, not identity.
-  const OBJECT_FIELDS: (keyof ClientInput)[] = ['pains', 'inbody', 'vald', 'bodydot']
+  const OBJECT_FIELDS: (keyof ClientInput)[] = ['pains', 'inbody', 'vald', 'bodydot', 'pins']
   const objectKey = (p: ClientInput) =>
     OBJECT_FIELDS.map((f) => JSON.stringify(Object.entries(p[f] ?? {}).sort())).join('|')
   const activePreset =
@@ -247,8 +289,29 @@ export default function App() {
 
   const hasPains = Object.keys(input.pains).length > 0
 
+  // An amend is a pin: it re-runs the generator holding the choice rather than editing the
+  // output, so a re-test or a new scan cannot silently discard it.
+  const amendWiring: AmendWiring | undefined = result?.ok
+    ? {
+        data: data.amend,
+        exercises: data.exercises,
+        pins: input.pins,
+        setPins: (pins) => setInput({ ...input, pins }),
+        ageBracket: bracket,
+        equipment: input.equipment,
+        verdictOf: (id) => result.program.verdicts.get(id)?.verdict ?? 'OK',
+        actor: 'client',
+      }
+    : undefined
+
   const programOrError = result?.ok ? (
-    <ProgramPanel program={result.program} input={input} view={view} injury={data.injury} />
+    <ProgramPanel
+      program={result.program}
+      input={input}
+      view={view}
+      injury={data.injury}
+      amend={amendWiring}
+    />
   ) : (
     <div className="rounded border-2 border-red-300 bg-red-50 px-4 py-3">
       <div className="text-sm font-bold text-red-900">Cannot generate a program</div>
@@ -336,6 +399,11 @@ export default function App() {
               compact
             />
           </div>
+          {result?.ok && amendWiring && (
+            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <PinsPanel program={result.program} wiring={amendWiring} />
+            </div>
+          )}
           {hasPains && <MedicalDisclaimer injury={data.injury} />}
           {programOrError}
         </div>
@@ -395,6 +463,11 @@ export default function App() {
                   setPains={(pains) => setInput({ ...input, pains })}
                 />
               </div>
+              {result?.ok && amendWiring && (
+                <div className="mt-4 border-t border-slate-200 pt-3">
+                  <PinsPanel program={result.program} wiring={amendWiring} />
+                </div>
+              )}
             </div>
           </aside>
 

@@ -18,6 +18,13 @@ import { WORKED_EXAMPLE, goalWeights, type InBodyInput } from '../src/lib/inbody
 import type { ValdInput } from '../src/lib/vald'
 import { applyChain, roundTo } from '../src/lib/weight'
 import {
+  amendType,
+  blockFor,
+  buildShortlist,
+  type AmendContext,
+  type Pin,
+} from '../src/lib/amend'
+import {
   CORRECTIVE_REST_SECONDS,
   CORRECTIVE_WORK_SECONDS,
   classify,
@@ -41,6 +48,7 @@ const data: DataBundle = {
   vald: read('vald.json'),
   bodydot: read('bodydot.json'),
   load: read('load.json'),
+  amend: read('amend.json'),
 }
 const injuryIndex = buildInjuryIndex(data.injury, data.exercises)
 const idOf = (name: string) => data.exercises.find((e) => e.name === name)!.id
@@ -641,6 +649,7 @@ const fingerprint = (p: ReturnType<typeof run>) =>
       inbody: WORKED_EXAMPLE,
       vald: {},
       bodydot: {},
+      pins: [],
     }
     const p = run(client)
     const ib = p.inbody
@@ -1924,6 +1933,270 @@ const fingerprint = (p: ReturnType<typeof run>) =>
       'Load: every figure lands on a 2.5 kg step',
       off.length === 0 && p.load.counts.DERIVED > 0,
       off.length ? off.slice(0, 5).join(', ') : 'awkward inputs (437 / 361 N) still round cleanly',
+    )
+  }
+}
+
+// ---- Amend layer -----------------------------------------------------------
+{
+  const withPins = (pins: Pin[], over: Partial<ClientInput> = {}) => run({ ...REF, ...over, pins })
+  const ex = (name: string) => data.exercises.find((e) => e.name === name)!
+  const ctxFor = (p: ReturnType<typeof run>, equipment: ClientInput['equipment'] = 'Full gym'): AmendContext => ({
+    data: data.amend,
+    library: data.exercises,
+    ageBracket: p.ageBracket,
+    equipment,
+    verdictOf: (id) => p.verdicts.get(id)?.verdict ?? 'OK',
+  })
+  const pin = (slotId: string, from: number, to: number, extra: Partial<Pin> = {}): Pin => ({
+    slotId,
+    from,
+    to,
+    actor: 'client',
+    timestamp: '2026-08-16T00:00:00.000Z',
+    ...extra,
+  })
+
+  check(
+    'Amend: with no pins the program is identical',
+    mainFingerprint(run(REF)) === mainFingerprint(withPins([])) && !run(REF).amend.active,
+    'inert',
+  )
+
+  {
+    // A main slot needs a compound movement — read off the LIBRARY's movement type, not the
+    // Load layer's mechanical class. The two disagree on push-up, and the spec needs the
+    // library reading for its own worked example.
+    const p = run(REF)
+    const bench = ex('Flat bench press')
+    const list = buildShortlist({ dayIndex: 0, sub: bench.sub, n: 0 }, bench, ctxFor(p))
+    const paused = list.candidates.find((c) => c.exercise.name === 'Paused bench press')
+    const named = ['Flat fly', 'Mid-height cable crossover', 'Pec deck', 'Banded pec stretch']
+    const blocked = named.filter((n) =>
+      list.candidates.some((c) => c.exercise.name === n && c.blocked?.kind === 'mainSlot'),
+    )
+    check(
+      'Amend: on a main slot, Paused bench press is RECOMMENDED and the non-compounds are blocked',
+      list.mainSlot && paused?.badge === 'RECOMMENDED' && !paused.blocked && blocked.length === 4,
+      `${blocked.length}/4 named exercises blocked as non-compound (${list.sameSubBlocked} in total, Svend press being the fifth)`,
+    )
+    check(
+      'Amend: push-up stays available on a main slot — the library calls it compound',
+      list.candidates.some((c) => c.exercise.name === 'Push-up' && !c.blocked),
+      "the Load layer classes it BODYWEIGHT; the main-slot rule reads exercises.json's movement type, one field not two",
+    )
+    // Correction to the source spec, which says two.
+    check(
+      'Amend: the chest main-lift count is four, not two',
+      data.exercises.filter((e) => e.group === 'Chest' && e.mainLift).length === 4,
+      data.exercises.filter((e) => e.group === 'Chest' && e.mainLift).map((e) => e.name).join(', '),
+    )
+  }
+
+  {
+    const p = run({ ...REF, age: 30 })
+    const lat = ex('Lateral raise')
+    const list = buildShortlist({ dayIndex: 0, sub: lat.sub, n: 0 }, lat, ctxFor(p))
+    const sameSub = list.candidates.filter((c) => c.type === 'B')
+    check(
+      'Amend: lateral raise for a healthy 30-year-old offers 7 same-sub-region swaps, none blocked',
+      sameSub.length === 7 && sameSub.every((c) => !c.blocked) && !list.widened,
+      `${sameSub.length} type B candidates, plus ${list.candidates.filter((c) => c.type === 'A').length} equipment variants of the same exercise`,
+    )
+  }
+
+  {
+    // Worked example 3 in the source spec is not achievable: every exercise in this
+    // sub-region carries SH_IMPINGE, which is on the SHOULDER REMOVE list.
+    const p = run({ ...REF, age: 30, pains: { SHOULDER: 'Left' } })
+    const lat = ex('Lateral raise')
+    const list = buildShortlist({ dayIndex: 0, sub: lat.sub, n: 0 }, lat, ctxFor(p))
+    const siblings = data.amend.siblingSubRegions[lat.code]
+    const adapted = list.candidates.filter((c) => c.badge === 'ADAPTED' && !c.blocked)
+    const verdicts = data.exercises
+      .filter((e) => e.code === lat.code)
+      .map((e) => p.verdicts.get(e.id)!.verdict)
+    check(
+      'Amend: shoulder pain empties the lateral-raise sub-region and the list widens to siblings',
+      list.sameSubAvailable === 0 &&
+        list.widened &&
+        adapted.length > 0 &&
+        adapted.every((c) => siblings.includes(c.exercise.code)),
+      `${verdicts.filter((v) => v === 'REMOVE').length} REMOVE + ${verdicts.filter((v) => v === 'SIDE_ONLY').length} SIDE_ONLY, zero available — widened to ${[...new Set(adapted.map((c) => c.exercise.code))].join(', ')}`,
+    )
+    check(
+      'Amend: a widened list still shows the blocked options and never comes back blank',
+      list.candidates.some((c) => c.blocked) && list.candidates.length > 0,
+      `${list.candidates.filter((c) => c.blocked).length} blocked entries kept alongside ${adapted.length} adapted ones`,
+    )
+  }
+
+  {
+    // The data file's own claim about which sub-regions each pain empties, checked against
+    // the engine rather than trusted.
+    const wrong: string[] = []
+    let checked = 0
+    for (const [painId, codes] of Object.entries(data.amend.emptyShortlistByPain)) {
+      const p = run({ ...REF, age: 30, pains: { [painId]: 'Both' } as PainSelection })
+      for (const code of codes) {
+        const from = data.exercises.find((e) => e.code === code)
+        if (!from) continue
+        checked++
+        const list = buildShortlist({ dayIndex: 0, sub: from.sub, n: 0 }, from, ctxFor(p))
+        if (list.sameSubAvailable > 0) wrong.push(`${painId}/${code}: ${list.sameSubAvailable} available`)
+      }
+    }
+    check(
+      'Amend: every sub-region the data says a pain empties really is empty',
+      wrong.length === 0 && checked > 0,
+      wrong.length
+        ? wrong.slice(0, 3).join('; ')
+        : `${checked} pain/sub-region pairs across ${Object.keys(data.amend.emptyShortlistByPain).length} pains — medial elbow alone empties ${data.amend.emptyShortlistByPain.ELBOW_MED.length}`,
+    )
+  }
+
+  {
+    const base = run(REF)
+    const qkd = base.days.flatMap((d) => d.exercises).find((e) => e.exercise.code === 'Q-KD')!
+    const curl = ex('Lying leg curl')
+    const held = withPins([pin(qkd.slotId, qkd.exercise.id, curl.id, { accepted: false })])
+    const done = withPins([pin(qkd.slotId, qkd.exercise.id, curl.id, { accepted: true })])
+    const at = (p: ReturnType<typeof run>) =>
+      p.days.flatMap((d) => d.exercises).find((e) => e.slotId === qkd.slotId)?.exercise.name
+
+    check(
+      'Amend: a type C swap does nothing until it is accepted',
+      amendType(qkd.exercise, curl) === 'C' &&
+        held.amend.applied.length === 0 &&
+        held.amend.pending.length === 1 &&
+        at(held) === qkd.exercise.name &&
+        at(done) === 'Lying leg curl',
+      `held back the slot stays on ${at(held)}; accepted it becomes ${at(done)}`,
+    )
+
+    const drift = done.amend.drift
+    const codes = drift.map((d) => d.code)
+    check(
+      'Amend: that swap reports drift on both Q-KD and H-CURL',
+      codes.includes('Q-KD') && codes.includes('H-CURL'),
+      drift.map((d) => `${d.code} ${d.target}->${d.delivered} (${(d.pct * 100).toFixed(0)}%)`).join(' | '),
+    )
+    check(
+      'Amend: drift is reported, never blocked',
+      done.amend.applied.length === 1 && drift.length > 0 && done.exerciseCount === base.exerciseCount,
+      'the swap applies in full and the program stays the same size',
+    )
+  }
+
+  {
+    // A pin the CURRENT injury screen would refuse is never applied.
+    const base = run(REF)
+    const slot = base.days.flatMap((d) => d.exercises).find((e) => e.exercise.code === 'D-SIDE')!
+    const alt = data.exercises.find((e) => e.code === 'D-SIDE' && e.id !== slot.exercise.id)!
+    const pins = [pin(slot.slotId, slot.exercise.id, alt.id, { actor: 'trainer' })]
+    const before = withPins(pins)
+    const after = withPins(pins, { pains: { SHOULDER: 'Both' } })
+    check(
+      'Amend: a pin that later becomes injury-blocked is dropped, with the reason stated',
+      before.amend.applied.length === 1 &&
+        after.amend.applied.length === 0 &&
+        after.amend.retired.length === 1 &&
+        /pain you reported/.test(after.amend.retired[0].reason),
+      `"${alt.name}" applies pain-free, and is retired once shoulder pain is reported: ${after.amend.retired[0]?.reason}`,
+    )
+  }
+
+  {
+    // A pin whose slot no longer exists — the split or the frequency moved underneath it.
+    const base = run(REF)
+    const first = base.days[0].exercises[0]
+    const alt = data.exercises.find((e) => e.code === first.exercise.code && e.id !== first.exercise.id)!
+    const moved = withPins([pin(first.slotId, first.exercise.id, alt.id)], {
+      days: 3,
+      split: 'Full Body',
+    })
+    check(
+      'Amend: a pin that outlives its slot is retired and reported',
+      moved.amend.applied.length === 0 &&
+        moved.amend.retired.length === 1 &&
+        /no longer exists/.test(moved.amend.retired[0].reason),
+      moved.amend.retired[0]?.reason,
+    )
+  }
+
+  {
+    const base = run(REF)
+    const slot = base.days.flatMap((d) => d.exercises).find((e) => e.exercise.code === 'D-SIDE')!
+    const alt = data.exercises.find((e) => e.code === 'D-SIDE' && e.id !== slot.exercise.id)!
+    const pins = [pin(slot.slotId, slot.exercise.id, alt.id)]
+    const a = withPins(pins)
+    const b = withPins(pins)
+    check(
+      'Amend: two identical amend sequences produce identical programs',
+      mainFingerprint(a) === mainFingerprint(b),
+      'deterministic',
+    )
+    const ids = a.days.flatMap((d) => d.exercises.map((e) => e.exercise.id))
+    check(
+      'Amend: a pinned exercise is not also selected somewhere else in the week',
+      ids.filter((id) => id === alt.id).length === 1,
+      `"${alt.name}" appears once — pinned ids are reserved before selection runs`,
+    )
+  }
+
+  {
+    const p = run(REF)
+    const anyEx = data.exercises.find((e) => e.type === 'compound')!
+    const corrective = blockFor(anyEx, { ...ctxFor(p), corrective: true }, false)
+    check(
+      'Amend: a corrective slot is not amendable at all',
+      corrective?.kind === 'corrective',
+      corrective?.reason ?? 'not blocked',
+    )
+  }
+
+  {
+    const bench = ex('Flat bench press')
+    const paused = ex('Paused bench press')
+    const curl = ex('Lying leg curl')
+    check(
+      'Amend: the three types are detected from the exercises, never chosen',
+      amendType(bench, bench, 'DB') === 'A' &&
+        amendType(bench, paused) === 'B' &&
+        amendType(bench, curl) === 'C' &&
+        data.amend.types.C.requiresAcceptance &&
+        !data.amend.types.A.requiresAcceptance &&
+        !data.amend.types.B.requiresAcceptance,
+      'A = same exercise + a different equipment token, B = same code, C = different code',
+    )
+  }
+
+  {
+    // The cap limits choices; it must not swallow the reasons the list is short.
+    const p = run({ ...REF, age: 30, pains: { SHOULDER: 'Left' } })
+    const lat = ex('Lateral raise')
+    const list = buildShortlist({ dayIndex: 0, sub: lat.sub, n: 0 }, lat, ctxFor(p))
+    check(
+      'Amend: the selectable shortlist is capped at 8',
+      list.candidates.filter((c) => !c.blocked && c.type !== 'A').length <= data.amend.shortlistMax &&
+        list.candidates.filter((c) => c.blocked).length <= data.amend.shortlistMax,
+      `${list.candidates.filter((c) => !c.blocked && c.type !== 'A').length} selectable swaps, ${list.candidates.filter((c) => c.blocked).length} shown blocked (cap ${data.amend.shortlistMax} each; equipment variants of the same exercise sit outside it)`,
+    )
+  }
+
+  {
+    // Equipment availability is not one of the four blocks, but offering a barbell to a
+    // client with no barbell is noise rather than choice, so it is filtered out.
+    const p = run({ ...REF, equipment: 'Bodyweight only' })
+    const lat = ex('Lateral raise')
+    const list = buildShortlist({ dayIndex: 0, sub: lat.sub, n: 0 }, lat, ctxFor(p, 'Bodyweight only'))
+    const unavailable = list.candidates.filter(
+      (c) => !isEquipmentAvailable(c.exercise, 'Bodyweight only'),
+    )
+    check(
+      'Amend: the shortlist never offers what the client has no equipment for',
+      unavailable.length === 0,
+      `${list.candidates.length} candidates at bodyweight-only, none needing kit the client lacks`,
     )
   }
 }

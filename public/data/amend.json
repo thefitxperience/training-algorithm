@@ -1,0 +1,397 @@
+{
+ "types": {
+  "A": {
+   "name": "EQUIPMENT",
+   "detect": "the chosen token is already in that exercise's Equipment field",
+   "requiresAcceptance": false,
+   "recomputes": [
+    "load",
+    "sessionTime"
+   ]
+  },
+  "B": {
+   "name": "SIMILAR",
+   "detect": "to.code === from.code",
+   "requiresAcceptance": false,
+   "recomputes": [
+    "injury",
+    "load",
+    "valdBump",
+    "structurePairing",
+    "sessionTime"
+   ]
+  },
+  "C": {
+   "name": "DIFFERENT",
+   "detect": "to.code !== from.code",
+   "requiresAcceptance": true,
+   "recomputes": [
+    "injury",
+    "weeklyVolume",
+    "load",
+    "valdBump",
+    "inbodyRule4",
+    "structurePairing",
+    "rest",
+    "sessionTime",
+    "driftCheck"
+   ]
+  }
+ },
+ "badges": {
+  "RECOMMENDED": "same sub-region AND same movement type; on a MAIN slot also carries the main lift flag",
+  "AVAILABLE": "same sub-region, different movement type - legal, load will change",
+  "ADAPTED": "different sub-region - this is a type C and carries the warning"
+ },
+ "blocks": {
+  "injury": "the pain rules return REMOVE or SIDE ONLY - the only hard refusal",
+  "age": "the library's Avoid ages column names the client's bracket",
+  "mainSlot": "a MAIN slot must hold a Compound movement type",
+  "corrective": "BodyDot corrective slots are prescribed by the screening, not chosen"
+ },
+ "precedence": [
+  "injury",
+  "age",
+  "slot role",
+  "everything else"
+ ],
+ "ranking": [
+  "not blocked",
+  "same primary sub-region (type B before type C)",
+  "on a MAIN slot, main-lift-flagged first",
+  "same movement type",
+  "shares an equipment token with the current exercise",
+  "closest Load (1-5) rating",
+  "library order"
+ ],
+ "shortlistMax": 8,
+ "mainSlotClassField": "movementType",
+ "mainSlotAllowed": [
+  "Compound"
+ ],
+ "siblingSubRegions": {
+  "C-LOW": [
+   "C-MID",
+   "C-UP"
+  ],
+  "C-MID": [
+   "C-LOW",
+   "C-UP"
+  ],
+  "C-UP": [
+   "C-LOW",
+   "C-MID"
+  ],
+  "L-STR": [
+   "L-HOR",
+   "L-VERT"
+  ],
+  "L-VERT": [
+   "L-HOR",
+   "L-STR"
+  ],
+  "L-HOR": [
+   "L-STR",
+   "L-VERT"
+  ],
+  "UB-RET": [
+   "UB-LT",
+   "UB-SER"
+  ],
+  "UB-SER": [
+   "UB-LT",
+   "UB-RET"
+  ],
+  "UB-LT": [
+   "UB-RET",
+   "UB-SER"
+  ],
+  "T-UP": [],
+  "D-SIDE": [
+   "D-FR",
+   "D-REAR"
+  ],
+  "D-FR": [
+   "D-REAR",
+   "D-SIDE"
+  ],
+  "D-REAR": [
+   "D-FR",
+   "D-SIDE"
+  ],
+  "RC-IR": [
+   "RC-ER"
+  ],
+  "RC-ER": [
+   "RC-IR"
+  ],
+  "N-LAT": [
+   "N-EXT",
+   "N-FLEX"
+  ],
+  "N-FLEX": [
+   "N-EXT",
+   "N-LAT"
+  ],
+  "N-EXT": [
+   "N-FLEX",
+   "N-LAT"
+  ],
+  "B-BRACH": [
+   "B-LONG",
+   "B-SHORT"
+  ],
+  "B-LONG": [
+   "B-BRACH",
+   "B-SHORT"
+  ],
+  "B-SHORT": [
+   "B-BRACH",
+   "B-LONG"
+  ],
+  "TRI-LAT": [
+   "TRI-LONG"
+  ],
+  "TRI-LONG": [
+   "TRI-LAT"
+  ],
+  "F-EXT": [
+   "F-FLEX",
+   "F-GRIP"
+  ],
+  "F-GRIP": [
+   "F-EXT",
+   "F-FLEX"
+  ],
+  "F-FLEX": [
+   "F-EXT",
+   "F-GRIP"
+  ],
+  "AC-ALF": [
+   "AC-AE",
+   "AC-FLEX",
+   "AC-OBL"
+  ],
+  "AC-FLEX": [
+   "AC-AE",
+   "AC-ALF",
+   "AC-OBL"
+  ],
+  "AC-OBL": [
+   "AC-AE",
+   "AC-ALF",
+   "AC-FLEX"
+  ],
+  "AC-AE": [
+   "AC-ALF",
+   "AC-FLEX",
+   "AC-OBL"
+  ],
+  "LB-ERE": [
+   "LB-QL"
+  ],
+  "LB-QL": [
+   "LB-ERE"
+  ],
+  "G-HF": [
+   "G-ABD",
+   "G-ER",
+   "G-EXT",
+   "G-STR"
+  ],
+  "G-STR": [
+   "G-ABD",
+   "G-ER",
+   "G-EXT",
+   "G-HF"
+  ],
+  "G-ABD": [
+   "G-ER",
+   "G-EXT",
+   "G-HF",
+   "G-STR"
+  ],
+  "G-ER": [
+   "G-ABD",
+   "G-EXT",
+   "G-HF",
+   "G-STR"
+  ],
+  "G-EXT": [
+   "G-ABD",
+   "G-ER",
+   "G-HF",
+   "G-STR"
+  ],
+  "H-HINGE": [
+   "AD-MAG",
+   "AD-SHORT",
+   "H-CURL",
+   "Q-KD",
+   "Q-STR"
+  ],
+  "AD-MAG": [
+   "AD-SHORT",
+   "H-CURL",
+   "H-HINGE",
+   "Q-KD",
+   "Q-STR"
+  ],
+  "Q-KD": [
+   "AD-MAG",
+   "AD-SHORT",
+   "H-CURL",
+   "H-HINGE",
+   "Q-STR"
+  ],
+  "AD-SHORT": [
+   "AD-MAG",
+   "H-CURL",
+   "H-HINGE",
+   "Q-KD",
+   "Q-STR"
+  ],
+  "Q-STR": [
+   "AD-MAG",
+   "AD-SHORT",
+   "H-CURL",
+   "H-HINGE",
+   "Q-KD"
+  ],
+  "H-CURL": [
+   "AD-MAG",
+   "AD-SHORT",
+   "H-HINGE",
+   "Q-KD",
+   "Q-STR"
+  ],
+  "CA-PER": [
+   "CA-GAS",
+   "CA-SOL",
+   "CA-TIB"
+  ],
+  "CA-GAS": [
+   "CA-PER",
+   "CA-SOL",
+   "CA-TIB"
+  ],
+  "CA-TIB": [
+   "CA-GAS",
+   "CA-PER",
+   "CA-SOL"
+  ],
+  "CA-SOL": [
+   "CA-GAS",
+   "CA-PER",
+   "CA-TIB"
+  ]
+ },
+ "widenOnEmpty": true,
+ "emptyShortlistByPain": {
+  "NECK": [
+   "N-EXT",
+   "N-LAT",
+   "T-UP"
+  ],
+  "UPBACK": [
+   "H-HINGE",
+   "T-UP"
+  ],
+  "SHOULDER": [
+   "D-FR",
+   "D-SIDE",
+   "L-VERT"
+  ],
+  "ELBOW_LAT": [
+   "B-BRACH",
+   "F-EXT",
+   "F-FLEX",
+   "F-GRIP",
+   "T-UP"
+  ],
+  "ELBOW_MED": [
+   "B-BRACH",
+   "B-LONG",
+   "B-SHORT",
+   "F-EXT",
+   "F-FLEX",
+   "F-GRIP",
+   "T-UP"
+  ],
+  "WRIST": [
+   "F-EXT",
+   "F-FLEX",
+   "F-GRIP"
+  ],
+  "LOWBACK": [
+   "AC-FLEX",
+   "H-HINGE",
+   "LB-ERE",
+   "LB-QL"
+  ],
+  "SCIATICA": [
+   "AC-FLEX",
+   "H-HINGE",
+   "LB-ERE",
+   "LB-QL"
+  ],
+  "HIP": [
+   "AD-MAG",
+   "G-HF"
+  ],
+  "GROIN": [
+   "AD-MAG",
+   "AD-SHORT"
+  ],
+  "HAMSTRING": [
+   "H-CURL",
+   "H-HINGE"
+  ],
+  "KNEE_ANT": [
+   "Q-STR"
+  ],
+  "ACHILLES": [
+   "CA-GAS",
+   "CA-SOL"
+  ],
+  "ANKLE": [
+   "CA-GAS",
+   "CA-PER",
+   "CA-SOL",
+   "CA-TIB"
+  ],
+  "SHIN": [
+   "CA-TIB"
+  ],
+  "FOOT": [
+   "CA-GAS",
+   "CA-SOL"
+  ],
+  "ABDOMINAL": [
+   "AC-AE",
+   "AC-ALF",
+   "AC-FLEX",
+   "AC-OBL"
+  ]
+ },
+ "driftTolerance": 0.15,
+ "pinFields": [
+  "slotId",
+  "from",
+  "to",
+  "fromSub",
+  "toSub",
+  "amendType",
+  "actor",
+  "requiresAcceptance",
+  "accepted",
+  "recomputes",
+  "timestamp"
+ ],
+ "typeCWarning": "You're replacing {from} with {to}. That trains {toSub} instead of {fromSub}, so your weekly volume for those muscles changes. Your program stays complete and safe. Accept?",
+ "openItems": {
+  "permissions": "PROPOSED: client may make type A and B, trainer may make all three",
+  "driftTolerance": "15% is a starting number, not a derived one",
+  "amendBudget": "no cap on how many slots may be pinned"
+ }
+}

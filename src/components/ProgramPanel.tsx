@@ -6,6 +6,7 @@ import { equipmentOptions, isTokenAvailable } from '../lib/equipment'
 import { copyFor, type Side } from '../lib/injury'
 import { sessionMinutes } from '../lib/structure'
 import { LoadCell } from './LoadPanel'
+import { AmendControl, type AmendWiring } from './AmendPanel'
 import { CORRECTIVE_REST_SECONDS } from '../lib/bodydot'
 import type { ClientInput, InjuryData } from '../types'
 
@@ -34,11 +35,13 @@ export function ProgramPanel({
   input,
   view,
   injury,
+  amend,
 }: {
   program: Program
   input: ClientInput
   view: View
   injury: InjuryData
+  amend?: AmendWiring
 }) {
   const { block, days, warnings } = program
   const short = block.deliveredDays < input.days
@@ -390,6 +393,27 @@ export function ProgramPanel({
                     {detailed && c.flag === 'substituted' && (
                       <span className="ml-1.5 rounded bg-orange-100 px-1 py-0.5 text-[10px] font-bold text-orange-800">
                         SUB
+                      </span>
+                    )}
+                    {c.pinned && (
+                      <span
+                        className="ml-1.5 rounded bg-sky-100 px-1 py-0.5 text-[10px] font-bold text-sky-800"
+                        title={`You changed this slot to ${c.exercise.name}. It is kept as a pin, so it survives a re-test or a new scan.`}
+                      >
+                        CHANGED
+                        {c.pinned.equipment && (
+                          <span className="ml-1 font-normal opacity-70">{c.pinned.equipment}</span>
+                        )}
+                      </span>
+                    )}
+                    {amend && (
+                      <span className="ml-1.5 inline-block align-middle">
+                        <AmendControl
+                          slotId={c.slotId}
+                          from={c.exercise}
+                          wiring={amend}
+                          currentEquipment={c.pinned?.equipment}
+                        />
                       </span>
                     )}
                   </td>

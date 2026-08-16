@@ -4,6 +4,7 @@ import type { Structure } from './lib/structure'
 import type { InBodyInput } from './lib/inbody'
 import type { ValdInput } from './lib/vald'
 import type { BodyDotInput } from './lib/bodydot'
+import type { Pin } from './lib/amend'
 
 export type Sex = 'Male' | 'Female'
 export type Tier = 'primary' | 'secondary' | 'accessory'
@@ -297,6 +298,33 @@ export interface LoadData {
   notes: { anchorsFilled: string[]; divergences: string[] }
 }
 
+export interface AmendTypeSpec {
+  name: string
+  detect: string
+  requiresAcceptance: boolean
+  recomputes: string[]
+}
+
+export interface AmendData {
+  types: Record<string, AmendTypeSpec>
+  badges: Record<string, string>
+  blocks: Record<string, string>
+  precedence: string[]
+  ranking: string[]
+  shortlistMax: number
+  mainSlotClassField: string
+  /** the library's movement type, not the Load layer's mechanical class — see lib/amend.ts */
+  mainSlotAllowed: string[]
+  siblingSubRegions: Record<string, string[]>
+  widenOnEmpty: boolean
+  /** sub-regions each pain leaves with no freely available candidate */
+  emptyShortlistByPain: Record<string, string[]>
+  driftTolerance: number
+  pinFields: string[]
+  typeCWarning: string
+  openItems: Record<string, string>
+}
+
 export interface DataBundle {
   config: Config
   allocation: Allocation
@@ -309,6 +337,7 @@ export interface DataBundle {
   vald: ValdData
   bodydot: BodyDotData
   load: LoadData
+  amend: AmendData
 }
 
 export interface ClientInput {
@@ -330,4 +359,6 @@ export interface ClientInput {
   vald: ValdInput
   /** posture readings per indicator code; empty means no corrective slots are added */
   bodydot: BodyDotInput
+  /** slot pins from the amend layer; empty means the generator runs unconstrained */
+  pins: Pin[]
 }

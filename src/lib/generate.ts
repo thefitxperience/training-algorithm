@@ -41,6 +41,17 @@ import {
 } from './bodydot'
 import { evaluateLoad, type LoadResult } from './weight'
 import {
+  INERT_AMEND,
+  amendType,
+  blockFor,
+  driftRows,
+  parseSlotId,
+  slotId,
+  type AmendResult,
+  type Pin,
+  type RetiredPin,
+} from './amend'
+import {
   blockSeconds,
   buildSubAliases,
   formBlocks,
@@ -66,6 +77,8 @@ export interface ChosenExercise {
   exercise: Exercise
   /** the sub-region the allocation asked for (may differ from exercise.sub on a substitution) */
   requestedSub: string
+  /** stable identity of the allocation slot this fills, so an amend can pin it */
+  slotId: string
   sets: number
   reps: string
   rest: string
@@ -79,6 +92,8 @@ export interface ChosenExercise {
   loadAdjustment?: number
   /** VALD made this slot one-sided and added sets to the weak side */
   unilateral?: { form: UnilateralForm; weakSide: WeakSide; extraSets: number }
+  /** an amend pinned this slot — the client or trainer chose this exercise */
+  pinned?: { equipment?: string; actor: string }
 }
 
 export interface GeneratedDay {
@@ -137,6 +152,8 @@ export interface Program {
   bodydot: BodyDotResult
   /** estimated working weights; inert until newton figures are entered */
   load: LoadResult
+  /** pins applied, held back or retired, plus the volume drift they caused */
+  amend: AmendResult
   /** verdict per exercise id across the whole library, for the audit and the UI */
   verdicts: Map<number, ExerciseVerdict>
   /** everything the injury layer took out of the pool, for the removals panel */
@@ -327,8 +344,55 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
     config.warmupMinutes,
   )
 
+  // ---- amend ---------------------------------------------------------------
+  // A pin, not an edit. The generator re-runs holding it, so a re-test, a goal change or a
+  // new scan cannot silently discard a client's amend — which is the worst failure available
+  // here, because they would never know it had been undone.
+  const pins = input.pins ?? []
+  const byId = new Map(exercises.map((e) => [e.id, e]))
+  const pinBySlot = new Map<string, Pin>()
+  const appliedPins: Pin[] = []
+  const pendingPins: Pin[] = []
+  const retiredPins: RetiredPin[] = []
+  const seenSlots = new Set<string>()
+
+  for (const pin of pins) {
+    const to = byId.get(pin.to)
+    const from = byId.get(pin.from)
+    if (!to || !from) {
+      retiredPins.push({ pin, reason: 'the exercise this pin refers to is no longer in the library' })
+      continue
+    }
+    // Type C is a real change of muscle, so it does nothing until the client accepts it.
+    if (amendType(from, to, pin.equipment) === 'C' && !pin.accepted) {
+      pendingPins.push(pin)
+      continue
+    }
+    const blocked = blockFor(
+      to,
+      {
+        data: data.amend,
+        library: exercises,
+        ageBracket: ageBr,
+        equipment: input.equipment,
+        verdictOf: (id) => verdicts.get(id)?.verdict ?? 'OK',
+      },
+      from.mainLift,
+    )
+    // A pin the CURRENT screen would refuse is never applied — a new pain reported since the
+    // amend was made outranks it, and the client is told rather than left to discover it.
+    if (blocked) {
+      retiredPins.push({ pin, reason: `"${to.name}" is ${blocked.reason}` })
+      continue
+    }
+    pinBySlot.set(pin.slotId, pin)
+  }
+
   const warnings: Warning[] = []
   const usedThisWeek = new Set<number>()
+  // Reserve every pinned exercise so an earlier unpinned slot cannot consume it first and
+  // leave the pinned slot holding a duplicate.
+  for (const pin of pinBySlot.values()) usedThisWeek.add(pin.to)
   const selected: { index: number; label: string; chosen: ChosenExercise[] }[] = []
 
   block.days.forEach((allocDay, dayIndex) => {
@@ -338,6 +402,25 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
       const [sub, count, setsPerExercise] = slot
 
       for (let n = 0; n < count; n++) {
+        const sid = slotId({ dayIndex, sub, n })
+        seenSlots.add(sid)
+        const pin = pinBySlot.get(sid)
+        if (pin) {
+          const pinned = byId.get(pin.to)!
+          appliedPins.push(pin)
+          chosen.push({
+            exercise: pinned,
+            requestedSub: sub,
+            slotId: sid,
+            sets: setsPerExercise,
+            reps: rx.reps,
+            rest: rx.rest,
+            verdict: verdicts.get(pinned.id) ?? { verdict: 'OK', byPain: [] },
+            pinned: { equipment: pin.equipment, actor: pin.actor },
+          })
+          continue
+        }
+
         const ranked = rankCandidates(eligibleIn(sub), input.goal, verdicts)
 
         // 1. eligible and unused
@@ -418,6 +501,7 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
         chosen.push({
           exercise: pick,
           requestedSub: sub,
+          slotId: sid,
           sets: setsPerExercise,
           reps: rx.reps,
           rest: rx.rest,
@@ -703,6 +787,40 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
     vald: data.vald,
   })
 
+  // Pins whose slot no longer exists — the split or the frequency changed underneath them.
+  for (const [sid, pin] of pinBySlot)
+    if (!seenSlots.has(sid))
+      retiredPins.push({
+        pin,
+        reason: `the ${parseSlotId(sid)?.sub ?? 'slot'} slot on day ${(parseSlotId(sid)?.dayIndex ?? 0) + 1} no longer exists in this program`,
+      })
+
+  const anyPin = appliedPins.length + pendingPins.length + retiredPins.length > 0
+  const amend: AmendResult = !anyPin
+    ? INERT_AMEND
+    : {
+        active: true,
+        applied: appliedPins,
+        pending: pendingPins,
+        retired: retiredPins,
+        // Reported, never blocked — the client asked for this. Unlimited type C amends let
+        // someone rebuild the program into something the engine never validated.
+        drift: appliedPins.length
+          ? driftRows(
+              block,
+              days.flatMap((d) =>
+                d.exercises.map((c) => ({
+                  sub: c.exercise.sub,
+                  code: c.exercise.code,
+                  sets: c.sets,
+                })),
+              ),
+              data.amend.driftTolerance,
+            )
+          : [],
+        driftTolerance: data.amend.driftTolerance,
+      }
+
   return {
     ok: true,
     program: {
@@ -723,6 +841,7 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
       vald,
       bodydot,
       load,
+      amend,
       verdicts,
       removedByPain,
     },

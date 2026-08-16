@@ -43,7 +43,7 @@ To publish:
 
 The push triggers the workflow; the URL appears under Actions once the deploy job finishes.
 
-**Everything in `public/data/` becomes publicly downloadable** — all nine JSON files,
+**Everything in `public/data/` becomes publicly downloadable** — all eleven JSON files,
 including the 3 MB `allocation.json`. It's a static site, so the browser has to be able to
 fetch them; there is no way to publish this and keep the data private. GitHub Pages on a
 free account also requires a **public repo**. If either matters, this needs a host with
@@ -51,7 +51,7 @@ access control rather than Pages.
 
 ## Data
 
-Ten files in `public/data/`, served as static assets and fetched once at startup:
+Eleven files in `public/data/`, served as static assets and fetched once at startup:
 
 | File | What it is |
 |---|---|
@@ -65,6 +65,7 @@ Ten files in `public/data/`, served as static assets and fetched once at startup
 | `inbody.json` | scan thresholds, the 8 pre-blended goal vectors, rest floors, region map and filler rules |
 | `vald.json` | 6 asymmetry brackets, the 17 tests with their library coverage, and the budget/conversion rules |
 | `bodydot.json` | 26 posture indicators with their bands, and 18 arsenal entries covering 13 of them, pre-resolved to library ids |
+| `load.json` | 17 newtons-to-kilograms constants, 17 anchors, 30 bridges, and a pre-computed class/modifier/laterality record for all 315 exercises |
 
 They are generated upstream and are **not modified** by this app. `loadData()` in
 [src/data/load.ts](src/data/load.ts) caches the fetch promise at module scope, so
@@ -75,7 +76,9 @@ linkable regression case: `?preset=Stress%20test&view=detailed`, or
 `?sex=Male&age=28&level=Intermediate&…`. Pains ride along too, and layer on top of a preset:
 `?preset=Reference&pains=SHOULDER:Left,LOWBACK:Both`. So does a scan —
 `?inbody=example` loads the spec's worked client, or pass the values as
-`?inbody=smm:30.1,pbf:26.4,…`. VALD readings too: `?vald=Q-KD:25:L,G-ABD:12:R`. And posture readings, with the side on the
+`?inbody=smm:30.1,pbf:26.4,…`. VALD readings too, with all four fields positional and optional —
+`?vald=Q-KD:25:L:400:380` is percentage, weak side, left newtons and right newtons, and
+`?vald=Q-KD:::400:380` is forces only. And posture readings, with the side on the
 lateral indicators: `?bodydot=S02:60,F05:6:L`.
 
 ## Layout
@@ -250,6 +253,114 @@ and they diverge as soon as a finding fires.
   budget. Pass 1 still matters for the session ceiling, and is still implemented and
   asserted. On the three-glute test G-EXT is the one that goes unserved — because its only
   matching slot is a bilateral main lift, not because the budget ran out.
+
+## VALD inputs — four fields, not two
+
+The panel collects **asymmetry %**, **weak side**, **left newtons** and **right newtons** per
+test. All four are independent and all optional. The API supplies the percentage and the raw
+forces separately, so **neither is ever derived from the other while both are present** — the
+machine's own figure wins. Percentages alone drive VALD with Load sitting at *not estimated*;
+forces alone derive the percentage and the weak side as a fallback and everything works.
+
+Independent fields can contradict each other, and the two contradictions are handled
+differently on purpose:
+
+- **The percentage disagrees with the forces.** Compared against
+  `(stronger − weaker) / stronger × 100`; more than 1 percentage point apart earns a quiet
+  amber flag and **the entered percentage is still used.** Reports round, so small gaps are
+  normal and this is deliberately not an error.
+- **The weak side disagrees with the forces.** The entry says left is weak but the right
+  force is lower. **The finding is blocked, not warned** — no sets are added and, because the
+  same reading feeds both layers, no weight is estimated from that test either. Acting on it
+  would send the extra sets to the wrong limb *and* prescribe each side the wrong weight, and
+  nothing downstream would catch either. The panel names both conflicting fields and their
+  values. There is a check asserting the same reading with the sides in agreement *does* fire,
+  so this is provably a block rather than a silent no-op.
+
+## Load (weight)
+
+The last rule layer, and a pure annotation: it reads the force figures and attaches a working
+weight to exercises that already exist. It changes no selection, sets, reps, rest or timing —
+the program with forces entered is byte-identical to the one without.
+
+```
+load_kg = (newtons / 9.80665) x k[test] x classRatio[class] x modifier
+          x laterality x correctionFactor,   then banded by confidence tier
+```
+
+Every per-exercise field — class, modifier, laterality, per-hand and anchor status — is
+pre-computed for all 315 exercises and is **never re-derived from names or equipment.**
+`isAnchor` alone decides MATCHED vs DERIVED.
+
+The reference is kept **per limb** from the first step to the last. A unilateral exercise gets
+a load for each side from that side's own reading; a bilateral one is prescribed from the
+**weaker** limb, so the number is never heavier than the weak side can carry.
+
+**The band width is the message.** A 60-100 kg bench next to a 42.5-52.5 kg pushdown tells a
+coach which number to trust without a word of explanation, so a band is never narrowed to look
+more confident and the midpoint is never shown as a target. Every panel carries *"start at the
+lower end and work up."*
+
+Four states produce no number, and each says what to do instead rather than falling back to a
+tier label: age 6-12 (*"no load at this age"*, absolute, at any tier), `BODYWEIGHT`
+(*"reps / RIR"*), `ISOMETRIC_CARRY` (*"time"*), and tier `NONE` (*"not estimated"* — a
+designed state, not a failure). Injury outranks the layer completely: a `CAUTION` verdict is
+prescribed at **the bottom of the range only** and the range itself is withheld.
+
+### Readings the spec left open
+
+- **"Free-weight compound" is the one field load.json does not ship.** The 0.85 cap is about
+  stabilisation demand, so it applies where the lifter carries the load rather than a frame
+  guiding it — an exercise qualifies if any equipment option is a free weight (BB, DB, KB, EZ,
+  plate, trap bar, weighted, DB between feet, DB on knees). Smith is guided and is not on that
+  list, but "BB / Smith" still qualifies through the barbell. Both worked examples that
+  exercise this rule land exactly on their published figures.
+- **Order of operations in step 4-5**: band → beginner cut → per-hand halve → round. The
+  worked example's Tate press lands on 12.5-20.0 kg only under that order; rounding before
+  halving gives 12.5-21.25 kg.
+- **`SIDE_ONLY` gets a normal prescription.** The spec groups it with `REMOVE` as "no load
+  question", which reads as *this layer needs no special handling* rather than *withhold the
+  weight* — a side-only exercise still has to be loaded. `REMOVE` needs nothing because the
+  exercise is already out of the program.
+- **BodyDot correctives are loaded too.** They are real library exercises with ids, so they
+  take a weight on the same terms as anything else.
+
+### Expect these, they are not bugs
+
+- **The beginner cut inverts a MATCHED band.** That tier is ±10%, so cutting the top by 20%
+  puts it at 0.88× against a bottom of 0.90× — the rule as written says the whole estimate sits
+  above what a beginner should attempt. The bottom is left exactly where it is, as specified,
+  and the top is held at the bottom rather than printed backwards; the cell says *beginner cap*
+  and `flattened` records it. Only the 14 anchor exercises can hit this, and only for
+  beginners. On DERIVED and BRIDGED the cut lands clear of the bottom and behaves normally.
+- **Three sub-regions name an anchor that no exercise carries.** `anchors` names
+  *"Leg extension, torso reclined"* for Q-KD, *"Standing cable oblique crunch"* for AC-ALF and
+  *"Straight-arm pulldown"* for L-VERT, but all three of those exercises sit in a neighbouring
+  sub-region (Q-STR, AC-OBL, L-STR) and none carries `isAnchor`. So nothing in Q-KD, AC-ALF or
+  L-VERT can ever read *Measured*; they top out at *Estimated*. `isAnchor` is authoritative and
+  the instruction is not to re-derive it, so this is reported in the panel and asserted in the
+  suite rather than patched. Only **14 of 17** anchors are live.
+- **With all 17 tests entered, 208 of 315 exercises still have no number.** Neck is deliberately
+  unbridged — there is no defensible route from a limb dynamometer to neck loading — and the
+  bodyweight and carry classes are excluded by design.
+- **The numbers inherit the constants' error.** The 17 k values are seeds, not measurements.
+  Every exercise carries a `correctionFactor`, currently 1.00 everywhere; nothing sets it yet.
+  The hook is wired and asserted — setting it to `actual / estimated` scales that exercise's
+  estimate and everything downstream self-corrects.
+
+### Three deliberate divergences from the source spreadsheet
+
+Each is pinned by a check, so a later "correction" back toward the sheet fails the suite:
+
+1. **Hip Abduction and Hip Flexion have anchors**, where the source marks both
+   *"NONE — no loadable exercise"*. Hip Abduction has 7 loadable options and Hip Flexion 2,
+   taking two of seventeen tests from dead to working.
+2. **Push-up and assisted pull-up are `BODYWEIGHT`.** A "weighted" equipment token made them
+   read as loadable — the source's own worked example shows a push-up at 60-100 kg. An
+   assistance machine's dial is counterweight, not load.
+3. **Floor press and incline hex press are `COMPOUND`**, where the source's name-derived
+   classifier called them `ISO_FREE`. Both are multi-joint presses and the library carries an
+   explicit compound flag that classifier did not have.
 
 ## BodyDot posture
 
@@ -470,9 +581,9 @@ Places where the spec left a choice, and what was chosen:
 
 ## Acceptance criteria — current status
 
-`npm run acceptance` → **118 of 118 checks pass**. The five presets all run at `Full gym`, so
+`npm run acceptance` → **148 of 148 checks pass**. The five presets all run at `Full gym`, so
 the original criteria are unaffected by the equipment feature; the rest cover equipment
-tiers, split advice, set rounding, and the injury, structure, InBody, VALD and BodyDot
+tiers, split advice, set rounding, and the injury, structure, InBody, VALD, BodyDot and Load
 layers. Note the count dropped to 22/22 at one point because
 the week criterion was **removed**, not because its failure was fixed — see below.
 
@@ -573,6 +684,36 @@ the week criterion was **removed**, not because its failure was fixed — see be
 | **BodyDot:** the trim recovers the ceiling unless the session was already over | **pass** — 3 sessions trimmed |
 | **BodyDot:** VALD can never cause a breach, so trim steps 3–4 stay unreachable | **pass** — 4 bumps, none pushing a session over |
 | **BodyDot:** two runs of the same input are identical | **pass** |
+| **VALD:** the 17 test codes in vald.json and load.json are the same set | **pass** — joined on the code, never the name |
+| **VALD:** newtons alone derive the percentage and the weak side | **pass** — 300/400 N → 25% weak left |
+| **VALD:** an entered percentage is used as given, never re-derived | **pass** |
+| **VALD:** a percentage >1 point from the forces is flagged and still used | **pass** — 18% vs 15.0% flagged, 25.5% vs 25.0% not |
+| **VALD:** a weak side contradicting the forces blocks the finding | **pass** — and the agreeing version does fire |
+| **VALD:** a blocked finding estimates no weight either | **pass** |
+| **VALD:** percentages with no forces still work | **pass** — Load reads "not estimated" |
+| **Load:** Elbow Extension 400 N → 26.1 kg reference | **pass** — 26.10 |
+| **Load:** all six Elbow Extension worked-example rows | **pass** — exact, including tiers |
+| **Load:** Shoulder Push 900 N → 27.5 kg reference | **pass** — 27.53 |
+| **Load:** all five Shoulder Push worked-example rows | **pass** — exact |
+| **Load:** the anchor reads Measured, the rest of its sub-region Estimated | **pass** |
+| **Load:** per-hand and per-side rows are labelled as such | **pass** |
+| **Load:** a 10-year-old gets no weight anywhere, at any tier | **pass** — MATCHED tier present, 0 numbers |
+| **Load:** a beginner's top is 20% lower, bottom unchanged | **pass** — 35–57.5 → 35–47.5 kg |
+| **Load:** the beginner cut flattens a MATCHED band and says so | **pass** — see below |
+| **Load:** no forces → every exercise "not estimated", nothing else changes | **pass** — byte-identical |
+| **Load:** a CAUTION verdict caps at the bottom and withholds the range | **pass** — floor press |
+| **Load:** bodyweight and carry classes never get a weight | **pass** |
+| **Load:** neck stays unestimated with all 17 tests entered | **pass** — 9 exercises, 3 sub-regions |
+| **Load:** with all 17 tests the library is still only partly reachable | **pass** — 14 MATCHED, 208 with no number |
+| **Load:** the 3 sub-regions naming an absent anchor are reported | **pass** — Q-KD, AC-ALF, L-VERT |
+| **Load:** a unilateral exercise gets a load per limb | **pass** |
+| **Load:** a bilateral exercise is prescribed from the weaker limb | **pass** |
+| **Load:** push-up is BODYWEIGHT, not a loadable compound | **pass** |
+| **Load:** floor press and incline hex press are COMPOUND | **pass** |
+| **Load:** Hip Abduction and Hip Flexion have anchors | **pass** |
+| **Load:** the correction factor defaults to 1.00 and scales when set | **pass** — hook wired, nothing sets it |
+| **Load:** all 315 exercises have a pre-computed record, codes matching | **pass** |
+| **Load:** every figure lands on a 2.5 kg step | **pass** — awkward inputs still round cleanly |
 
 ### A Stage 1 criterion that no longer applies
 

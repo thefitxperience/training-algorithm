@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { ValdData } from '../types'
-import type { ValdInput, ValdResult, WeakSide } from '../lib/vald'
+import type { ValdInput, ValdReading, ValdResult, WeakSide } from '../lib/vald'
 
 const SIDES: WeakSide[] = ['Left', 'Right']
 
@@ -42,18 +42,20 @@ export function ValdPanel({
     }
   }
 
-  const set = (code: string, patch: Partial<{ asymmetry: number; weakSide: WeakSide }>) => {
+  // All four fields are independent, so clearing one must not take the others with it —
+  // an entry only disappears once every field is empty.
+  const set = (code: string, patch: Partial<ValdReading>) => {
     const next = { ...input }
-    const current = next[code] ?? { asymmetry: 0, weakSide: 'Left' as WeakSide }
-    next[code] = { ...current, ...patch }
+    const merged: ValdReading = { ...(next[code] ?? {}), ...patch }
+    const empty = (['asymmetry', 'weakSide', 'leftN', 'rightN'] as const).every(
+      (f) => merged[f] === undefined,
+    )
+    if (empty) delete next[code]
+    else next[code] = merged
     setInput(next)
   }
 
-  const clear = (code: string) => {
-    const next = { ...input }
-    delete next[code]
-    setInput(next)
-  }
+  const clear = (code: string, field: keyof ValdReading) => set(code, { [field]: undefined })
 
   return (
     <div className="space-y-2">
@@ -88,61 +90,136 @@ export function ValdPanel({
 
       {!entered && !showFields && (
         <p className="text-[11px] text-slate-500">
-          Optional. Asymmetry % and which side is weak, per test. With none entered the program
-          is unchanged.
+          Optional. Asymmetry % and which side is weak drive the extra sets; the raw left and
+          right forces in newtons drive the weight estimates. All four are independent and all
+          optional. With none entered the program is unchanged.
         </p>
       )}
 
       {showFields && (
-        <div className={compact ? 'grid gap-1 sm:grid-cols-2 xl:grid-cols-3' : 'space-y-1'}>
-          {data.tests.map((t) => {
-            const reading = input[t.code]
-            const partner = ratioPartner.get(t.code)
-            return (
-              <div
-                key={t.code}
-                className="flex items-center gap-1.5 rounded border border-slate-200 px-1.5 py-1"
-                title={`${t.caveat}\n\nLibrary coverage: ${t.totalExercises} exercises, ${t.nativeUnilateral} native unilateral, ${t.convertible} convertible (${t.verdict})`}
-              >
-                <span className="flex-1 truncate text-[11px] text-slate-700">
-                  {t.test.replace(' Strength Asymmetry', '')}
-                  {partner && (
-                    <span className="ml-1 text-[9px] text-teal-600" title="read as a ratio with its pair">
-                      ratio
-                    </span>
-                  )}
-                </span>
-                <input
-                  type="number"
-                  step="0.1"
-                  placeholder="%"
-                  value={reading?.asymmetry ?? ''}
-                  onChange={(e) =>
-                    e.target.value === ''
-                      ? clear(t.code)
-                      : set(t.code, { asymmetry: Number(e.target.value) })
-                  }
-                  className="w-14 rounded border border-slate-300 px-1 py-0.5 text-right text-[11px]"
-                />
-                <div className="flex">
-                  {SIDES.map((s) => (
-                    <button
-                      key={s}
-                      onClick={() => set(t.code, { weakSide: s })}
-                      disabled={!reading}
-                      className={`px-1 py-0.5 text-[10px] font-semibold first:rounded-l last:rounded-r ${
-                        reading?.weakSide === s
-                          ? 'bg-slate-800 text-white'
-                          : 'bg-slate-100 text-slate-500 hover:bg-slate-200 disabled:opacity-40'
-                      }`}
-                    >
-                      {s[0]}
-                    </button>
+        <div className="space-y-1">
+          <div className="flex gap-1.5 pr-1 text-[9px] font-bold tracking-wide text-slate-400 uppercase">
+            <span className="flex-1">Test</span>
+            <span className="w-14 text-right">Asym %</span>
+            <span className="w-9 text-center">Weak</span>
+            <span className="w-14 text-right">Left N</span>
+            <span className="w-14 text-right">Right N</span>
+          </div>
+          <div className={compact ? 'grid gap-1 xl:grid-cols-2' : 'space-y-1'}>
+            {data.tests.map((t) => {
+              const reading = input[t.code]
+              const partner = ratioPartner.get(t.code)
+              const resolved = result.readings.find((r) => r.code === t.code)
+              return (
+                <div
+                  key={t.code}
+                  className={`flex items-center gap-1.5 rounded border px-1.5 py-1 ${
+                    resolved?.conflict
+                      ? 'border-red-400 bg-red-50'
+                      : resolved?.mismatch
+                        ? 'border-amber-300 bg-amber-50/50'
+                        : 'border-slate-200'
+                  }`}
+                  title={`${t.caveat}\n\nLibrary coverage: ${t.totalExercises} exercises, ${t.nativeUnilateral} native unilateral, ${t.convertible} convertible (${t.verdict})`}
+                >
+                  <span className="flex-1 truncate text-[11px] text-slate-700">
+                    {t.test.replace(' Strength Asymmetry', '')}
+                    {partner && (
+                      <span className="ml-1 text-[9px] text-teal-600" title="read as a ratio with its pair">
+                        ratio
+                      </span>
+                    )}
+                  </span>
+                  <input
+                    type="number"
+                    step="0.1"
+                    placeholder="%"
+                    value={reading?.asymmetry ?? ''}
+                    onChange={(e) =>
+                      e.target.value === ''
+                        ? clear(t.code, 'asymmetry')
+                        : set(t.code, { asymmetry: Number(e.target.value) })
+                    }
+                    className="w-14 rounded border border-slate-300 px-1 py-0.5 text-right text-[11px]"
+                  />
+                  <div className="flex w-9">
+                    {SIDES.map((s) => (
+                      <button
+                        key={s}
+                        onClick={() =>
+                          set(t.code, { weakSide: reading?.weakSide === s ? undefined : s })
+                        }
+                        className={`flex-1 px-1 py-0.5 text-[10px] font-semibold first:rounded-l last:rounded-r ${
+                          reading?.weakSide === s
+                            ? 'bg-slate-800 text-white'
+                            : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                        }`}
+                      >
+                        {s[0]}
+                      </button>
+                    ))}
+                  </div>
+                  {(['leftN', 'rightN'] as const).map((f) => (
+                    <input
+                      key={f}
+                      type="number"
+                      step="1"
+                      placeholder="N"
+                      value={reading?.[f] ?? ''}
+                      onChange={(e) =>
+                        e.target.value === ''
+                          ? clear(t.code, f)
+                          : set(t.code, { [f]: Number(e.target.value) })
+                      }
+                      className="w-14 rounded border border-slate-300 px-1 py-0.5 text-right text-[11px]"
+                    />
                   ))}
                 </div>
-              </div>
-            )
-          })}
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* A side that contradicts the forces is not a warning — the finding is held back. */}
+      {result.blocked.length > 0 && (
+        <div className="rounded border-2 border-red-400 bg-red-50 px-2 py-1.5 text-[11px] text-red-900">
+          <div className="font-bold">
+            {result.blocked.length} finding{result.blocked.length === 1 ? '' : 's'} held back —
+            the weak side contradicts the measured forces
+          </div>
+          <ul className="mt-0.5 space-y-0.5">
+            {result.blocked.map((r) => {
+              const name =
+                data.tests.find((t) => t.code === r.code)?.test.replace(' Strength Asymmetry', '') ??
+                r.code
+              return (
+                <li key={r.code}>
+                  <span className="font-semibold">{name}</span>: <em>weak side</em> says{' '}
+                  {r.conflict!.enteredSide.toLowerCase()}, but <em>left / right newtons</em> (
+                  {r.conflict!.leftN} / {r.conflict!.rightN}) make the{' '}
+                  {r.conflict!.forcesSay.toLowerCase()} side the weaker one. No sets are added and
+                  no weight is estimated from this test until the two agree.
+                </li>
+              )
+            })}
+          </ul>
+        </div>
+      )}
+
+      {result.mismatched.length > 0 && (
+        <div className="rounded border border-amber-300 bg-amber-50 px-2 py-1 text-[10px] text-amber-900">
+          <span className="font-semibold">Worth a glance:</span> the entered percentage differs
+          from what the forces imply on{' '}
+          {result.mismatched
+            .map((r) => {
+              const name =
+                data.tests.find((t) => t.code === r.code)?.test.replace(' Strength Asymmetry', '') ??
+                r.code
+              return `${name} (${r.mismatch!.entered.toFixed(1)}% entered vs ${r.mismatch!.fromNewtons.toFixed(1)}% from the forces)`
+            })
+            .join(', ')}
+          . The entered percentage is used — reports round, so a small gap is normal.
         </div>
       )}
 

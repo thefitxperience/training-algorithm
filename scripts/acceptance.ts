@@ -16,6 +16,7 @@ import { buildInjuryIndex, verdictForPain, type PainSelection } from '../src/lib
 import { buildSubAliases, pairReason, sessionMinutes, type Structure } from '../src/lib/structure'
 import { WORKED_EXAMPLE, goalWeights, type InBodyInput } from '../src/lib/inbody'
 import type { ValdInput } from '../src/lib/vald'
+import { applyChain, roundTo } from '../src/lib/weight'
 import {
   CORRECTIVE_REST_SECONDS,
   CORRECTIVE_WORK_SECONDS,
@@ -39,6 +40,7 @@ const data: DataBundle = {
   inbody: read('inbody.json'),
   vald: read('vald.json'),
   bodydot: read('bodydot.json'),
+  load: read('load.json'),
 }
 const injuryIndex = buildInjuryIndex(data.injury, data.exercises)
 const idOf = (name: string) => data.exercises.find((e) => e.name === name)!.id
@@ -56,6 +58,11 @@ const run = (input: ClientInput) => {
   return r.program
 }
 const preset = (name: string) => PRESETS.find((p) => p.name === name)!
+/** the main program only — everything the annotation layers must never touch */
+const mainFingerprint = (p: ReturnType<typeof run>) =>
+  p.days
+    .map((d) => `${d.minutes.toFixed(6)}:${d.exercises.map((e) => `${e.exercise.id}x${e.sets}`).join(',')}`)
+    .join(' | ')
 
 // ---- Reference -------------------------------------------------------------
 {
@@ -1435,6 +1442,377 @@ const fingerprint = (p: ReturnType<typeof run>) =>
       JSON.stringify(withBd({ S02: { value: 60 }, F05: { value: 6, side: 'Left' } }).bodydot.correctives),
     'deterministic',
   )
+}
+
+// ---- VALD newton inputs ----------------------------------------------------
+{
+  const withVald = (vald: ValdInput, over: Partial<ClientInput> = {}) =>
+    run({ ...REF, ...over, vald })
+  const reading = (p: ReturnType<typeof run>, code: string) =>
+    p.vald.readings.find((r) => r.code === code)!
+  const bumpsOf = (p: ReturnType<typeof run>) =>
+    p.days.flatMap((d) => d.exercises).filter((e) => e.unilateral)
+
+  check(
+    'VALD/Load: the 17 test codes in vald.json and load.json are the same set',
+    (() => {
+      const a = new Set(data.vald.tests.map((t) => t.code))
+      const b = new Set(Object.values(data.load.testSubRegion))
+      return a.size === 17 && b.size === 17 && [...a].every((c) => b.has(c))
+    })(),
+    'joined on the sub-region code, never on the test name (the names differ by a " Strength Asymmetry" suffix)',
+  )
+
+  {
+    // forces only: the percentage and the weak side are derived, and VALD still fires
+    const p = withVald({ 'Q-KD': { leftN: 300, rightN: 400 } })
+    const r = reading(p, 'Q-KD')
+    check(
+      'VALD: newtons alone derive the percentage and the weak side',
+      Math.abs(r.asymmetry! - 25) < 1e-9 &&
+        r.weakSide === 'Left' &&
+        r.asymmetrySource === 'derived' &&
+        r.weakSideSource === 'derived' &&
+        bumpsOf(p).length > 0,
+      `300/400 N -> ${r.asymmetry!.toFixed(1)}% weak ${r.weakSide}, ${bumpsOf(p).length} bump(s)`,
+    )
+  }
+
+  {
+    // both supplied: the entered figure wins, it is never recomputed from the forces
+    const p = withVald({ 'Q-KD': { asymmetry: 25, weakSide: 'Left', leftN: 300, rightN: 400 } })
+    const r = reading(p, 'Q-KD')
+    check(
+      'VALD: an entered percentage is used as given, never derived from the forces',
+      r.asymmetry === 25 && r.asymmetrySource === 'entered' && r.weakSideSource === 'entered',
+      `entered 25% kept alongside 300/400 N`,
+    )
+  }
+
+  {
+    const flagged = withVald({ 'Q-KD': { asymmetry: 18, weakSide: 'Left', leftN: 300, rightN: 400 } })
+    const quiet = withVald({ 'Q-KD': { asymmetry: 25.5, weakSide: 'Left', leftN: 300, rightN: 400 } })
+    const f = reading(flagged, 'Q-KD')
+    check(
+      'VALD: a percentage more than 1 point from the forces is flagged, and still used',
+      f.mismatch !== null &&
+        Math.abs(f.mismatch.fromNewtons - 25) < 1e-9 &&
+        flagged.vald.findings.find((x) => x.code === 'Q-KD')?.asymmetry === 18 &&
+        reading(quiet, 'Q-KD').mismatch === null,
+      `18% entered vs 25.0% from the forces -> flagged; 25.5% vs 25.0% -> not flagged`,
+    )
+  }
+
+  {
+    // the side contradicting the forces is not recoverable, so the finding is held back
+    const conflicted = withVald({ 'Q-KD': { asymmetry: 25, weakSide: 'Left', leftN: 400, rightN: 300 } })
+    const clean = withVald({ 'Q-KD': { asymmetry: 25, weakSide: 'Left', leftN: 300, rightN: 400 } })
+    const c = reading(conflicted, 'Q-KD').conflict
+    check(
+      'VALD: a weak side contradicting the forces blocks the finding rather than warning',
+      c !== null &&
+        c.enteredSide === 'Left' &&
+        c.forcesSay === 'Right' &&
+        conflicted.vald.findings.length === 0 &&
+        bumpsOf(conflicted).length === 0 &&
+        conflicted.vald.blocked.length === 1 &&
+        // the same reading with the sides agreeing does fire, so this is a block, not a no-op
+        bumpsOf(clean).length > 0,
+      `weak side Left vs 400/300 N -> blocked; the agreeing version adds ${bumpsOf(clean).length} bump(s)`,
+    )
+    check(
+      'VALD: a blocked finding estimates no weight either, so no limb gets the wrong load',
+      conflicted.load.references.length === 0 && clean.load.references.length === 1,
+      'the conflicting test is withheld from the Load layer too',
+    )
+  }
+
+  {
+    // percentages only stay valid — VALD works, Load has nothing to go on
+    const p = withVald({ 'Q-KD': { asymmetry: 25, weakSide: 'Left' } })
+    check(
+      'VALD: percentages with no forces still work, and Load reads "not estimated"',
+      bumpsOf(p).length > 0 && !p.load.active && p.load.references.length === 0,
+      `${bumpsOf(p).length} bump(s), 0 load references`,
+    )
+  }
+}
+
+// ---- Load layer ------------------------------------------------------------
+{
+  const withN = (vald: ValdInput, over: Partial<ClientInput> = {}) => run({ ...REF, ...over, vald })
+  const ELBOW: ValdInput = { 'TRI-LAT': { leftN: 400, rightN: 400 } }
+  const PUSH: ValdInput = { 'C-MID': { leftN: 900, rightN: 900 } }
+  const loadOf = (p: ReturnType<typeof run>, name: string) => p.load.byExercise.get(idOf(name))!
+  const fmt = (p: ReturnType<typeof run>, name: string) => {
+    const l = loadOf(p, name)
+    return l.range ? `${l.range.low.toFixed(1)}-${l.range.high.toFixed(1)} ${l.tier}` : `none (${l.tier})`
+  }
+
+  {
+    const p = withN(ELBOW)
+    const ref = p.load.references[0]
+    check(
+      'Load: Elbow Extension 400 N gives a 26.1 kg reference',
+      Math.abs(ref.left! - 26.1) < 0.05 && ref.left === ref.right,
+      `${ref.left!.toFixed(2)} kg per limb (400 / 9.80665 x 0.64)`,
+    )
+
+    // Every row of the spec's first worked example, checked against the source figures.
+    const expected: [string, number, number, string][] = [
+      ['Pushdown - rope, straight bar, V-bar', 42.5, 52.5, 'MATCHED'],
+      ['Reverse-grip pushdown', 35.0, 57.5, 'DERIVED'],
+      ['Close-grip bench press', 57.5, 95.0, 'DERIVED'],
+      ['Machine triceps extension', 35.0, 57.5, 'DERIVED'],
+      ['Triceps kickback', 10.0, 15.0, 'DERIVED'],
+      ['Tate press', 12.5, 20.0, 'DERIVED'],
+    ]
+    const wrong = expected.filter(([name, low, high, tier]) => {
+      const l = loadOf(p, name)
+      return !l.range || l.range.low !== low || l.range.high !== high || l.tier !== tier
+    })
+    check(
+      'Load: all six Elbow Extension worked-example rows match the source',
+      wrong.length === 0,
+      wrong.length
+        ? wrong.map(([n, lo, hi]) => `${n}: want ${lo}-${hi}, got ${fmt(p, n)}`).join('; ')
+        : expected.map(([n]) => `${n} ${fmt(p, n)}`).join(' | '),
+    )
+    check(
+      'Load: the per-hand and per-side rows are labelled as such',
+      loadOf(p, 'Tate press').perHand &&
+        !loadOf(p, 'Tate press').unilateral &&
+        loadOf(p, 'Triceps kickback').unilateral &&
+        !loadOf(p, 'Triceps kickback').perHand,
+      'Tate press is a dumbbell pair (per hand); the kickback is one limb at a time (per side)',
+    )
+  }
+
+  {
+    const p = withN(PUSH)
+    const ref = p.load.references[0]
+    check(
+      'Load: Shoulder Push 900 N gives a 27.5 kg reference',
+      Math.abs(ref.left! - 27.5) < 0.05,
+      `${ref.left!.toFixed(2)} kg per limb (900 / 9.80665 x 0.30)`,
+    )
+    const expected: [string, number, number][] = [
+      ['Flat bench press', 60.0, 100.0],
+      ['Mid-height cable crossover', 45.0, 55.0],
+      ['Pec deck', 37.5, 62.5],
+      ['Flat fly', 12.5, 22.5],
+      ['Svend press', 27.5, 45.0],
+    ]
+    const wrong = expected.filter(([name, low, high]) => {
+      const l = loadOf(p, name)
+      return !l.range || l.range.low !== low || l.range.high !== high
+    })
+    check(
+      'Load: all five Shoulder Push worked-example rows match the source',
+      wrong.length === 0,
+      wrong.length
+        ? wrong.map(([n, lo, hi]) => `${n}: want ${lo}-${hi}, got ${fmt(p, n)}`).join('; ')
+        : expected.map(([n]) => `${n} ${fmt(p, n)}`).join(' | '),
+    )
+    check(
+      'Load: the anchor reads Measured and everything else in its sub-region Estimated',
+      loadOf(p, 'Mid-height cable crossover').tier === 'MATCHED' &&
+        ['Flat bench press', 'Pec deck', 'Flat fly', 'Svend press'].every(
+          (n) => loadOf(p, n).tier === 'DERIVED',
+        ),
+      'isAnchor decides the tier; it is never re-derived from the anchors name map',
+    )
+  }
+
+  {
+    const p = withN(ELBOW, { age: 10, level: 'Beginner' })
+    const reachable = data.load.exercises.filter((e) =>
+      ['TRI-LAT', 'TRI-LONG'].includes(e.code),
+    )
+    const anyNumber = reachable.filter((e) => p.load.byExercise.get(e.id)?.range !== null)
+    const tiersSeen = new Set(reachable.map((e) => p.load.byExercise.get(e.id)?.tier))
+    check(
+      'Load: a 10-year-old gets no weight anywhere, at any tier',
+      anyNumber.length === 0 && reachable.length > 0 && tiersSeen.has('MATCHED'),
+      `${reachable.length} exercises the readings reach, tiers ${[...tiersSeen].join('/')}, 0 with a number`,
+    )
+  }
+
+  {
+    const adult = withN(ELBOW)
+    const beginner = withN(ELBOW, { level: 'Beginner' })
+    // DERIVED is +/-25%, so the beginner cut lands clear of the bottom and is visible
+    const a = loadOf(adult, 'Reverse-grip pushdown').range!
+    const b = loadOf(beginner, 'Reverse-grip pushdown').range!
+    // The cut applies to the unrounded top, so the printed figure lands within one 2.5 kg
+    // step of 0.80 x the printed adult top rather than exactly on it.
+    check(
+      "Load: a beginner's top of range is 20% lower and the bottom is unchanged",
+      b.low === a.low &&
+        b.high < a.high &&
+        Math.abs(b.high - a.high * 0.8) <= data.load.roundToKg &&
+        roundTo(b.high, data.load.roundToKg) === b.high,
+      `${a.low}-${a.high} kg becomes ${b.low}-${b.high} kg (0.80 x the unrounded top, then rounded)`,
+    )
+    // MATCHED is only +/-10%, so 0.8 x the top falls below the bottom — reported, not hidden
+    const m = loadOf(beginner, 'Pushdown - rope, straight bar, V-bar')
+    check(
+      'Load: where the beginner cut inverts a MATCHED band, the band flattens and says so',
+      m.flattened && m.range!.high === m.range!.low && m.tier === 'MATCHED',
+      `${m.range!.low}-${m.range!.high} kg — 0.80 x the top of a +/-10% band sits under its own bottom`,
+    )
+  }
+
+  {
+    const p = run(REF)
+    const base = mainFingerprint(p)
+    const withLoad = withN(ELBOW)
+    check(
+      'Load: with no newton readings every exercise reads "not estimated" and nothing changes',
+      !p.load.active &&
+        p.load.byExercise.size === 0 &&
+        base === mainFingerprint(withLoad) &&
+        withLoad.load.active,
+      'inert without forces; the program is byte-identical with them',
+    )
+  }
+
+  {
+    // Shoulder pain puts a CAUTION verdict on the floor press, which Shoulder Push reaches
+    const p = withN(PUSH, { pains: { SHOULDER: 'Both' } })
+    const l = loadOf(p, 'Floor press')
+    const painFree = loadOf(withN(PUSH), 'Floor press')
+    check(
+      'Load: a CAUTION verdict caps the prescription at the bottom and withholds the range',
+      l.capped &&
+        l.sides.length === 0 &&
+        l.range!.low === painFree.range!.low &&
+        !painFree.capped,
+      `pain-free ${painFree.range!.low}-${painFree.range!.high} kg becomes "at most ${l.range!.low} kg"`,
+    )
+  }
+
+  {
+    const p = withN(ELBOW)
+    const bw = data.load.exercises.filter((e) => e.class === 'BODYWEIGHT' && e.code === 'TRI-LAT')
+    const carry = data.load.exercises.filter((e) => e.class === 'ISOMETRIC_CARRY')
+    const bad = [...bw, ...carry].filter((e) => p.load.byExercise.get(e.id)?.range !== null)
+    check(
+      'Load: a bodyweight or carry exercise never gets a weight, whatever the tier',
+      bad.length === 0 && bw.length > 0,
+      `${bw.length} bodyweight exercises inside a tested sub-region and ${carry.length} carries, none given a number`,
+    )
+  }
+
+  {
+    // every test entered at once, so nothing is unestimated for want of a reading
+    const all: ValdInput = Object.fromEntries(
+      data.vald.tests.map((t) => [t.code, { leftN: 400, rightN: 400 }]),
+    )
+    const p = withN(all)
+    const neck = data.load.exercises.filter((e) => e.code.startsWith('N-'))
+    const bad = neck.filter((e) => p.load.byExercise.get(e.id)?.tier !== 'NONE')
+    check(
+      'Load: neck stays unestimated even with all 17 tests entered',
+      bad.length === 0 && neck.length > 0,
+      `${neck.length} neck exercises across 3 sub-regions, all unbridged by design`,
+    )
+    check(
+      'Load: with every test entered the library is still only partly reachable',
+      p.load.counts.NONE > 0 && p.load.counts.MATCHED === 14,
+      `MATCHED ${p.load.counts.MATCHED} / DERIVED ${p.load.counts.DERIVED} / BRIDGED ${p.load.counts.BRIDGED} / NONE ${p.load.counts.NONE}`,
+    )
+    check(
+      'Load: the 3 sub-regions naming an anchor no exercise carries are reported',
+      p.load.anchorGaps.length === 3 &&
+        p.load.anchorGaps.every((g) => !data.load.exercises.some((e) => e.code === g.code && e.isAnchor)),
+      p.load.anchorGaps.map((g) => `${g.code} names "${g.named}"`).join('; '),
+    )
+  }
+
+  {
+    // asymmetric forces: the two sides diverge on a unilateral exercise, and a bilateral one
+    // is prescribed from the weaker limb
+    const p = withN({ 'TRI-LAT': { leftN: 300, rightN: 400 } })
+    const uni = loadOf(p, 'Triceps kickback')
+    const bi = loadOf(p, 'Reverse-grip pushdown')
+    const weakOnly = loadOf(withN({ 'TRI-LAT': { leftN: 300, rightN: 300 } }), 'Reverse-grip pushdown')
+    check(
+      'Load: a unilateral exercise gets a load per limb, from that limb’s own reading',
+      uni.sides.length === 2 &&
+        uni.sides[0].side === 'Left' &&
+        uni.sides[0].high < uni.sides[1].high,
+      uni.sides.map((s) => `${s.side} ${s.low}-${s.high} kg`).join(' vs '),
+    )
+    check(
+      'Load: a bilateral exercise is prescribed from the weaker limb',
+      bi.range!.low === weakOnly.range!.low && bi.range!.high === weakOnly.range!.high,
+      `300/400 N gives ${bi.range!.low}-${bi.range!.high} kg, the same as 300 N on both sides`,
+    )
+  }
+
+  {
+    // The three divergences from the source spreadsheet, pinned so a "correction" fails here
+    const bwIds = ['Push-up', 'Assisted pull-up'].map((n) =>
+      data.exercises.find((e) => e.name.toLowerCase() === n.toLowerCase())?.id,
+    )
+    const pushUp = data.load.exercises.find((e) => e.id === bwIds[0])
+    const compound = ['Floor press', 'Incline hex press'].map((n) =>
+      data.load.exercises.find((e) => e.id === idOf(n)),
+    )
+    check(
+      'Load: push-up is BODYWEIGHT, not a loadable compound',
+      pushUp?.class === 'BODYWEIGHT',
+      `a "weighted" equipment token would have read it as loadable — the spec's own worked example showed a push-up at 60-100 kg`,
+    )
+    check(
+      'Load: floor press and incline hex press are COMPOUND',
+      compound.every((e) => e?.class === 'COMPOUND'),
+      'both are multi-joint presses; the library carries an explicit compound flag',
+    )
+    check(
+      'Load: Hip Abduction and Hip Flexion have anchors, taking 2 of 17 tests from dead to working',
+      ['G-ABD', 'G-HF'].every((code) => data.load.exercises.some((e) => e.code === code && e.isAnchor)) &&
+        data.load.notes.anchorsFilled.join(',') === 'G-ABD,G-HF',
+      'the source marks both "NONE - no loadable exercise"',
+    )
+  }
+
+  {
+    // The calibration hook: nothing sets it yet, so it has to be provably wired.
+    const rec = data.load.exercises.find((e) => e.id === idOf('Pec deck'))!
+    const plain = applyChain(27.5, rec, data.load, false)
+    const scaled = applyChain(27.5, { ...rec, correctionFactor: 1.1 }, data.load, false)
+    check(
+      'Load: the correction factor defaults to 1.00 and scales the estimate when set',
+      data.load.correctionFactorDefault === 1 &&
+        data.load.exercises.every((e) => e.correctionFactor === undefined) &&
+        Math.abs(scaled - plain * 1.1) < 1e-9,
+      `nothing sets it today; setting it to 1.10 moves ${plain.toFixed(1)} kg to ${scaled.toFixed(1)} kg`,
+    )
+  }
+
+  check(
+    'Load: every one of the 315 library exercises has a pre-computed record',
+    data.load.exercises.length === data.exercises.length &&
+      data.load.exercises.every((r) => {
+        const ex = data.exercises.find((e) => e.id === r.id)
+        return ex !== undefined && ex.code === r.code
+      }),
+    `${data.load.exercises.length} records, every code matching exercises.json`,
+  )
+
+  {
+    const p = withN({ 'TRI-LAT': { leftN: 437, rightN: 361 } })
+    const off = [...p.load.byExercise.values()]
+      .flatMap((l) => (l.range ? [l.range.low, l.range.high, ...l.sides.flatMap((s) => [s.low, s.high])] : []))
+      .filter((v) => Math.abs(v / data.load.roundToKg - Math.round(v / data.load.roundToKg)) > 1e-9)
+    check(
+      'Load: every figure lands on a 2.5 kg step',
+      off.length === 0 && p.load.counts.DERIVED > 0,
+      off.length ? off.slice(0, 5).join(', ') : 'awkward inputs (437 / 361 N) still round cleanly',
+    )
+  }
 }
 
 // ---- Report ----------------------------------------------------------------

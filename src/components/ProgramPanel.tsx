@@ -5,6 +5,7 @@ import { pickKey, roundSets } from '../lib/rounding'
 import { equipmentOptions, isTokenAvailable } from '../lib/equipment'
 import { copyFor, type Side } from '../lib/injury'
 import { sessionMinutes } from '../lib/structure'
+import { LoadCell } from './LoadPanel'
 import type { ClientInput, InjuryData } from '../types'
 
 /** The side to actually train is the one the pain is NOT on. */
@@ -41,6 +42,8 @@ export function ProgramPanel({
   const { block, days, warnings } = program
   const short = block.deliveredDays < input.days
   const detailed = view === 'detailed'
+  // The column only exists once force readings do, so a program without them is untouched.
+  const showLoad = program.load.active
 
   // Simple view prescribes whole sets; session length follows from those, not from the
   // fractional allocation values.
@@ -241,6 +244,13 @@ export function ProgramPanel({
                 <th className={`font-semibold ${detailed ? 'px-3 py-1.5' : 'px-4 py-2 text-right'}`}>
                   Rest
                 </th>
+                {showLoad && (
+                  <th
+                    className={`font-semibold whitespace-nowrap ${detailed ? 'px-3 py-1.5' : 'px-4 py-2 text-right'}`}
+                  >
+                    Weight
+                  </th>
+                )}
                 {detailed && <th className="px-3 py-1.5 font-semibold">Equipment</th>}
               </tr>
             </thead>
@@ -249,7 +259,10 @@ export function ProgramPanel({
             <tbody key={bi} className={blk.indices.length > 1 ? 'border-l-4 border-l-violet-400' : ''}>
               {blk.indices.length > 1 && (
                 <tr className="bg-violet-50/70">
-                  <td colSpan={detailed ? 6 : 3} className={detailed ? 'px-3 py-1' : 'px-4 py-1.5'}>
+                  <td
+                    colSpan={(detailed ? 6 : 3) + (showLoad ? 1 : 0)}
+                    className={detailed ? 'px-3 py-1' : 'px-4 py-1.5'}
+                  >
                     <span className="rounded bg-violet-200 px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-violet-900 uppercase">
                       {blk.structure}
                     </span>
@@ -375,6 +388,15 @@ export function ProgramPanel({
                   >
                     {scaleRest(c.rest, program.restMultiplier)}s
                   </td>
+                  {showLoad && (
+                    <td
+                      className={`whitespace-nowrap ${
+                        detailed ? 'px-3 py-1.5' : 'px-4 py-2 text-right'
+                      }`}
+                    >
+                      <LoadCell load={program.load.byExercise.get(c.exercise.id)} compact={!detailed} />
+                    </td>
+                  )}
                   {detailed && (
                     <td className="px-3 py-1.5 text-slate-600">
                       {/* highlight which of the "/"-separated options the client can actually use */}
@@ -448,6 +470,15 @@ export function ProgramPanel({
                       >
                         30s
                       </td>
+                      {showLoad && (
+                        <td
+                          className={`whitespace-nowrap ${
+                            detailed ? 'px-3 py-1.5' : 'px-4 py-2 text-right'
+                          }`}
+                        >
+                          <LoadCell load={program.load.byExercise.get(c.exercise.id)} compact={!detailed} />
+                        </td>
+                      )}
                     </tr>
                   ))}
                   {day.correctiveStretches.map((s, si) => (
@@ -477,6 +508,7 @@ export function ProgramPanel({
                         {s.seconds}s
                       </td>
                       <td className={detailed ? 'px-3 py-1.5' : 'px-4 py-2'} />
+                      {showLoad && <td className={detailed ? 'px-3 py-1.5' : 'px-4 py-2'} />}
                     </tr>
                   ))}
                 </tbody>

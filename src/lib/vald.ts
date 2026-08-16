@@ -2,13 +2,106 @@ import type { Exercise, ValdData, ValdTest } from '../types'
 
 export type WeakSide = 'Left' | 'Right'
 
+/**
+ * Four independent optional fields. The API supplies the percentage and the raw forces
+ * separately, so one is never derived from the other while both are present — the machine's
+ * own figure wins. Newtons feed the Load layer; the percentage and side feed this one.
+ */
 export interface ValdReading {
-  asymmetry: number
-  weakSide: WeakSide
+  asymmetry?: number
+  weakSide?: WeakSide
+  /** peak force, left limb */
+  leftN?: number
+  /** peak force, right limb */
+  rightN?: number
 }
 
 /** keyed by test code — the side is stored PER TEST, never per client */
 export type ValdInput = Record<string, ValdReading>
+
+export type ReadingSource = 'entered' | 'derived'
+
+export interface ResolvedReading {
+  code: string
+  asymmetry: number | null
+  weakSide: WeakSide | null
+  asymmetrySource: ReadingSource | null
+  weakSideSource: ReadingSource | null
+  leftN: number | null
+  rightN: number | null
+  /** entered % vs the % the forces imply — a quiet flag; the entered figure still wins */
+  mismatch: { entered: number; fromNewtons: number; delta: number } | null
+  /** the entered weak side contradicts the forces — this finding is BLOCKED, not warned */
+  conflict: { enteredSide: WeakSide; forcesSay: WeakSide; leftN: number; rightN: number } | null
+}
+
+const num = (v: unknown): number | null =>
+  typeof v === 'number' && !Number.isNaN(v) ? v : null
+
+/** (stronger - weaker) / stronger x 100 */
+export function asymmetryFromNewtons(leftN: number, rightN: number): number {
+  const stronger = Math.max(leftN, rightN)
+  const weaker = Math.min(leftN, rightN)
+  if (stronger <= 0) return 0
+  return ((stronger - weaker) / stronger) * 100
+}
+
+/** how far the entered percentage may sit from the forces before it is flagged */
+export const MISMATCH_TOLERANCE_PP = 1
+
+/**
+ * Reconciles the four fields for one test.
+ *
+ * Two contradictions, handled differently on purpose. A percentage that disagrees with the
+ * forces is a rounding artefact most of the time, so it is flagged and the entered figure is
+ * kept. A weak SIDE that disagrees is not recoverable: acting on it would send the extra
+ * sets to the wrong limb and prescribe each side the wrong weight, and nothing downstream
+ * would catch either. That one blocks the finding until a human resolves it.
+ */
+export function resolveReading(code: string, raw: ValdReading | undefined): ResolvedReading {
+  const leftN = num(raw?.leftN)
+  const rightN = num(raw?.rightN)
+  const enteredPct = num(raw?.asymmetry)
+  const enteredSide = raw?.weakSide ?? null
+  const bothForces = leftN !== null && rightN !== null
+
+  const forcesPct = bothForces ? asymmetryFromNewtons(leftN, rightN) : null
+  const forcesSide: WeakSide | null = bothForces
+    ? leftN === rightN
+      ? null
+      : leftN < rightN
+        ? 'Left'
+        : 'Right'
+    : null
+
+  let mismatch: ResolvedReading['mismatch'] = null
+  if (enteredPct !== null && forcesPct !== null) {
+    const delta = Math.abs(enteredPct - forcesPct)
+    if (delta > MISMATCH_TOLERANCE_PP)
+      mismatch = { entered: enteredPct, fromNewtons: forcesPct, delta }
+  }
+
+  let conflict: ResolvedReading['conflict'] = null
+  if (enteredSide && forcesSide && enteredSide !== forcesSide)
+    conflict = { enteredSide, forcesSay: forcesSide, leftN: leftN!, rightN: rightN! }
+
+  return {
+    code,
+    asymmetry: enteredPct ?? forcesPct,
+    weakSide: enteredSide ?? forcesSide,
+    asymmetrySource: enteredPct !== null ? 'entered' : forcesPct !== null ? 'derived' : null,
+    weakSideSource: enteredSide ? 'entered' : forcesSide ? 'derived' : null,
+    leftN,
+    rightN,
+    mismatch,
+    conflict,
+  }
+}
+
+export function resolveAll(input: ValdInput): ResolvedReading[] {
+  if (!input) return []
+  return Object.keys(input).map((code) => resolveReading(code, input[code]))
+}
 
 export interface Bracket {
   name: string
@@ -58,6 +151,12 @@ export interface ValdResult {
   conflicts: { finding: Finding; injurySide: string; exercise: string }[]
   referrals: Finding[]
   trimmed: string[]
+  /** every entered test, reconciled across all four fields */
+  readings: ResolvedReading[]
+  /** weak side contradicts the forces — held back until a human resolves it */
+  blocked: ResolvedReading[]
+  /** percentage disagrees with the forces by more than a point — quiet flag only */
+  mismatched: ResolvedReading[]
 }
 
 export const INERT_VALD: ValdResult = {
@@ -69,11 +168,22 @@ export const INERT_VALD: ValdResult = {
   conflicts: [],
   referrals: [],
   trimmed: [],
+  readings: [],
+  blocked: [],
+  mismatched: [],
 }
 
 export function hasAnyReading(input: ValdInput): boolean {
   if (!input) return false
-  return Object.values(input).some((r) => typeof r?.asymmetry === 'number' && !Number.isNaN(r.asymmetry))
+  return Object.values(input).some(
+    (r) => num(r?.asymmetry) !== null || num(r?.leftN) !== null || num(r?.rightN) !== null,
+  )
+}
+
+/** forces only, with no percentage anywhere — the Load layer works, VALD has nothing to do */
+export function hasAnyForce(input: ValdInput): boolean {
+  if (!input) return false
+  return Object.values(input).some((r) => num(r?.leftN) !== null || num(r?.rightN) !== null)
 }
 
 /**
@@ -97,17 +207,19 @@ export function bracketFor(asymmetry: number, data: ValdData, previous?: Bracket
 export function buildFindings(input: ValdInput, data: ValdData): Finding[] {
   const out: Finding[] = []
   for (const test of data.tests) {
-    const reading = input[test.code]
-    if (!reading || typeof reading.asymmetry !== 'number' || Number.isNaN(reading.asymmetry)) continue
-    const bracket = bracketFor(reading.asymmetry, data)
+    const r = resolveReading(test.code, input[test.code])
+    // A side that contradicts the forces is blocked outright — see resolveReading.
+    if (r.conflict) continue
+    if (r.asymmetry === null || r.weakSide === null) continue
+    const bracket = bracketFor(r.asymmetry, data)
     out.push({
       code: test.code,
       test,
-      asymmetry: reading.asymmetry,
-      weakSide: reading.weakSide,
+      asymmetry: r.asymmetry,
+      weakSide: r.weakSide,
       bracket,
       setsAdded: bracket.setsAdded,
-      referral: reading.asymmetry >= data.referralThreshold,
+      referral: r.asymmetry >= data.referralThreshold,
     })
   }
   return out

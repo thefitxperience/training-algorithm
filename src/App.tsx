@@ -13,6 +13,7 @@ import { WORKED_EXAMPLE, hasAnyInput, type InBodyInput } from './lib/inbody'
 import { hasAnyReading, type ValdInput } from './lib/vald'
 import { hasAnyBodyDot, type BodyDotInput } from './lib/bodydot'
 import { BodyDotPanel } from './components/BodyDotPanel'
+import { LoadPanel } from './components/LoadPanel'
 import { AuditPanel } from './components/AuditPanel'
 import { EQUIPMENT_TIERS, type EquipmentTier } from './lib/equipment'
 import type { PainSelection, Side } from './lib/injury'
@@ -53,17 +54,30 @@ function inbodyFromUrl(q: URLSearchParams): InBodyInput | null {
   ) as InBodyInput
 }
 
-/** vald=Q-KD:25:L,G-ABD:12:R — asymmetry % and weak side, per test code */
+/**
+ * vald=Q-KD:25:L:400:380 — asymmetry %, weak side, left newtons, right newtons, per test
+ * code. All four are independent and optional, so any field can be left empty:
+ * `Q-KD:::400:380` is forces only, `Q-KD:25:L` is the original two-field form.
+ */
 function valdFromUrl(q: URLSearchParams): ValdInput | null {
   const raw = q.get('vald')
   if (raw === null) return null
+  const maybe = (v: string | undefined) => (v === undefined || v === '' ? undefined : Number(v))
   return Object.fromEntries(
     raw
       .split(',')
       .filter(Boolean)
       .map((entry) => {
-        const [code, pct, side] = entry.split(':')
-        return [code, { asymmetry: Number(pct), weakSide: side === 'R' ? 'Right' : 'Left' }]
+        const [code, pct, side, leftN, rightN] = entry.split(':')
+        return [
+          code,
+          {
+            asymmetry: maybe(pct),
+            weakSide: side === 'R' ? 'Right' : side === 'L' ? 'Left' : undefined,
+            leftN: maybe(leftN),
+            rightN: maybe(rightN),
+          },
+        ]
       }),
   ) as ValdInput
 }
@@ -155,7 +169,11 @@ export default function App() {
       q.set(
         'vald',
         Object.entries(input.vald)
-          .map(([code, r]) => `${code}:${r.asymmetry}:${r.weakSide[0]}`)
+          .map(([code, r]) =>
+            [code, r.asymmetry ?? '', r.weakSide?.[0] ?? '', r.leftN ?? '', r.rightN ?? '']
+              .join(':')
+              .replace(/:+$/, ''),
+          )
           .join(','),
       )
     if (hasAnyBodyDot(input.bodydot))
@@ -294,6 +312,9 @@ export default function App() {
                 result={result.program.vald}
                 compact
               />
+              <div className="mt-3 border-t border-slate-200 pt-3">
+                <LoadPanel data={data.load} result={result.program.load} compact />
+              </div>
             </div>
           )}
           {result?.ok && (
@@ -352,6 +373,9 @@ export default function App() {
                     setInput={(vald) => setInput({ ...input, vald })}
                     result={result.program.vald}
                   />
+                  <div className="mt-3 border-t border-slate-200 pt-3">
+                    <LoadPanel data={data.load} result={result.program.load} />
+                  </div>
                 </div>
               )}
               {result?.ok && (

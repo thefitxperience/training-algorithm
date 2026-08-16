@@ -253,6 +253,50 @@ export interface BodyDotData {
   unmappedStretches: string[]
 }
 
+/** Pre-computed per exercise — class, modifier, laterality and anchor status are resolved
+ *  upstream and are never re-derived here from names or equipment. */
+export interface LoadExercise {
+  id: number
+  /** sub-region code, the same one exercises.json carries */
+  code: string
+  class: string
+  modifier: number
+  modifiersApplied: string[]
+  unilateral: boolean
+  perHand: boolean
+  isAnchor: boolean
+  /** calibration hook: actual / estimated once performance logging exists. Nothing sets it
+   *  yet, so every exercise falls back to correctionFactorDefault. */
+  correctionFactor?: number
+}
+
+export interface LoadBridge {
+  borrowsFrom: string | null
+  ratio: number | null
+  quality: string
+}
+
+export interface LoadData {
+  gravity: number
+  /** newtons-to-reference constant, keyed by test name (no " Strength Asymmetry" suffix) */
+  k: Record<string, number>
+  testSubRegion: Record<string, string>
+  anchors: Record<string, string>
+  bridges: Record<string, LoadBridge>
+  classRatio: Record<string, number>
+  modifiers: Record<string, number>
+  lateralityBilateral: number
+  tierBand: Record<string, number>
+  tierLabel: Record<string, string>
+  compoundFreeWeightCap: number
+  beginnerTopCap: number
+  roundToKg: number
+  noLoadAges: string[]
+  correctionFactorDefault: number
+  exercises: LoadExercise[]
+  notes: { anchorsFilled: string[]; divergences: string[] }
+}
+
 export interface DataBundle {
   config: Config
   allocation: Allocation
@@ -264,6 +308,7 @@ export interface DataBundle {
   inbody: InBodyData
   vald: ValdData
   bodydot: BodyDotData
+  load: LoadData
 }
 
 export interface ClientInput {

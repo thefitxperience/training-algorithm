@@ -19,6 +19,7 @@ import {
   allocate,
   buildFindings,
   hasAnyReading,
+  resolveAll,
   type AllocationDay as ValdAllocationDay,
   type UnilateralForm,
   type ValdResult,
@@ -38,6 +39,7 @@ import {
   type CorrectiveSlot,
   type CorrectiveStretch,
 } from './bodydot'
+import { evaluateLoad, type LoadResult } from './weight'
 import {
   blockSeconds,
   buildSubAliases,
@@ -133,6 +135,8 @@ export interface Program {
   vald: ValdResult
   /** posture findings and the corrective block they produced; inert with no readings */
   bodydot: BodyDotResult
+  /** estimated working weights; inert until newton figures are entered */
+  load: LoadResult
   /** verdict per exercise id across the whole library, for the audit and the UI */
   verdicts: Map<number, ExerciseVerdict>
   /** everything the injury layer took out of the pool, for the removals panel */
@@ -472,8 +476,19 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
   // ---- VALD ---------------------------------------------------------------
   // Adds sets to the weak side. Never changes the goal, split, frequency, slot count, or
   // the strong side's volume. Precedence is injury > InBody > VALD.
+  // Readings are reconciled across all four fields before anything acts on them. A weak side
+  // that contradicts the measured forces blocks its finding outright, so it is surfaced here
+  // even when nothing is left for the allocator to do.
+  const valdReadings = resolveAll(input.vald)
+  const valdBlocked = valdReadings.filter((r) => r.conflict)
+  const valdMismatched = valdReadings.filter((r) => r.mismatch)
   const valdFindings = hasAnyReading(input.vald) ? buildFindings(input.vald, data.vald) : []
-  let vald: ValdResult = INERT_VALD
+  let vald: ValdResult = {
+    ...INERT_VALD,
+    readings: valdReadings,
+    blocked: valdBlocked,
+    mismatched: valdMismatched,
+  }
   if (valdFindings.length > 0) {
     const injuryUnilateral = new Set(
       data.injury.exercises.filter((r) => r.unilateral).map((r) => r.id),
@@ -533,6 +548,9 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
       conflicts,
       referrals: valdFindings.filter((f) => f.referral),
       trimmed: [],
+      readings: valdReadings,
+      blocked: valdBlocked,
+      mismatched: valdMismatched,
     }
   }
 
@@ -672,6 +690,17 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
     }
   }
 
+  // ---- Load ---------------------------------------------------------------
+  // Purely an annotation layer: it reads the newton figures and attaches a weight range to
+  // exercises that already exist. It never changes selection, sets, reps, rest or timing.
+  const load = evaluateLoad(valdReadings, data.load, {
+    ageBracket: ageBr,
+    level: input.level,
+    library: exercises,
+    verdictOf: (id) => verdicts.get(id)?.verdict ?? 'OK',
+    vald: data.vald,
+  })
+
   return {
     ok: true,
     program: {
@@ -691,6 +720,7 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
       inbody,
       vald,
       bodydot,
+      load,
       verdicts,
       removedByPain,
     },

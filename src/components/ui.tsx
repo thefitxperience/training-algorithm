@@ -149,14 +149,19 @@ export function Button({
   )
 }
 
-/** Segmented control — used wherever the choice is small enough to show all of it. */
+/**
+ * Segmented control — used wherever the choice is small enough to show all of it.
+ *
+ * `value` may be null, which shows every option unselected. That is a real state: an untouched
+ * control has to look different from one deliberately set to its first option.
+ */
 export function Segmented<T extends string | number>({
   value,
   options,
   onChange,
   className = '',
 }: {
-  value: T
+  value: T | null
   options: { value: T; label: ReactNode; title?: string }[]
   onChange: (v: T) => void
   className?: string

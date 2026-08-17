@@ -22,7 +22,9 @@ export function QuickTest({
   onGenerate: (input: ClientInput) => void
 }) {
   const [open, setOpen] = useState(false)
-  const [options, setOptions] = useState<SampleOptions>({ pain: true })
+  // Everything off to start: the plain client is the one worth seeing first, and each tick
+  // then says exactly what it added.
+  const [options, setOptions] = useState<SampleOptions>({ pain: false })
   const [seed, setSeed] = useState<number | null>(null)
   const box = useRef<HTMLDivElement>(null)
 

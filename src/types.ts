@@ -420,3 +420,19 @@ export interface ClientInput {
   /** days the client asked to bring down to 60 minutes; empty means no session is trimmed */
   caps: CapPin[]
 }
+
+/**
+ * The client's details as the form holds them, which is not the same as what the generator
+ * accepts. The form opens on a real client, but any of the six fields that cannot be guessed
+ * back may be cleared — so each of them may be absent here, and a `ClientInput` exists only
+ * once none of them are. See lib/draft.ts.
+ */
+export interface ClientDraft
+  extends Omit<ClientInput, 'sex' | 'age' | 'level' | 'goal' | 'days' | 'split'> {
+  sex: Sex | null
+  age: number | null
+  level: string | null
+  goal: string | null
+  days: number | null
+  split: string | null
+}

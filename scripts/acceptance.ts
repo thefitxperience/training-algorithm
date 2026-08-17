@@ -4,11 +4,12 @@
  *
  *   npm run acceptance
  */
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { generate, isEligible } from '../src/lib/generate'
 import { buildAudit } from '../src/lib/audit'
-import { PRESETS } from '../src/lib/presets'
+import { FIXTURES } from './fixtures'
+import { REQUIRED_FIELDS, completeClient, defaultDraft, missingFrom } from '../src/lib/draft'
 import { EQUIPMENT_TIERS, isEquipmentAvailable, libraryCoverage } from '../src/lib/equipment'
 import { splitAdvice } from '../src/lib/splitAdvice'
 import { pickKey, roundSets } from '../src/lib/rounding'
@@ -96,7 +97,7 @@ const run = (input: ClientInput) => {
   if (!r.ok) throw new Error(`${r.error}`)
   return r.program
 }
-const preset = (name: string) => PRESETS.find((p) => p.name === name)!
+const fixture = (name: string) => FIXTURES.find((p) => p.name === name)!
 /** the main program only — everything the annotation layers must never touch */
 const mainFingerprint = (p: ReturnType<typeof run>) =>
   p.days
@@ -105,7 +106,7 @@ const mainFingerprint = (p: ReturnType<typeof run>) =>
 
 // ---- Reference -------------------------------------------------------------
 {
-  const p = run(preset('Reference').input)
+  const p = run(fixture('Reference').input)
   const mins = p.days.map((d) => d.minutes)
   check('Reference: 4 days delivered', p.days.length === 4, `got ${p.days.length}`)
   check(
@@ -128,7 +129,7 @@ const mainFingerprint = (p: ReturnType<typeof run>) =>
 
 // ---- Older adult -----------------------------------------------------------
 {
-  const p = run(preset('Older adult').input)
+  const p = run(fixture('Older adult').input)
   const names = p.days.flatMap((d) => d.exercises.map((e) => e.exercise.name.toLowerCase()))
   const banned = ['ab wheel', 'rollout', 'pull-up', 'copenhagen']
   const hits = banned.filter((b) => names.some((n) => n.includes(b)))
@@ -155,7 +156,7 @@ const mainFingerprint = (p: ReturnType<typeof run>) =>
 
 // ---- Stress test -----------------------------------------------------------
 {
-  const input = preset('Stress test').input
+  const input = fixture('Stress test').input
   const p = run(input)
   check(
     'Stress test: 5 requested -> 3 delivered',
@@ -173,7 +174,7 @@ const mainFingerprint = (p: ReturnType<typeof run>) =>
 
 // ---- Youth strength --------------------------------------------------------
 {
-  const p = run(preset('Youth strength').input)
+  const p = run(fixture('Youth strength').input)
   const openers = p.days.map((d) => d.exercises[0])
   check(
     'Youth strength: every day opens on a main lift',
@@ -188,7 +189,7 @@ const mainFingerprint = (p: ReturnType<typeof run>) =>
 {
   const ids = (p: ReturnType<typeof run>) =>
     p.days.flatMap((d) => d.exercises.map((e) => e.exercise.id)).join(',')
-  const differing = PRESETS.filter((pr) => ids(run(pr.input)) !== ids(run(pr.input)))
+  const differing = FIXTURES.filter((pr) => ids(run(pr.input)) !== ids(run(pr.input)))
   check(
     'Same client input always produces the same program',
     differing.length === 0,
@@ -199,18 +200,18 @@ const mainFingerprint = (p: ReturnType<typeof run>) =>
 // ---- No mobility anywhere --------------------------------------------------
 {
   const bad: string[] = []
-  for (const pr of PRESETS) {
+  for (const pr of FIXTURES) {
     const p = run(pr.input)
     for (const d of p.days)
       for (const e of d.exercises)
         if (e.exercise.type === 'mobility') bad.push(`${pr.name}: ${e.exercise.name}`)
   }
-  check('No preset prescribes a mobility-type exercise', bad.length === 0, bad.join(', '))
+  check('No fixture prescribes a mobility-type exercise', bad.length === 0, bad.join(', '))
 }
 
 // ---- Equipment tiers -------------------------------------------------------
 {
-  const base = preset('Reference').input
+  const base = fixture('Reference').input
   const tiers = ['Full gym', 'Home (DB, KB, bands)', 'Bodyweight only'] as const
 
   // Nothing outside the tier may appear in the program.
@@ -254,7 +255,7 @@ const mainFingerprint = (p: ReturnType<typeof run>) =>
 
 // ---- Whole-set rounding (simple view) --------------------------------------
 {
-  for (const pr of PRESETS) {
+  for (const pr of FIXTURES) {
     const p = run(pr.input)
     const r = roundSets(p)
     const all = [...r.byPick.values()]
@@ -293,14 +294,14 @@ const mainFingerprint = (p: ReturnType<typeof run>) =>
 
 // ---- Split recommendation --------------------------------------------------
 {
-  const base = preset('Reference').input
+  const base = fixture('Reference').input
   const advice = splitAdvice(data.splits, base, data.config.splits, '18-29')
   check(
     'Split advice: reference client has a Recommended split',
     advice.recommended.length > 0,
     advice.recommended.map((o) => o.split).join(', '),
   )
-  const older = preset('Older adult').input
+  const older = fixture('Older adult').input
   const olderAdvice = splitAdvice(data.splits, older, data.config.splits, '65+')
   check(
     'Split advice: non-18-29 client is flagged as reading the reference bracket',
@@ -310,7 +311,7 @@ const mainFingerprint = (p: ReturnType<typeof run>) =>
 }
 
 // ---- Injury layer ----------------------------------------------------------
-const REF = preset('Reference').input
+const REF = fixture('Reference').input
 const withPains = (pains: PainSelection) => run({ ...REF, pains })
 const fingerprint = (p: ReturnType<typeof run>) =>
   p.days.map((d) => d.exercises.map((e) => `${e.exercise.id}@${e.sets}`).join(',')).join(' | ')
@@ -481,7 +482,7 @@ const fingerprint = (p: ReturnType<typeof run>) =>
 
   // Get Stronger protects main lifts; Build Muscle and Lose Fat deliberately do not
   {
-    const gs = run({ ...preset('Youth strength').input, structure: 'superset' })
+    const gs = run({ ...fixture('Youth strength').input, structure: 'superset' })
     const blocked = gs.days.flatMap((d) =>
       d.blocks
         .filter((b) => b.indices.length > 1)
@@ -494,7 +495,7 @@ const fingerprint = (p: ReturnType<typeof run>) =>
       blocked.map((e) => e.exercise.name).join(', '),
     )
 
-    const paired = [superset, run({ ...preset('New client').input, structure: 'superset' })].flatMap((p) =>
+    const paired = [superset, run({ ...fixture('New client').input, structure: 'superset' })].flatMap((p) =>
       p.days.flatMap((d) =>
         d.blocks
           .filter((b) => b.indices.length > 1)
@@ -646,7 +647,7 @@ const fingerprint = (p: ReturnType<typeof run>) =>
 
   // inert with no scan
   {
-    const bad = PRESETS.filter(
+    const bad = FIXTURES.filter(
       (pr) => slotsOf(run(pr.input)) !== slotsOf(run({ ...pr.input, inbody: {} })),
     )
     const ref = run(REF)
@@ -741,7 +742,7 @@ const fingerprint = (p: ReturnType<typeof run>) =>
     )
   }
 
-  // the golden rule, across presets and several scans
+  // the golden rule, across fixtures and several scans
   {
     const scans: InBodyInput[] = [
       WORKED_EXAMPLE,
@@ -750,7 +751,7 @@ const fingerprint = (p: ReturnType<typeof run>) =>
       { smm: 20, smmLow: 31.6, smmHigh: 38.6 },
     ]
     const bad: string[] = []
-    for (const pr of PRESETS)
+    for (const pr of FIXTURES)
       for (const [i, scan] of scans.entries()) {
         const base = run(pr.input)
         const withScan = run({ ...pr.input, inbody: scan })
@@ -760,7 +761,7 @@ const fingerprint = (p: ReturnType<typeof run>) =>
     check(
       'InBody: slot count and exercise selection are identical for every scan',
       bad.length === 0,
-      bad.length ? bad.join(', ') : `${PRESETS.length} presets x ${scans.length} scans`,
+      bad.length ? bad.join(', ') : `${FIXTURES.length} fixtures x ${scans.length} scans`,
     )
   }
 
@@ -808,7 +809,7 @@ const fingerprint = (p: ReturnType<typeof run>) =>
   // most-restrictive filler fields, taken independently
   {
     const p = run({
-      ...preset('Stress test').input, // age 10, Beginner
+      ...fixture('Stress test').input, // age 10, Beginner
       inbody: WORKED_EXAMPLE,
       vald: {},
     })
@@ -914,14 +915,14 @@ const fingerprint = (p: ReturnType<typeof run>) =>
       codes.map((c) => [c, { asymmetry: 25, weakSide: 'Left' as const }]),
     )
     const bad: string[] = []
-    for (const pr of PRESETS) {
+    for (const pr of FIXTURES) {
       const p = run({ ...pr.input, vald: all })
       for (const e of p.days.flatMap((d) => d.exercises))
         if (e.exercise.mainLift && e.unilateral && e.unilateral.form !== 'already')
           bad.push(`${pr.name}: ${e.exercise.name} (${e.unilateral.form})`)
     }
     let mainLiftsOnTestedSubRegions = 0
-    for (const pr of PRESETS)
+    for (const pr of FIXTURES)
       for (const e of run({ ...pr.input, vald: all }).days.flatMap((d) => d.exercises))
         if (e.exercise.mainLift && codes.includes(e.exercise.code)) mainLiftsOnTestedSubRegions++
     check(
@@ -957,7 +958,7 @@ const fingerprint = (p: ReturnType<typeof run>) =>
     // *other* groups shifts. Same phenomenon the Stage 1 week-rotation check exposed.
     const bad: string[] = []
     let maxIndirectDrift = 0
-    for (const pr of PRESETS) {
+    for (const pr of FIXTURES) {
       const base = run(pr.input)
       const p = run({ ...pr.input, vald: all })
       if (base.exerciseCount !== p.exerciseCount) bad.push(`${pr.name}: slot count changed`)
@@ -969,12 +970,12 @@ const fingerprint = (p: ReturnType<typeof run>) =>
         maxIndirectDrift = Math.max(maxIndirectDrift, Math.abs(r.delivered - b.rows[i].delivered))
       })
     }
-    const totalBumps = PRESETS.reduce((n, pr) => n + run({ ...pr.input, vald: all }).vald.bumps.length, 0)
+    const totalBumps = FIXTURES.reduce((n, pr) => n + run({ ...pr.input, vald: all }).vald.bumps.length, 0)
     check(
       'VALD: slot count unchanged and the strong side keeps its direct volume',
       bad.length === 0 && totalBumps > 0,
       bad.join(', ') ||
-        `${totalBumps} bumps across all presets — max indirect-credit drift from swaps ${maxIndirectDrift.toFixed(2)} sets`,
+        `${totalBumps} bumps across all fixtures — max indirect-credit drift from swaps ${maxIndirectDrift.toFixed(2)} sets`,
     )
   }
 
@@ -1000,7 +1001,7 @@ const fingerprint = (p: ReturnType<typeof run>) =>
   const mismatched: string[] = []
   let differing = 0
   let blocks = 0
-  for (const pr of PRESETS) {
+  for (const pr of FIXTURES) {
     for (const structure of STRUCTURES) {
       for (const inbody of [{}, WORKED_EXAMPLE]) {
         const p = run({ ...pr.input, structure, inbody })
@@ -1052,7 +1053,7 @@ const fingerprint = (p: ReturnType<typeof run>) =>
   )
   const violations: string[] = []
   let swaps = 0
-  for (const pr of PRESETS) {
+  for (const pr of FIXTURES) {
     for (const pains of [{}, { LOWBACK: 'Both' }, { SHOULDER: 'Both' }, { KNEE_ANT: 'Both' }]) {
       for (const equipment of EQUIPMENT_TIERS) {
         const input: ClientInput = { ...pr.input, pains: pains as PainSelection, equipment, vald: ALL }
@@ -1077,7 +1078,7 @@ const fingerprint = (p: ReturnType<typeof run>) =>
     violations.length === 0 && swaps > 0,
     violations.length
       ? `${violations.length} violations, e.g. ${violations.slice(0, 3).join('; ')}`
-      : `${swaps} swaps across ${PRESETS.length} presets x 4 pain sets x ${EQUIPMENT_TIERS.length} equipment tiers`,
+      : `${swaps} swaps across ${FIXTURES.length} fixtures x 4 pain sets x ${EQUIPMENT_TIERS.length} equipment tiers`,
   )
 }
 
@@ -1085,7 +1086,7 @@ const fingerprint = (p: ReturnType<typeof run>) =>
   // `swappedFrom` was read after the slot had already been mutated, so it recorded the
   // exercise swapped TO under a field that means swapped FROM.
   const p = run({
-    ...preset('Stress test').input,
+    ...fixture('Stress test').input,
     vald: { 'G-ABD': { asymmetry: 25, weakSide: 'Left' } },
   })
   const swapped = p.vald.bumps.filter((b) => b.swappedFrom)
@@ -1208,7 +1209,7 @@ const fingerprint = (p: ReturnType<typeof run>) =>
     }
     let sessions = 0
     let worst = 0
-    for (const pr of PRESETS) {
+    for (const pr of FIXTURES) {
       const p = run({ ...pr.input, bodydot: many })
       for (const d of p.days) {
         sessions++
@@ -1363,7 +1364,7 @@ const fingerprint = (p: ReturnType<typeof run>) =>
 
   {
     // Age and equipment still bind: the Q04 entry is a leg press and a deep barbell squat
-    const p = run({ ...preset('Older adult').input, bodydot: { Q04: { value: 40 } } })
+    const p = run({ ...fixture('Older adult').input, bodydot: { Q04: { value: 40 } } })
     check(
       'BodyDot: a corrective the client cannot safely load is not added, and says why',
       p.bodydot.correctives.length === 0 &&
@@ -1542,7 +1543,7 @@ const fingerprint = (p: ReturnType<typeof run>) =>
     const many: BodyDotInput = { S02: { value: 60 }, S01: { value: 40 }, T03: { value: 20 } }
     const bad: string[] = []
     let carried = 0
-    for (const pr of PRESETS) {
+    for (const pr of FIXTURES) {
       const p = run({ ...pr.input, bodydot: many })
       if (p.bodydot.trimmed.length > 0)
         bad.push(`${pr.name}: ${p.bodydot.trimmed.length} corrective(s) dropped with no cap pressed`)
@@ -1555,7 +1556,7 @@ const fingerprint = (p: ReturnType<typeof run>) =>
     check(
       'BodyDot: with no cap pressed the corrective block reaches every session intact',
       bad.length === 0 && carried > 0,
-      bad.length ? bad.join('; ') : `${carried} corrective slots carried across the presets, none dropped`,
+      bad.length ? bad.join('; ') : `${carried} corrective slots carried across the fixtures, none dropped`,
     )
   }
 
@@ -1569,7 +1570,7 @@ const fingerprint = (p: ReturnType<typeof run>) =>
     }
     let bumped = 0
     let extraSets = 0
-    for (const pr of PRESETS) {
+    for (const pr of FIXTURES) {
       const p = run({ ...pr.input, vald })
       bumped += p.vald.bumps.length
       extraSets += p.vald.bumps.reduce((s, b) => s + b.extraSets, 0)
@@ -1577,7 +1578,7 @@ const fingerprint = (p: ReturnType<typeof run>) =>
     check(
       'VALD: weak-side sets are no longer refused for session length',
       bumped > 0 && extraSets > 0,
-      `${bumped} bumps adding ${extraSets} weak-side sets across the presets`,
+      `${bumped} bumps adding ${extraSets} weak-side sets across the fixtures`,
     )
   }
 
@@ -2233,10 +2234,10 @@ const fingerprint = (p: ReturnType<typeof run>) =>
   })
 
   // Every client this suite can reach, so the layer is measured on real days rather than a
-  // curated few. Two structures per preset, because the structure lever's availability is
+  // curated few. Two structures per fixture, because the structure lever's availability is
   // exactly what the client's own choice decides.
   const CLIENTS: { name: string; input: ClientInput }[] = []
-  for (const pr of PRESETS)
+  for (const pr of FIXTURES)
     for (const s of ['straight', 'superset'] as Structure[])
       CLIENTS.push({ name: `${pr.name}/${s}`, input: { ...pr.input, structure: s } })
   const bodydotMany: BodyDotInput = { S02: { value: 60 }, S01: { value: 40 }, T03: { value: 20 } }
@@ -2244,7 +2245,7 @@ const fingerprint = (p: ReturnType<typeof run>) =>
     'Q-KD': { asymmetry: 25, weakSide: 'Left' },
     'H-KF': { asymmetry: 22, weakSide: 'Right' },
   }
-  for (const pr of PRESETS)
+  for (const pr of FIXTURES)
     CLIENTS.push({
       name: `${pr.name}/loaded`,
       input: { ...pr.input, bodydot: bodydotMany, vald: valdBoth, inbody: WORKED_EXAMPLE },
@@ -2583,7 +2584,7 @@ const fingerprint = (p: ReturnType<typeof run>) =>
       bad.length === 0,
       unreachable.length
         ? `${unreachable.length} unreachable days, e.g. ${unreachable[0].name} day ${unreachable[0].dayIndex + 1} at ${unreachable[0].plan.minutesAfter.toFixed(1)} min (${unreachable[0].plan.shortfall.toFixed(1)} over): ${unreachable[0].plan.reason}`
-        : 'no day in the preset sweep was unreachable',
+        : 'no day in the fixture sweep was unreachable',
     )
   }
 
@@ -2663,7 +2664,7 @@ const fingerprint = (p: ReturnType<typeof run>) =>
     check(
       'Time cap: it is per day — pressing one day never touches another, and a short day costs nothing',
       bad.length === 0,
-      bad.length ? bad.slice(0, 3).join('; ') : 'no cross-day effect across the preset sweep',
+      bad.length ? bad.slice(0, 3).join('; ') : 'no cross-day effect across the fixture sweep',
     )
   }
 
@@ -3537,7 +3538,8 @@ const fingerprint = (p: ReturnType<typeof run>) =>
   {
     // Each machine is a separate tick, so a layer can be tried on its own.
     const only = (o: SampleOptions) => sampleClient(data, o, 4242).input
-    const bare = only({ pain: false })
+    // {} is the state the panel opens in: nothing ticked draws a plain client and no readings.
+    const bare = only({})
     check(
       'Quick test: an unticked machine contributes nothing',
       Object.keys(bare.inbody).length === 0 &&
@@ -3591,6 +3593,72 @@ const fingerprint = (p: ReturnType<typeof run>) =>
   }
 }
 
+// ---- The form the app opens on ---------------------------------------------
+{
+  const start = defaultDraft()
+  const client = completeClient(start)
+
+  check(
+    'Setup form: the client the form opens on generates a program',
+    client !== null && generate(data, client).ok,
+    client
+      ? `${client.sex}, ${client.age}, ${client.level}, ${client.goal}, ${client.days} days, ${client.split}`
+      : 'the default draft is not a complete client',
+  )
+
+  {
+    // The advice line under the form would otherwise open offering to change the very split
+    // the form arrived with, which reads as the default being wrong.
+    const advice = splitAdvice(
+      data.splits,
+      { goal: start.goal!, days: start.days!, level: start.level!, split: start.split! },
+      data.config.splits,
+      '18-29',
+    )
+    const suggested = advice.recommended[0] ?? advice.best
+    check(
+      'Setup form: the split it opens on is the one the split engine recommends',
+      suggested?.split === start.split,
+      `opens on ${start.split}; the engine recommends ${suggested?.split ?? 'nothing'} (${suggested?.row?.badge ?? 'no row'})`,
+    )
+  }
+
+  {
+    // Each of the six can be cleared in the UI, and none can be inferred from the others.
+    const bad: string[] = []
+    for (const field of REQUIRED_FIELDS) {
+      const cleared = { ...start, [field]: null }
+      if (completeClient(cleared) !== null) bad.push(`${field} cleared still made a client`)
+      if (!missingFrom(cleared).length) bad.push(`${field} cleared was not named as missing`)
+    }
+    check(
+      'Setup form: clearing any required field blocks generation and names what is missing',
+      bad.length === 0,
+      bad.length ? bad.join('; ') : `${REQUIRED_FIELDS.length} fields, each refused on its own`,
+    )
+  }
+
+  {
+    // The five named starting points are gone from the product. They survive only as the
+    // fixtures this file runs on, which live outside src and never reach the bundle.
+    const offenders: string[] = []
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const path = join(dir, entry.name)
+        if (entry.isDirectory()) walk(path)
+        else if (/\.tsx?$/.test(entry.name) && /from '.*(fixtures|presets)'/.test(readFileSync(path, 'utf8')))
+          offenders.push(path)
+      }
+    }
+    walk(join(import.meta.dirname, '..', 'src'))
+    check(
+      'Setup form: no named preset list reaches the shipped app',
+      offenders.length === 0,
+      offenders.length ? offenders.join(', ') : 'nothing under src imports the acceptance fixtures',
+    )
+  }
+}
+
 // ---- Report ----------------------------------------------------------------
 let failed = 0
 for (const r of results) {
@@ -3601,7 +3669,7 @@ console.log(`\n${results.length - failed}/${results.length} passing`)
 for (const n of notes) console.log(n)
 
 // Extra diagnostics (not pass/fail)
-for (const pr of PRESETS) {
+for (const pr of FIXTURES) {
   const p = run(pr.input)
   const a = buildAudit(p, data.exercises, pr.input.sex, data.config)
   console.log(

@@ -75,9 +75,9 @@ They are generated upstream and are **not modified** by this app. `loadData()` i
 `allocation.json` is fetched and parsed exactly once per page load regardless of renders.
 
 Client state and the view mode are mirrored into the query string, so any program is a
-linkable regression case: `?preset=Stress%20test&view=detailed`, or
-`?sex=Male&age=28&level=Intermediate&…`. Pains ride along too, and layer on top of a preset:
-`?preset=Reference&pains=SHOULDER:Left,LOWBACK:Both`. So does a scan —
+linkable regression case: `?sex=Male&age=28&level=Intermediate&…`. Anything the URL does not
+name keeps the value the form opens on, so a link can carry as little as one field. Pains ride
+along too: `?pains=SHOULDER:Left,LOWBACK:Both`. So does a scan —
 `?inbody=example` loads the spec's worked client, or pass the values as
 `?inbody=smm:30.1,pbf:26.4,…`. VALD readings too, with all four fields positional and optional —
 `?vald=Q-KD:25:L:400:380` is percentage, weak side, left newtons and right newtons, and
@@ -92,8 +92,11 @@ actor, accepted, timestamp.
   ranking, the fallback cascade, session minutes.
 - [src/lib/audit.ts](src/lib/audit.ts) — volume audit, recomputed from the chosen
   exercises rather than read from the allocation's `delivered` field.
-- [src/lib/presets.ts](src/lib/presets.ts) — the five regression presets.
+- [src/lib/draft.ts](src/lib/draft.ts) — the client the form opens on, and the rule that a
+  cleared field produces no program rather than a guessed one.
 - [src/lib/sample.ts](src/lib/sample.ts) — made-up clients for the Quick test button.
+- [scripts/fixtures.ts](scripts/fixtures.ts) — the five fixed clients the acceptance run uses.
+  Outside `src`, so none of them reach the bundle.
 - [scripts/acceptance.ts](scripts/acceptance.ts) — headless assertions over the same code.
 
 ### Two pages, and what sits on each
@@ -103,15 +106,34 @@ above it and **how the session is run** beside it.
 
 That last one moved. It is the only setting worth flipping back and forth — it changes no
 exercise and no set, only how long a session takes — and the thing to judge it against is the
-day cards directly underneath, not a form filled in before any of them exist.
+day cards directly underneath, not a form filled in before any of them exist. It says which
+structure is running, so page two's summary bar does not repeat it.
+
+Page one opens on one client — Male, 25, Beginner, Build Muscle, 4 days, Full Body — rather
+than on a menu of named starting points. The five that used to sit above the form are now
+acceptance fixtures only: Quick test covers that ground better, because it draws across the
+whole legal space instead of five points in it. The split it opens on is the one splits.json
+badges Recommended for exactly that client, and a check holds it there, so the advice line
+underneath cannot open by offering to change the split the form arrived with.
+
+Every field can still be cleared, and none can be inferred from the others, so a cleared one
+produces no program at all — the button greys out and names what is missing rather than
+guessing a value back. [src/lib/draft.ts](src/lib/draft.ts) is the only route from the form's
+state to anything the generator accepts.
+
+The summary bar on page two **names the reported pains** rather than counting them. "2 pains
+reported" says a filter ran; it does not say which part of the library was cut, and that is
+the one thing about the program a summary cannot leave implicit.
 
 ### Quick test
 
-A whole made-up client in one press, from the header: details and pains always, plus whichever
-of VALD, InBody and BodyDot are ticked. The ticks matter — most of what is worth looking at is
-one layer on its own, and drawing everything every time makes each layer's contribution
-impossible to see. The panel stays open so the button can be pressed repeatedly, and the seed
-is shown, because "the one with the odd trunk reading" is not a way of finding it again.
+A whole made-up client in one press, from the header: the details always, plus whichever of
+pain, VALD, InBody and BodyDot are ticked. Everything starts unticked, so the first press
+gives a plain client and each tick then says exactly what it added — most of what is worth
+looking at is one layer on its own, and drawing everything every time makes each layer's
+contribution impossible to see. The panel stays open so the button can be pressed repeatedly,
+and the seed is shown, because "the one with the odd trunk reading" is not a way of finding it
+again.
 
 Nothing is drawn flat. A DynaMo battery is an upper, a lower or the whole set, its asymmetries
 weighted low because most people are close to even, and its newtons derived from the
@@ -197,8 +219,8 @@ that named pair directly. Superset coverage on the Reference client dropped from
   second rejection fires. This follows the spec verbatim and is asserted by name.
 - **The three structures produce similar times for a Lose Fat client** — pairing saves the
   rest you compress, and a fat-loss client resting 30–45 s has little to compress.
-- The **New client** preset now defaults to `superset`, since that is `recommendedDefault`
-  for Lose Fat; every other preset defaults to `straight`.
+- The **New client** fixture runs at `superset`, since that is `recommendedDefault` for Lose
+  Fat; every other fixture runs at `straight`, and so does the form.
 
 ## InBody
 
@@ -208,7 +230,7 @@ volume, reps, rest, load — and forces a faster structure on body regions carry
 **The golden rule holds: InBody never changes the requested frequency, the split, the slot
 count, or which exercises are selected.** `allocation.json` is still looked up with the
 client's *stated* goal; the blend only changes what fills those slots. Asserted across every
-preset × four scans.
+fixture × four scans.
 
 [src/lib/inbody.ts](src/lib/inbody.ts) applies the ten steps in order. The state space is
 factorised, not tabulated — 8 goal vectors × independent modifiers, no 2,187-row lookup.
@@ -904,7 +926,7 @@ reported by name — a check that can go green by running out of room is worse t
 
 `set_accessory` (4 points) and `remove_accessory_exercise` (10) **never fire**. Selection
 ranks primary tier first, and all **47 of 47** sub-regions in the library contain a primary
-exercise, so a slot asking for one exercise always gets a primary one. Across the preset
+exercise, so a slot asking for one exercise always gets a primary one. Across the fixture
 sweep the chosen exercises are **339 primary, 27 secondary, 0 accessory**.
 
 The consequence is real: the cheapest set cut actually on offer costs **18**, not 4. That is
@@ -943,8 +965,8 @@ Three divergences from the spec's 34 / 23 / 15 / 11, all traceable:
   remove, and set cuts beat removal per point until every accessory is at its floor.
 - **Correctives at 74% and filler at 58%** are inflated by the sweep itself: every client in
   it has a scan and three posture findings, which a real population would not. On the five
-  presets (mostly no readings) they fall to 48% and 30%.
-- **Structure at 55%, well under the days it appears on in the preset sweep (87%)**, because
+  fixtures (mostly no readings) they fall to 48% and 30%.
+- **Structure at 55%, well under the days it appears on in the fixture sweep (87%)**, because
   half the grid already runs supersets and is offered triset or nothing.
 
 Nothing here has been reweighted to close the gap with the spec's figures.
@@ -975,7 +997,7 @@ it never spends extra points to land closer to 60 — a Youth-strength day comes
 having pulled one 12-point lever.
 
 When 60 cannot be reached, the shortest safe version is applied and the shortfall is reported
-with the reason. In the preset sweep one day does this: `Youth strength` day 3 with a scan and
+with the reason. In the fixture sweep one day does this: `Youth strength` day 3 with a scan and
 posture readings lands at **61.8 min, 1.8 over**, because every lever except the main lift is
 already pulled.
 
@@ -1028,7 +1050,7 @@ split is still suppressed outright for non-18-29 clients, as before.
 
 **The equipment tier is no longer exposed in the client panel.** The field, the library
 filter and the whole fallback path below are still live — `ClientInput.equipment` defaults to
-`Full gym` from the presets and can still be set through the URL (`?equipment=Bodyweight%20only`)
+`Full gym` from the fixtures and can still be set through the URL (`?equipment=Bodyweight%20only`)
 — but a client is not asked to pick a tier. Everything in this section describes the
 mechanism, which is unchanged.
 
@@ -1099,7 +1121,7 @@ Places where the spec left a choice, and what was chosen:
 
 ## Acceptance criteria — current status
 
-`npm run acceptance` → **235 of 235 checks pass**. The five presets all run at `Full gym`, so
+`npm run acceptance` → **239 of 239 checks pass**. The five fixtures all run at `Full gym`, so
 the original criteria are unaffected by the equipment feature; the rest cover equipment
 tiers, split advice, set rounding, the injury, structure, InBody, VALD, BodyDot, Load, amend
 and time-cap layers, and the three importers — the Bodydot session reader, the DynaMo export
@@ -1135,7 +1157,7 @@ Two supporting checks are worth naming because they exist to stop this section l
   sub-budget space exceeds 400,000 states are reported as *not re-proved* by name rather
   than passing silently.
 - **A plan the search could not prove minimal says so** rather than claiming it — 1 of 23 in
-  the preset sweep, labelled in the UI.
+  the fixture sweep, labelled in the UI.
 
 | Criterion | Status |
 |---|---|
@@ -1150,12 +1172,12 @@ Two supporting checks are worth naming because they exist to stop this section l
 | Youth strength: Get Stronger days open on main lifts | **pass** — all 5 days |
 | ~~Week change alters selections but not volumes~~ | **dropped** — see below |
 | Same client input always produces the same program | **pass** — replaces the week checks |
-| No preset prescribes a mobility-type exercise | **pass** — all 5 presets |
+| No fixture prescribes a mobility-type exercise | **pass** — all 5 fixtures |
 | Equipment: nothing outside the tier is ever prescribed | **pass** — all three tiers |
 | Equipment: bodyweight-only shrinks the program and reports fallbacks | **pass** — 40 → 30 exercises, 17 warnings |
 | Equipment: no substitution crosses a muscle group even at bodyweight | **pass** |
-| Rounding: every prescribed set count is a whole number | **pass** — all 5 presets |
-| Rounding: no muscle group drifts more than 0.5 sets | **pass** — max 0.5 on every preset |
+| Rounding: every prescribed set count is a whole number | **pass** — all 5 fixtures |
+| Rounding: no muscle group drifts more than 0.5 sets | **pass** — max 0.5 on every fixture |
 | Rounding: whole-number sets move session length by under 5 min | **pass** — the two views' figures, now that there is no ceiling to cross |
 | Split advice: reference client gets a Recommended split | **pass** — Upper / Lower |
 | Split advice: non-18-29 client is flagged as reading the 18-29 rows | **pass** |
@@ -1185,7 +1207,7 @@ Two supporting checks are worth naming because they exist to stop this section l
 | **InBody:** worked example filler 4 × 40s | **pass** |
 | **InBody:** rule 4 never touches a main lift or an unowned group | **pass** |
 | **InBody:** Get Stronger + TRUNK Over leaves rest at the 120s floor | **pass** |
-| **InBody:** slot count and selection identical for every scan | **pass** — 5 presets × 4 scans |
+| **InBody:** slot count and selection identical for every scan | **pass** — 5 fixtures × 4 scans |
 | **InBody:** weights sum to 1.00, stated goal keeps ≥ 0.40 | **pass** — all 27 state combinations |
 | **InBody:** injury REMOVE verdicts still hold | **pass** |
 | **InBody:** ankle pain + high TBW gives the non-impact filler | **pass** |
@@ -1196,7 +1218,7 @@ Two supporting checks are worth naming because they exist to stop this section l
 | **VALD:** a 35% reading adds the same +2 as 25%, plus a referral flag | **pass** |
 | **VALD:** pass-1 reservation — every servable finding gets one before any gets two | **pass** — see the caveat above |
 | **VALD:** two runs on identical input are byte-identical | **pass** |
-| **VALD:** a bilateral main lift is never bumped or converted | **pass** — all 17 tests firing, all presets |
+| **VALD:** a bilateral main lift is never bumped or converted | **pass** — all 17 tests firing, all fixtures |
 | **VALD:** injury SIDE_ONLY right + weak left → no bump, visible note | **pass** |
 | **VALD:** slot count unchanged, strong side keeps its direct volume | **pass** — max indirect drift 1.8 sets |
 | **VALD:** the audit diverges by side once a finding fires | **pass** |
@@ -1318,7 +1340,7 @@ it. Two real bugs fell out, neither of which the 148 checks in place at the time
 
 1. **VALD's swap reached around the injury layer and the Stage 1 safety rules.** Step 5 searches
    the whole library for a native-unilateral exercise with the same `code`, and filtered on
-   nothing but the code and laterality. Across a sweep of 5 presets × 4 pain sets × 3 equipment
+   nothing but the code and laterality. Across a sweep of 5 fixtures × 4 pain sets × 3 equipment
    tiers, **343 swaps included 37 injury-REMOVEd exercises, 82 barred by the client's age or
    level, and 154 unavailable at their equipment tier** — a 10-year-old being handed a Kroc row,
    a bodyweight-only client a cable exercise. Every one of the existing VALD checks tested a
@@ -1500,7 +1522,7 @@ Why it was removed:
   So a "week 2" in this app was never the same thing as week 2 upstream: it re-picked
   exercises inside week 1's skeleton. Generating one week is the honest claim.
 - At week 1 the rotation was already a no-op (`rotate(list, 0)` is the identity), so
-  removing it changed no output. Every preset produces exactly the same program as before —
+  removing it changed no output. Every fixture produces exactly the same program as before —
   same exercises, same minutes, same audit figures.
 
 The related finding it used to expose is still true and still worth knowing: *direct* volume

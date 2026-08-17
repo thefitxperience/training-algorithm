@@ -3,7 +3,7 @@ import { loadData } from './data/load'
 import { ageBracket, generate } from './lib/generate'
 import { buildAudit } from './lib/audit'
 import { roundSets } from './lib/rounding'
-import { PRESETS } from './lib/presets'
+import { completeClient, defaultDraft, missingFrom } from './lib/draft'
 import { ClientPanel } from './components/ClientPanel'
 import { StructurePicker } from './components/StructurePicker'
 import { QuickTest } from './components/QuickTest'
@@ -21,7 +21,7 @@ import { EQUIPMENT_TIERS, type EquipmentTier } from './lib/equipment'
 import type { PainSelection, Side } from './lib/injury'
 import { STRUCTURES, structureBadges, type Structure } from './lib/structure'
 import { Button, Card, Logo, Note, Pill, SectionTitle } from './components/ui'
-import type { ClientInput, DataBundle } from './types'
+import type { ClientDraft, DataBundle } from './types'
 
 /** Client state lives in the query string so a given program is a linkable regression case. */
 function painsFromUrl(q: URLSearchParams): PainSelection | null {
@@ -136,34 +136,23 @@ function capsFromUrl(q: URLSearchParams): CapPin[] | null {
     })
 }
 
-function inputFromUrl(): ClientInput {
+/**
+ * The client the URL describes, over the one the form opens on. Anything the query string does
+ * not carry keeps its default, so a link that names only a goal is still a whole client.
+ */
+function draftFromUrl(): ClientDraft {
   const q = new URLSearchParams(window.location.search)
-  const presetName = q.get('preset')
-  if (presetName) {
-    const p = PRESETS.find((x) => x.name.toLowerCase() === presetName.toLowerCase())
-    // a preset fixes the client, but pains layer on top of it
-    if (p)
-      return {
-        ...p.input,
-        pains: painsFromUrl(q) ?? p.input.pains,
-        inbody: inbodyFromUrl(q) ?? p.input.inbody,
-        vald: valdFromUrl(q) ?? p.input.vald,
-        bodydot: bodydotFromUrl(q) ?? p.input.bodydot,
-        pins: pinsFromUrl(q) ?? p.input.pins,
-        caps: capsFromUrl(q) ?? p.input.caps,
-        structure: STRUCTURES.includes(q.get('structure') as Structure)
-          ? (q.get('structure') as Structure)
-          : p.input.structure,
-      }
-  }
-  const base = PRESETS[0].input
+  const base = defaultDraft()
+  const text = (k: string) => q.get(k) || null
+  const number = (k: string) => Number(q.get(k)) || null
+  const sex = q.get('sex')
   return {
-    sex: (q.get('sex') as ClientInput['sex']) ?? base.sex,
-    age: Number(q.get('age')) || base.age,
-    level: q.get('level') ?? base.level,
-    goal: q.get('goal') ?? base.goal,
-    days: Number(q.get('days')) || base.days,
-    split: q.get('split') ?? base.split,
+    sex: sex === 'Male' || sex === 'Female' ? sex : base.sex,
+    age: number('age') ?? base.age,
+    level: text('level') ?? base.level,
+    goal: text('goal') ?? base.goal,
+    days: number('days') ?? base.days,
+    split: text('split') ?? base.split,
     equipment: EQUIPMENT_TIERS.includes(q.get('equipment') as EquipmentTier)
       ? (q.get('equipment') as EquipmentTier)
       : base.equipment,
@@ -181,18 +170,24 @@ function inputFromUrl(): ClientInput {
 
 /**
  * Two phases, in the order the work actually happens: set the client up, generate, then
- * attach test results to a program that already exists. A link that already carries a
- * client opens on the program, so a shared URL lands where it is useful.
+ * attach test results to a program that already exists. A link that already carries a whole
+ * client opens on the program, so a shared URL lands where it is useful; a partial one opens
+ * on the form with what it did carry already filled in.
  */
 type Phase = 'setup' | 'program'
 
 export default function App() {
   const [data, setData] = useState<DataBundle | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
-  const [input, setInput] = useState<ClientInput>(inputFromUrl)
+  const [draft, setDraft] = useState<ClientDraft>(draftFromUrl)
+  // A bare URL always opens on the form, even though the form already holds a whole client:
+  // the default is a starting point to change, not a program somebody asked for.
   const [phase, setPhase] = useState<Phase>(() =>
-    window.location.search.length > 1 ? 'program' : 'setup',
+    window.location.search.length > 1 && completeClient(draftFromUrl()) ? 'program' : 'setup',
   )
+
+  // Nothing downstream ever sees a half-filled client: this is the only way through.
+  const client = useMemo(() => completeClient(draft), [draft])
 
   useEffect(() => {
     loadData()
@@ -202,9 +197,12 @@ export default function App() {
 
   useEffect(() => {
     const q = new URLSearchParams(
-      Object.entries(input)
+      Object.entries(draft)
         .filter(
-          ([k]) =>
+          ([k, v]) =>
+            // An unanswered field is left out of the URL entirely. Writing `age=null` would
+            // make a half-filled form share as a client with a nonsense age.
+            v !== null &&
             k !== 'pains' &&
             k !== 'inbody' &&
             k !== 'vald' &&
@@ -214,19 +212,19 @@ export default function App() {
         )
         .map(([k, v]) => [k, String(v)]) as [string, string][],
     )
-    const pains = Object.entries(input.pains)
+    const pains = Object.entries(draft.pains)
     if (pains.length) q.set('pains', pains.map(([id, side]) => `${id}:${side}`).join(','))
-    if (hasAnyInput(input.inbody))
+    if (hasAnyInput(draft.inbody))
       q.set(
         'inbody',
-        Object.entries(input.inbody)
+        Object.entries(draft.inbody)
           .map(([k, v]) => `${k}:${v}`)
           .join(','),
       )
-    if (hasAnyReading(input.vald))
+    if (hasAnyReading(draft.vald))
       q.set(
         'vald',
-        Object.entries(input.vald)
+        Object.entries(draft.vald)
           .map(([code, r]) =>
             [code, r.asymmetry ?? '', r.weakSide?.[0] ?? '', r.leftN ?? '', r.rightN ?? '']
               .join(':')
@@ -234,17 +232,17 @@ export default function App() {
           )
           .join(','),
       )
-    if (hasAnyBodyDot(input.bodydot))
+    if (hasAnyBodyDot(draft.bodydot))
       q.set(
         'bodydot',
-        Object.entries(input.bodydot)
+        Object.entries(draft.bodydot)
           .map(([code, r]) => `${code}:${r.value}${r.side ? `:${r.side[0]}` : ''}`)
           .join(','),
       )
-    if (input.pins.length)
+    if (draft.pins.length)
       q.set(
         'pins',
-        input.pins
+        draft.pins
           .map((p) =>
             [
               p.slotId,
@@ -258,62 +256,52 @@ export default function App() {
           )
           .join(','),
       )
-    if (input.caps.length)
+    if (draft.caps.length)
       q.set(
         'caps',
-        input.caps
+        draft.caps
           .map((c) => [c.dayIndex, c.actor, Date.parse(c.timestamp) || 0].join(';'))
           .join(','),
       )
     window.history.replaceState(null, '', `?${q.toString()}`)
-  }, [input])
+  }, [draft])
 
   const bracket = useMemo(
-    () => (data ? ageBracket(input.age, data.config.ages) : ''),
-    [data, input.age],
+    () => (data && draft.age !== null ? ageBracket(draft.age, data.config.ages) : ''),
+    [data, draft.age],
   )
 
-  const result = useMemo(() => (data ? generate(data, input) : null), [data, input])
+  const result = useMemo(() => (data && client ? generate(data, client) : null), [data, client])
 
   const audit = useMemo(
     () =>
-      data && result?.ok ? buildAudit(result.program, data.exercises, input.sex, data.config) : null,
-    [data, result, input.sex],
+      data && client && result?.ok
+        ? buildAudit(result.program, data.exercises, client.sex, data.config)
+        : null,
+    [data, client, result],
   )
 
   // What each structure would cost this client, so the change can be previewed before it
   // is committed to. Volume is held, so a slower structure simply takes longer.
   const structureInfo = useMemo(() => {
-    if (!data) return null
+    if (!data || !client) return null
     const badges = structureBadges(data.structure, {
-      goal: input.goal,
+      goal: client.goal,
       ageBracket: bracket,
-      level: input.level,
+      level: client.level,
     })
     const options = STRUCTURES.map((s) => {
       // Without `caps`, deliberately. Every capped day reads 60 min whatever the structure,
       // so leaving them in would flatten the very comparison this preview exists to make —
       // and it would re-run the time-cap search three more times on every keystroke.
-      const r = generate(data, { ...input, structure: s, caps: [] })
+      const r = generate(data, { ...client, structure: s, caps: [] })
       const minutes = r.ok
         ? r.program.days.reduce((sum, d) => sum + d.wholeSetMinutes, 0) / r.program.days.length
         : 0
       return { structure: s, badge: badges.badges[s], minutes }
     })
     return { options, note: badges.trisetDowngraded ? badges.downgradeReason : '' }
-  }, [data, input, bracket])
-
-  // pains / inbody / vald are objects, so they need comparing by value, not identity.
-  const OBJECT_FIELDS: (keyof ClientInput)[] = ['pains', 'inbody', 'vald', 'bodydot', 'pins', 'caps']
-  const objectKey = (p: ClientInput) =>
-    OBJECT_FIELDS.map((f) => JSON.stringify(Object.entries(p[f] ?? {}).sort())).join('|')
-  const activePreset =
-    PRESETS.find(
-      (p) =>
-        (Object.keys(p.input) as (keyof ClientInput)[])
-          .filter((k) => !OBJECT_FIELDS.includes(k))
-          .every((k) => p.input[k] === input[k]) && objectKey(p.input) === objectKey(input),
-    )?.name ?? null
+  }, [data, client, bracket])
 
   if (loadError) {
     return (
@@ -340,14 +328,21 @@ export default function App() {
     <QuickTest
       data={data}
       onGenerate={(sample) => {
-        setInput(sample)
+        setDraft(sample)
         setPhase('program')
       }}
     />
   )
 
-  const hasPains = Object.keys(input.pains).length > 0
-  const painCount = Object.keys(input.pains).length
+  const hasPains = Object.keys(draft.pains).length > 0
+
+  // Named, not counted. "2 pains reported" says a filter ran; it does not say which library
+  // was cut, and that is the one thing about the program the summary cannot leave implicit.
+  const reportedPains = Object.entries(draft.pains).map(([id, side]) => {
+    const pain = data.injury.pains.find((p) => p.id === id)
+    const label = pain?.label ?? id
+    return pain?.sided && side !== 'Both' ? `${label} (${side.toLowerCase()})` : label
+  })
 
   // An amend is a pin: it re-runs the generator holding the choice rather than editing the
   // output, so a re-test or a new scan cannot silently discard it.
@@ -355,23 +350,26 @@ export default function App() {
     ? {
         data: data.amend,
         exercises: data.exercises,
-        pins: input.pins,
-        setPins: (pins) => setInput({ ...input, pins }),
+        pins: draft.pins,
+        setPins: (pins) => setDraft({ ...draft, pins }),
         ageBracket: bracket,
-        equipment: input.equipment,
+        equipment: draft.equipment,
         verdictOf: (id) => result.program.verdicts.get(id)?.verdict ?? 'OK',
         actor: 'client',
       }
     : undefined
 
   const capWiring: CapWiring = {
-    caps: input.caps,
-    setCaps: (caps) => setInput({ ...input, caps }),
+    caps: draft.caps,
+    setCaps: (caps) => setDraft({ ...draft, caps }),
     actor: 'client',
   }
 
   // ---- phase 1: set the client up ------------------------------------------
-  if (phase === 'setup') {
+  // Also the landing state: with nothing filled in there is no client, so there is nothing a
+  // program could be built from and no page two to be on.
+  if (phase === 'setup' || !client) {
+    const missing = missingFrom(draft)
     return (
       <Shell action={quickTest}>
         <div className="mx-auto max-w-4xl space-y-4">
@@ -385,12 +383,11 @@ export default function App() {
 
           <Card className="p-5">
             <ClientPanel
-              input={input}
-              setInput={setInput}
+              draft={draft}
+              setDraft={setDraft}
               config={data.config}
               splits={data.splits}
               ageBracket={bracket}
-              activePreset={activePreset}
               effectiveGoal={result?.ok ? result.program.inbody.dominantGoal || undefined : undefined}
             />
           </Card>
@@ -402,8 +399,8 @@ export default function App() {
             <div className="mt-3">
               <PainPanel
                 injury={data.injury}
-                pains={input.pains}
-                setPains={(pains) => setInput({ ...input, pains })}
+                pains={draft.pains}
+                setPains={(pains) => setDraft({ ...draft, pains })}
                 compact
                 showTitle={false}
               />
@@ -418,7 +415,14 @@ export default function App() {
             </Note>
           )}
 
-          <div className="sticky bottom-4 flex justify-end">
+          {/* What is missing is named, not counted: a disabled button that does not say why
+              reads as broken, and "4 fields remaining" does not say which four. */}
+          <div className="sticky bottom-4 flex flex-wrap items-center justify-end gap-3">
+            {missing.length > 0 && (
+              <span className="rounded-xl bg-udra-linen-200 px-3 py-2 text-sm text-udra-ink-700">
+                Still needed: {missing.join(', ')}
+              </span>
+            )}
             <Button
               variant="primary"
               size="lg"
@@ -442,24 +446,23 @@ export default function App() {
         <Card className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
           <div className="flex flex-wrap items-center gap-2 text-sm">
             <span className="font-bold">
-              {input.sex}, {input.age}
+              {client.sex}, {client.age}
             </span>
             <span className="text-udra-linen-300">·</span>
-            <span className="font-semibold">{input.goal}</span>
+            <span className="font-semibold">{client.goal}</span>
             <span className="text-udra-linen-300">·</span>
-            <span>{input.level}</span>
+            <span>{client.level}</span>
             <span className="text-udra-linen-300">·</span>
             <span>
-              {input.days} days · {input.split}
+              {client.days} days · {client.split}
             </span>
-            <Pill tone="primary" className="capitalize">
-              {input.structure}
-            </Pill>
-            {painCount > 0 && (
-              <Pill tone="flame">
-                {painCount} pain{painCount === 1 ? '' : 's'} reported
+            {/* No structure pill: the picker further down says which one is running, and
+                names it beside the minutes it costs. Twice is once too many. */}
+            {reportedPains.map((label) => (
+              <Pill key={label} tone="flame" title="Reported as painful — filtered out of the library before anything was chosen">
+                {label}
               </Pill>
-            )}
+            ))}
           </div>
           <Button className="ml-auto" onClick={() => setPhase('setup')}>
             Edit client
@@ -470,14 +473,14 @@ export default function App() {
           <>
             <TestStrip
               data={data}
-              input={input}
-              setInput={setInput}
+              input={client}
+              setInput={setDraft}
               program={result.program}
             />
 
             {hasPains && <MedicalDisclaimer injury={data.injury} />}
 
-            {amendWiring && (result.program.amend.active || input.pins.length > 0) && (
+            {amendWiring && (result.program.amend.active || client.pins.length > 0) && (
               <Card className="p-4">
                 <PinsPanel program={result.program} wiring={amendWiring} />
               </Card>
@@ -488,8 +491,8 @@ export default function App() {
                 cards directly underneath. */}
             <Card className="p-4">
               <StructurePicker
-                input={input}
-                setInput={setInput}
+                input={client}
+                setInput={setDraft}
                 options={structureInfo?.options ?? []}
                 note={structureInfo?.note ?? ''}
               />
@@ -497,7 +500,7 @@ export default function App() {
 
             <ProgramPanel
               program={result.program}
-              input={input}
+              input={client}
               injury={data.injury}
               amend={amendWiring}
               cap={capWiring}
@@ -518,7 +521,7 @@ export default function App() {
                   <AuditPanel
                     audit={audit}
                     config={data.config}
-                    sex={input.sex}
+                    sex={client.sex}
                     rounding={roundSets(result.program)}
                   />
                 )}

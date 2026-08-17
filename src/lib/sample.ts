@@ -6,7 +6,6 @@ import type { ValdInput, WeakSide } from './vald'
 import type { InBodyInput } from './inbody'
 import type { PainSelection, Side } from './injury'
 import { generate } from './generate'
-import { PRESETS } from './presets'
 
 /**
  * A whole made-up client, for trying the thing out quickly.
@@ -21,7 +20,7 @@ import { PRESETS } from './presets'
  */
 
 export interface SampleOptions {
-  /** the client's own details, and their pains — always drawn */
+  /** up to two reported pains. Off unless asked for, like the three machines. */
   pain?: boolean
   vald?: boolean
   inbody?: boolean
@@ -179,7 +178,7 @@ function sampleBodyDot(data: DataBundle, rng: () => number): BodyDotInput {
  * A drawn combination can be one the allocation has no block for, and handing the UI a client
  * that cannot produce a program would make the button look broken. So a draw that does not
  * generate is redrawn rather than returned, and the seed that produced it is skipped — up to
- * a bound, after which the first preset is returned rather than looping.
+ * a bound, after which a known-good client is returned rather than looping.
  */
 export function sampleClient(
   data: DataBundle,
@@ -205,7 +204,7 @@ export function sampleClient(
       split,
       equipment: pick(rng, EQUIPMENT_TIERS as readonly EquipmentTier[]),
       structure: pick(rng, STRUCTURES as readonly Structure[]),
-      pains: options.pain === false ? {} : samplePains(data, rng),
+      pains: options.pain ? samplePains(data, rng) : {},
       inbody: options.inbody ? sampleInBody(rng, sex) : {},
       vald: options.vald ? sampleVald(data, rng) : {},
       bodydot: options.bodydot ? sampleBodyDot(data, rng) : {},
@@ -216,5 +215,23 @@ export function sampleClient(
   }
   // Forty consecutive draws that all fail would mean the library itself has a hole. Falling
   // back to a known-good client keeps the button working and is visibly not a random one.
-  return { input: PRESETS[0].input, seed }
+  return { input: FALLBACK, seed }
+}
+
+/** The most ordinary client the library has, used only when every draw above failed. */
+const FALLBACK: ClientInput = {
+  sex: 'Male',
+  age: 28,
+  level: 'Intermediate',
+  goal: 'Build Muscle',
+  days: 4,
+  split: 'Upper / Lower',
+  equipment: 'Full gym',
+  structure: 'straight',
+  pains: {},
+  inbody: {},
+  vald: {},
+  bodydot: {},
+  pins: [],
+  caps: [],
 }

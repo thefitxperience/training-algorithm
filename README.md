@@ -283,6 +283,85 @@ differently on purpose:
   values. There is a check asserting the same reading with the sides in agreement *does* fire,
   so this is provably a block rather than a silent no-op.
 
+## Reading a DynaMo export
+
+The Excel export goes in whole. Columns are located by **header text, never by position** —
+DynaMo reorders them between versions — and the join to `vald.json` needs no lookup table
+kept here: the data file's `test` field is literally `"{Body Region} {Movement} Strength
+Asymmetry"`, and the export carries both as columns. A movement the data file does not name
+is **listed by name**, never approximated onto a neighbouring test.
+
+Measured against a real gym-wide export — 5,229 rows, 548 clients, 47 dates:
+
+| | |
+| --- | --- |
+| rows read | 5,229 |
+| mapped movements | 4,833 |
+| tests offered | 622, from 576 athlete-days |
+| unmapped | 21 kinds, all named in the panel (Scapula Protraction, Neck Flexion, Ankle Inversion…) |
+
+### One export, many tests
+
+Rows are grouped by **athlete and date**. `Date` and `Time` are separate columns, so two
+batteries run hours apart on the same day group together rather than splitting on the clock.
+With more than one test in the file the panel shows a **searchable** list — 622 rows is not a
+dropdown — and applies nothing until one is picked. One test alone is applied straight away.
+
+### Which battery — upper, lower or full
+
+Read off the movements themselves, using the automator's `detect_test_type` rules: a
+full-body test is recognised by its *shape* (elbow with knee, and none of the trunk or hip
+flexion/extension work that only a dedicated lower-body test carries), not by a count. On the
+real export: **313 upper, 169 lower, 140 full.**
+
+A day holding both halves is **not a fourth kind of test.** It is an upper and a lower run
+back to back, so the day splits into two tests and each movement is filed by its own half —
+exactly as the automator writes two workbooks. 46 days in the export split this way, and no
+movement lands in both halves. Picking one says so out loud: *"the same day also holds a
+lower-body test for this client — this reading covers only the upper half"*, with a link to
+switch. An upper-body test says nothing about the legs, and half a picture reads as a whole
+one unless something says otherwise.
+
+One departure from the automator, which files movements one at a time because each has to
+land in a fixed cell of a workbook: a movement its lists do not name is filed **by region**.
+Shoulder Adduction is upper-body work whether or not a template has a cell for it, and
+without the fallback it belongs to neither half and gets counted in both.
+
+### A movement measured twice
+
+15% of athlete-days in the real export contain a repeated movement — a bad rep, then the
+redo. Two rules decide which attempt survives, both the automator's:
+
+1. **An attempt that produced a readable asymmetry beats one that did not.** A cancelled rep
+   still writes a row, with `n/a` and a zero on one side.
+2. Otherwise the **latest** attempt wins, by the `Time` column.
+
+Row order cannot be used for this. **DynaMo writes newest-first**, so the last row for a
+repeated movement is the *first* attempt — the one that was redone. Of 108 repeat cases in
+the export, trusting row order keeps the wrong attempt in 71, and in 44 of those it reports
+the **opposite weak side**: one client's Shoulder Abduction is either `23% R` or `6.4% L`
+depending purely on which row is believed. Verified against all 108: the latest valid attempt
+is kept every time, and the panel states how many movements were measured more than once.
+
+### The trunk, which the machine does not score
+
+A side bend loads one side at a time, so DynaMo writes the trunk as two rows — `Lateral
+Flexion Left` and `Lateral Flexion Right` — each carrying a neutral force and `n/a` for
+asymmetry. Neither row names a test on its own, so reading rows independently **drops the
+trunk entirely**: 237 rows, and `AC-ALF` unreachable from any real export. It is assembled
+from the pair instead. 109 complete pairs in the export, all scored; 18 one-sided bends
+reported as *"left side only"* rather than scored against nothing.
+
+The percentage is **not** the automator's, which divides the spread by the mean of the two
+sides. DynaMo divides by the **stronger** side — check any row: Shoulder Adduction at
+L 147 N / R 189 N prints `22% R`, and 42/189 is 22.2% where 42/168 would be 25.0%. Every
+other percentage in this app comes off that column and every threshold it meets — 8%
+weakness, 30% referral — is calibrated on it. Scoring the trunk on the mean would put one
+test on a scale of its own, always reading high: 96 N against 155 N comes out at 38%, not
+47%, and would otherwise cross the referral line on the strength of the arithmetic alone. It
+also means the derived figure agrees with the newton cross-check below instead of tripping it
+on every import.
+
 ## Load (weight)
 
 The last rule layer, and a pure annotation: it reads the force figures and attaches a working
@@ -897,11 +976,18 @@ Places where the spec left a choice, and what was chosen:
 
 ## Acceptance criteria — current status
 
-`npm run acceptance` → **189 of 189 checks pass**. The five presets all run at `Full gym`, so
+`npm run acceptance` → **214 of 214 checks pass**. The five presets all run at `Full gym`, so
 the original criteria are unaffected by the equipment feature; the rest cover equipment
-tiers, split advice, set rounding, and the injury, structure, InBody, VALD, BodyDot, Load,
-amend and time-cap layers. Note the count dropped to 22/22 at one point because
-the week criterion was **removed**, not because its failure was fixed — see below.
+tiers, split advice, set rounding, the injury, structure, InBody, VALD, BodyDot, Load, amend
+and time-cap layers, and the two importers — the Bodydot session reader and the DynaMo
+export reader. Note the count dropped to 22/22 at one point because the week criterion was
+**removed**, not because its failure was fixed — see below.
+
+The two import blocks are **offline**: the Bodydot one runs against a synthetic session
+shaped like a real one, the DynaMo one against grids built row by row in the export's own
+layout — newest-first, one row per attempt, the trunk as two one-sided bends. Neither
+exercises its transport (a live service, and a browser's `DecompressionStream`), so both were
+also driven end to end in a real browser against real data.
 
 The time-cap layer's own criteria, from the spec:
 

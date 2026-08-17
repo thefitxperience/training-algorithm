@@ -4,6 +4,12 @@ import type { ValdInput, ValdReading, ValdResult, WeakSide } from '../lib/vald'
 
 const SIDES: WeakSide[] = ['Left', 'Right']
 
+/**
+ * One decimal at most. A typed reading is already short, but a derived one — the trunk, which
+ * this app computes from two forces — carries the full float and would print seventeen digits.
+ */
+const pct = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1))
+
 const BRACKET_STYLE: Record<string, string> = {
   'Perfect symmetry': 'bg-slate-100 text-slate-500',
   'Normal symmetry': 'bg-slate-100 text-slate-500',
@@ -229,7 +235,9 @@ export function ValdPanel({
             <div className="rounded border-2 border-red-400 bg-red-50 px-2 py-1.5 text-[11px] text-red-900">
               <span className="font-bold">Refer.</span> {result.referrals.length} reading
               {result.referrals.length === 1 ? '' : 's'} at or above {data.referralThreshold}% —{' '}
-              {result.referrals.map((f) => `${f.test.test.replace(' Strength Asymmetry', '')} ${f.asymmetry}%`).join(', ')}
+              {result.referrals
+                .map((f) => `${f.test.test.replace(' Strength Asymmetry', '')} ${pct(f.asymmetry)}%`)
+                .join(', ')}
               . This escalates by referral, not by more sets: it gets the same +2 as a 20-29%
               reading.
             </div>
@@ -250,7 +258,7 @@ export function ValdPanel({
                       {f.bracket.name}
                     </span>
                     <span className="text-slate-700">
-                      {f.test.test.replace(' Strength Asymmetry', '')} {f.asymmetry}%
+                      {f.test.test.replace(' Strength Asymmetry', '')} {pct(f.asymmetry)}%
                     </span>
                     {f.setsAdded > 0 && (
                       <span className="text-slate-600">

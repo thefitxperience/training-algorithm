@@ -1,17 +1,23 @@
-import { useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import type { ClientInput, DataBundle } from '../types'
 import type { Program } from '../lib/generate'
-import { hasAnyReading, type ValdInput } from '../lib/vald'
+import { hasAnyReading } from '../lib/vald'
 import { hasAnyInput } from '../lib/inbody'
 import { hasAnyBodyDot } from '../lib/bodydot'
-import { readValdFile, toValdInput, type ValdImport } from '../lib/valdImport'
+import {
+  BATTERY_LABEL,
+  readValdFile,
+  toValdInput,
+  type ImportedSession,
+  type ValdImport,
+} from '../lib/valdImport'
 import type { BodyDotImport } from '../lib/bodydotApi'
 import { BodyDotConnect } from './BodyDotConnect'
 import { ValdPanel } from './ValdPanel'
 import { InBodyPanel } from './InBodyPanel'
 import { BodyDotPanel } from './BodyDotPanel'
 import { LoadPanel } from './LoadPanel'
-import { Button, Card, Note, Pill, type Tone } from './ui'
+import { Button, Card, Note, Pill, controlClass, type Tone } from './ui'
 
 /**
  * The three machines, offered only once a program exists — a test result adjusts a program,
@@ -23,6 +29,9 @@ import { Button, Card, Note, Pill, type Tone } from './ui'
  */
 
 type MachineTone = Extract<Tone, 'cyan' | 'orange' | 'primary'>
+
+/** A day can hold both an upper and a lower test, so the battery is part of a test's identity. */
+const sessionId = (s: ImportedSession) => `${s.name}|${s.date}|${s.battery}`
 
 function Machine({
   name,
@@ -98,8 +107,29 @@ function ValdCard({
 }) {
   const fileRef = useRef<HTMLInputElement>(null)
   const [imported, setImported] = useState<ValdImport | null>(null)
+  const [chosen, setChosen] = useState<ImportedSession | null>(null)
+  const [query, setQuery] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+
+  // A gym-wide export runs to hundreds of tests; a scrolling list of them is not a chooser.
+  const shortlist = useMemo(() => {
+    const all = imported?.sessions ?? []
+    const q = query.trim().toLowerCase()
+    if (!q) return all.slice(0, 8)
+    return all.filter((s) => s.name.toLowerCase().includes(q)).slice(0, 20)
+  }, [imported, query])
+
+  // The upper and lower halves of the same day, when the client did both.
+  const otherHalf = useMemo(
+    () =>
+      chosen?.pairedSameDay
+        ? (imported?.sessions.find(
+            (s) => s.name === chosen.name && s.date === chosen.date && s.battery !== chosen.battery,
+          ) ?? null)
+        : null,
+    [imported, chosen],
+  )
 
   const active = hasAnyReading(input.vald)
   const firing = program.vald.firing.length
@@ -116,20 +146,27 @@ function ValdCard({
       if (result.sessions.length === 0) {
         setError('No DynaMo test rows were found in that file.')
         setImported(null)
+        setChosen(null)
       } else {
         setImported(result)
-        // One athlete, one date — nothing to choose, so apply it.
-        if (result.sessions.length === 1) apply(toValdInput(result.sessions[0]))
+        // One athlete, one date — nothing to choose, so apply it. An export covering a whole
+        // gym holds hundreds, and picking the wrong person's is worse than one more click.
+        setChosen(null)
+        if (result.sessions.length === 1) apply(result.sessions[0])
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
       setImported(null)
+      setChosen(null)
     } finally {
       setBusy(false)
     }
   }
 
-  const apply = (vald: ValdInput) => setInput({ ...input, vald })
+  const apply = (session: ImportedSession) => {
+    setChosen(session)
+    setInput({ ...input, vald: toValdInput(session) })
+  }
 
   return (
     <Machine
@@ -155,7 +192,16 @@ function ValdCard({
             {busy ? 'Reading…' : 'Upload export'}
           </Button>
           {active && (
-            <Button size="sm" variant="danger" onClick={() => { setImported(null); apply({}) }}>
+            <Button
+              size="sm"
+              variant="danger"
+              onClick={() => {
+                setImported(null)
+                setChosen(null)
+                setQuery('')
+                setInput({ ...input, vald: {} })
+              }}
+            >
               Clear
             </Button>
           )}
@@ -169,19 +215,56 @@ function ValdCard({
           <div className="mb-2 text-[12px] font-bold">
             That export holds {imported.sessions.length} tests. Pick the one to use:
           </div>
-          <div className="space-y-1.5">
-            {imported.sessions.map((s) => (
-              <button
-                key={`${s.name}|${s.date}`}
-                onClick={() => apply(toValdInput(s))}
-                className="flex w-full items-center justify-between gap-3 rounded-xl border border-udra-linen-300 px-3 py-2 text-left text-sm transition hover:border-udra-blue"
-              >
-                <span className="font-semibold">{s.name}</span>
-                <span className="tnum text-[12px] text-udra-ink-500">
-                  {s.date} · {s.tests.length} movements
-                </span>
-              </button>
-            ))}
+          <input
+            className={`${controlClass} mb-2`}
+            placeholder="Search by name…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+          <div className="max-h-64 space-y-1.5 overflow-y-auto">
+            {shortlist.map((s) => {
+              const id = `${s.name}|${s.date}|${s.battery}`
+              const picked = chosen !== null && id === sessionId(chosen)
+              // A test can survive the import with nothing usable in it — a trunk bend done on
+              // one side only, say. It is still listed, because a trainer looking for it should
+              // see that it exists, but there is nothing to apply.
+              const empty = s.tests.length === 0
+              return (
+                <button
+                  key={id}
+                  disabled={empty}
+                  onClick={() => apply(s)}
+                  className={`flex w-full items-center justify-between gap-3 rounded-xl border px-3 py-2 text-left text-sm transition ${
+                    empty
+                      ? 'cursor-not-allowed border-udra-linen-300 opacity-50'
+                      : picked
+                        ? 'border-udra-blue bg-udra-blue-50'
+                        : 'border-udra-linen-300 hover:border-udra-blue'
+                  }`}
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate font-semibold">{s.name}</span>
+                    <span className="tnum text-[11px] text-udra-ink-500">
+                      {s.date} ·{' '}
+                      {empty ? 'nothing this app can read' : `${s.tests.length} movements`}
+                    </span>
+                  </span>
+                  {/* Which battery this is, so an upper-body test is never mistaken for a
+                      whole-body picture of the client. */}
+                  <Pill tone={s.battery === 'full' ? 'cyan' : undefined}>
+                    {BATTERY_LABEL[s.battery]}
+                  </Pill>
+                </button>
+              )
+            })}
+            {shortlist.length === 0 && (
+              <div className="text-[12px] text-udra-ink-500">No test matches that name.</div>
+            )}
+            {shortlist.length < imported.sessions.length && (
+              <div className="text-[12px] text-udra-ink-500">
+                Showing {shortlist.length} of {imported.sessions.length} — type to search.
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -190,19 +273,51 @@ function ValdCard({
         <div className="mb-4 space-y-1 text-[12px] text-udra-ink-500">
           <div>
             Read {imported.rowsRead} rows into{' '}
-            {imported.sessions.reduce((n, s) => n + s.tests.length, 0)} mapped movements.
+            {imported.sessions.reduce((n, s) => n + s.tests.length, 0)} mapped movements across{' '}
+            {imported.sessions.length} test{imported.sessions.length === 1 ? '' : 's'}.
           </div>
+          {chosen && (
+            <div className="text-udra-ink-700">
+              Using <span className="font-bold">{chosen.name}</span>, {chosen.date} —{' '}
+              {BATTERY_LABEL[chosen.battery].toLowerCase()}, {chosen.tests.length} movements.
+              {/* A movement done more than once is a rep that was redone. Which attempt was
+                  kept is a judgement, so it is stated rather than assumed. */}
+              {chosen.tests.some((t) => t.attempts > 1) && (
+                <>
+                  {' '}
+                  {chosen.tests.filter((t) => t.attempts > 1).length} movement
+                  {chosen.tests.filter((t) => t.attempts > 1).length === 1 ? ' was' : 's were'}{' '}
+                  measured more than once; the last good attempt is the one used.
+                </>
+              )}
+            </div>
+          )}
+          {/* An upper-body test says nothing about the legs. Where the other half exists on the
+              same day it is offered, because half a picture silently reads as a whole one. */}
+          {chosen?.pairedSameDay && (
+            <div className="text-udra-ink-700">
+              The same day also holds{' '}
+              {chosen.battery === 'upper' ? 'a lower-body test' : 'an upper-body test'} for this
+              client — this reading covers only the {chosen.battery} half.
+              {otherHalf && (
+                <>
+                  {' '}
+                  <button
+                    className="font-bold text-udra-blue underline underline-offset-2"
+                    onClick={() => apply(otherHalf)}
+                  >
+                    Use the other half instead
+                  </button>
+                  .
+                </>
+              )}
+            </div>
+          )}
           {/* A short import is never silent: anything the data file does not name is listed. */}
-          {imported.sessions.some((s) => s.unmapped.length > 0) && (
+          {chosen && chosen.unmapped.length > 0 && (
             <div className="text-udra-ink-700">
               Not used, because this app has no test for them:{' '}
-              {[
-                ...new Set(
-                  imported.sessions.flatMap((s) =>
-                    s.unmapped.map((u) => `${u.bodyRegion} ${u.movement}`),
-                  ),
-                ),
-              ].join(', ')}
+              {[...new Set(chosen.unmapped.map((u) => `${u.bodyRegion} ${u.movement}`))].join(', ')}
               .
             </div>
           )}

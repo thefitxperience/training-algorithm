@@ -29,7 +29,8 @@ import {
   type CapPin,
 } from '../src/lib/timecap'
 import { WORKED_EXAMPLE, goalWeights, type InBodyInput } from '../src/lib/inbody'
-import type { ValdInput } from '../src/lib/vald'
+import { asymmetryFromNewtons, type ValdInput } from '../src/lib/vald'
+import { movementBattery, parseAsymmetry, parseValdGrid } from '../src/lib/valdImport'
 import { applyChain, roundTo } from '../src/lib/weight'
 import {
   amendType,
@@ -2932,6 +2933,259 @@ const fingerprint = (p: ReturnType<typeof run>) =>
         `${p.bodydot.findings.length} findings, ${p.bodydot.correctives.length} correctives from a 3-step scan`,
       )
     }
+  }
+}
+
+// ---- VALD import (DynaMo Excel export) -------------------------------------
+// Offline: the grid reader is fed rows shaped exactly like a real export — newest-first,
+// one row per attempt, the trunk written as two one-sided bends. The .xlsx unzipping is not
+// exercised here; it needs a browser's DecompressionStream.
+{
+  const HEADER = [
+    'Name', 'External Id', 'Date', 'Time', 'Device', 'Movement', 'Type', 'Body Region',
+    'Position', 'L Reps', 'R Reps', 'N Reps', 'L Max Force (N)', 'R Max Force (N)',
+    'N Max Force (N)', 'L Avg Force (N)', 'R Avg Force (N)', 'N Avg Force (N)',
+    'Force Asymmetry (%)',
+  ]
+  const col = (name: string) => HEADER.indexOf(name)
+  /** One export row. `time` is a fraction of a day, exactly as DynaMo writes it. */
+  const row = (o: {
+    name: string
+    date: number
+    time: number
+    movement: string
+    region: string
+    asym?: string
+    l?: number
+    r?: number
+    n?: number
+  }) => {
+    const cells = HEADER.map(() => '')
+    cells[col('Name')] = o.name
+    cells[col('Date')] = String(o.date)
+    cells[col('Time')] = String(o.time)
+    cells[col('Movement')] = o.movement
+    cells[col('Body Region')] = o.region
+    cells[col('Force Asymmetry (%)')] = o.asym ?? 'n/a'
+    if (o.l !== undefined) cells[col('L Max Force (N)')] = String(o.l)
+    if (o.r !== undefined) cells[col('R Max Force (N)')] = String(o.r)
+    if (o.n !== undefined) cells[col('N Max Force (N)')] = String(o.n)
+    return cells
+  }
+  const DAY = 46251 // 2026-08-17 as an Excel serial
+
+  {
+    // A movement redone twice. The FIRST row is the LATEST attempt.
+    const grid = [
+      HEADER,
+      row({ name: 'A', date: DAY, time: 0.9, movement: 'Push', region: 'Shoulder', asym: '6.4% L', l: 227, r: 212 }),
+      row({ name: 'A', date: DAY, time: 0.8, movement: 'Push', region: 'Shoulder', asym: '23% R', l: 137, r: 177 }),
+    ]
+    const s = parseValdGrid(grid, data.vald).sessions[0]
+    const t = s.tests.find((x) => x.code === 'C-MID')
+    check(
+      'VALD import: a repeated movement keeps the latest attempt, not the last row',
+      t?.asymmetry === 6.4 && t?.weakSide === 'Right' && t?.leftN === 227 && t?.attempts === 2,
+      `kept ${t?.asymmetry}% weak ${t?.weakSide} from ${t?.attempts} attempts` +
+        ' (row order alone would have kept 23% weak Left — the opposite side)',
+    )
+  }
+
+  {
+    // The latest attempt is a dud: cancelled, so no percentage and a zero on one side.
+    const grid = [
+      HEADER,
+      row({ name: 'A', date: DAY, time: 0.9, movement: 'Push', region: 'Shoulder', asym: 'n/a', l: 0, r: 177 }),
+      row({ name: 'A', date: DAY, time: 0.8, movement: 'Push', region: 'Shoulder', asym: '23% R', l: 137, r: 177 }),
+    ]
+    const t = parseValdGrid(grid, data.vald).sessions[0].tests.find((x) => x.code === 'C-MID')
+    check(
+      'VALD import: a cancelled attempt never displaces one that produced a reading',
+      t?.asymmetry === 23 && t?.leftN === 137,
+      `kept the 23% attempt over a later "n/a" row; ${t?.attempts} attempts seen`,
+    )
+  }
+
+  {
+    // The trunk: two one-sided bends, each with a neutral force and no percentage.
+    const grid = [
+      HEADER,
+      row({ name: 'A', date: DAY, time: 0.9, movement: 'Lateral Flexion Right', region: 'Trunk', n: 155 }),
+      row({ name: 'A', date: DAY, time: 0.8, movement: 'Lateral Flexion Left', region: 'Trunk', n: 96 }),
+      row({ name: 'A', date: DAY, time: 0.7, movement: 'Extension', region: 'Knee', asym: '5% R', l: 300, r: 316 }),
+    ]
+    const s = parseValdGrid(grid, data.vald).sessions[0]
+    const t = s.tests.find((x) => x.code === 'AC-ALF')
+    // 59 / 155 = 38.06% on DynaMo's own convention, and the left side pushed less.
+    check(
+      'VALD import: the trunk is assembled from its two one-sided rows',
+      t !== undefined && Math.abs(t.asymmetry! - 38.06) < 0.01 && t.weakSide === 'Left',
+      t
+        ? `L 96 N / R 155 N -> ${t.asymmetry!.toFixed(2)}% weak ${t.weakSide}`
+        : 'no trunk test produced — neither row names a test on its own',
+    )
+    check(
+      'VALD import: the derived trunk figure is on the same scale as every machine-scored test',
+      t !== undefined && Math.abs(t.asymmetry! - asymmetryFromNewtons(96, 155)) < 1e-9,
+      `divides by the stronger side like DynaMo, not by the mean (which would read 47.01%)` +
+        ` — so the 8% and ${data.vald.referralThreshold}% thresholds mean the same thing for the trunk`,
+    )
+  }
+
+  {
+    // Only one side bent. Half a pair scores nothing.
+    const grid = [
+      HEADER,
+      row({ name: 'A', date: DAY, time: 0.9, movement: 'Lateral Flexion Left', region: 'Trunk', n: 96 }),
+      row({ name: 'A', date: DAY, time: 0.7, movement: 'Extension', region: 'Knee', asym: '5% R', l: 300, r: 316 }),
+    ]
+    const s = parseValdGrid(grid, data.vald).sessions[0]
+    check(
+      'VALD import: a one-sided trunk bend is reported, never scored against nothing',
+      !s.tests.some((x) => x.code === 'AC-ALF') &&
+        s.unmapped.some((u) => u.bodyRegion === 'Trunk' && /left side only/.test(u.movement)),
+      `unmapped: ${s.unmapped.map((u) => `${u.bodyRegion} ${u.movement}`).join(', ')}`,
+    )
+  }
+
+  {
+    // Shoulder + elbow + knee and nothing trunk/hip-flexion — a full-body battery.
+    const full = [
+      HEADER,
+      row({ name: 'A', date: DAY, time: 0.9, movement: 'Internal Rotation', region: 'Shoulder', asym: '8% R', l: 108, r: 168 }),
+      row({ name: 'A', date: DAY, time: 0.8, movement: 'Flexion', region: 'Elbow', asym: '2% R', l: 261, r: 263 }),
+      row({ name: 'A', date: DAY, time: 0.7, movement: 'Extension', region: 'Knee', asym: '5% R', l: 300, r: 316 }),
+      row({ name: 'A', date: DAY, time: 0.6, movement: 'Abduction', region: 'Hip', asym: '9% R', l: 180, r: 196 }),
+    ]
+    const s = parseValdGrid(full, data.vald).sessions
+    check(
+      'VALD import: shoulder + elbow + knee with no trunk or hip flexion reads as full body',
+      s.length === 1 && s[0].battery === 'full' && !s[0].pairedSameDay,
+      `${s.length} test(s): ${s.map((x) => `${x.battery} x${x.tests.length}`).join(', ')}`,
+    )
+  }
+
+  {
+    // The same shape plus a trunk bend and hip flexion — an upper and a lower, same day.
+    const both = [
+      HEADER,
+      row({ name: 'A', date: DAY, time: 0.9, movement: 'Internal Rotation', region: 'Shoulder', asym: '8% R', l: 108, r: 168 }),
+      row({ name: 'A', date: DAY, time: 0.88, movement: 'Grip Squeeze', region: 'Hand', asym: '3% R', l: 457, r: 472 }),
+      row({ name: 'A', date: DAY, time: 0.8, movement: 'Flexion', region: 'Elbow', asym: '2% R', l: 261, r: 263 }),
+      row({ name: 'A', date: DAY, time: 0.7, movement: 'Extension', region: 'Knee', asym: '5% R', l: 300, r: 316 }),
+      row({ name: 'A', date: DAY, time: 0.65, movement: 'Flexion', region: 'Hip', asym: '4% L', l: 126, r: 121 }),
+      row({ name: 'A', date: DAY, time: 0.6, movement: 'Lateral Flexion Right', region: 'Trunk', n: 155 }),
+      row({ name: 'A', date: DAY, time: 0.55, movement: 'Lateral Flexion Left', region: 'Trunk', n: 96 }),
+    ]
+    const s = parseValdGrid(both, data.vald).sessions
+    const upper = s.find((x) => x.battery === 'upper')
+    const lower = s.find((x) => x.battery === 'lower')
+    const codes = s.flatMap((x) => x.tests.map((t) => t.code))
+    check(
+      'VALD import: an upper and a lower on one day become two tests, not one merged reading',
+      s.length === 2 &&
+        upper !== undefined &&
+        lower !== undefined &&
+        s.every((x) => x.pairedSameDay) &&
+        codes.length === new Set(codes).size,
+      `upper: ${upper?.tests.map((t) => t.code).join(',')} | lower: ${lower?.tests.map((t) => t.code).join(',')}`,
+    )
+    check(
+      'VALD import: neither half of a split day carries the other half of the movements',
+      upper!.tests.every((t) => movementBattery(t.movement, t.bodyRegion) !== 'lower') &&
+        lower!.tests.every((t) => movementBattery(t.movement, t.bodyRegion) !== 'upper'),
+      'the trunk goes to the lower half, grip to the upper',
+    )
+  }
+
+  {
+    // Shoulder Adduction is named by no list in the automator, but it is plainly upper body.
+    check(
+      'VALD import: a movement the automator does not name is filed by its region, not both',
+      movementBattery('Adduction', 'Shoulder') === 'upper' &&
+        movementBattery('External Rotation', 'Hip') === 'lower',
+      'Shoulder Adduction -> upper, Hip External Rotation -> lower',
+    )
+  }
+
+  {
+    // Two athletes on two dates: four rows, four separate tests, nothing merged.
+    const many = [
+      HEADER,
+      row({ name: 'A', date: DAY, time: 0.9, movement: 'Push', region: 'Shoulder', asym: '6% L', l: 227, r: 212 }),
+      row({ name: 'B', date: DAY, time: 0.9, movement: 'Push', region: 'Shoulder', asym: '9% R', l: 200, r: 220 }),
+      row({ name: 'A', date: DAY + 1, time: 0.9, movement: 'Push', region: 'Shoulder', asym: '2% L', l: 230, r: 226 }),
+    ]
+    const s = parseValdGrid(many, data.vald).sessions
+    check(
+      'VALD import: an export with several athletes and dates yields one test per athlete-day',
+      s.length === 3 && new Set(s.map((x) => `${x.name}|${x.date}`)).size === 3,
+      s.map((x) => `${x.name} ${x.date}`).join(' · '),
+    )
+    check(
+      'VALD import: tests are offered newest first',
+      s[0].date > s[s.length - 1].date,
+      `${s.map((x) => x.date).join(' -> ')}`,
+    )
+  }
+
+  {
+    // Columns are found by header text. Reordering them must change nothing.
+    const base = [
+      HEADER,
+      row({ name: 'A', date: DAY, time: 0.9, movement: 'Push', region: 'Shoulder', asym: '6.4% L', l: 227, r: 212 }),
+    ]
+    const order = [...HEADER.keys()].reverse()
+    const shuffled = base.map((r) => order.map((i) => r[i] ?? ''))
+    const a = parseValdGrid(base, data.vald).sessions[0].tests[0]
+    const b = parseValdGrid(shuffled, data.vald).sessions[0].tests[0]
+    check(
+      'VALD import: columns are read by header text, so reordering them changes nothing',
+      JSON.stringify(a) === JSON.stringify(b),
+      `${a.code} ${a.asymmetry}% weak ${a.weakSide} both ways`,
+    )
+  }
+
+  {
+    // A movement with no test in the data file is named, never approximated onto a neighbour.
+    const grid = [
+      HEADER,
+      row({ name: 'A', date: DAY, time: 0.9, movement: 'Dorsiflexion', region: 'Ankle', asym: '5% R', l: 90, r: 95 }),
+      row({ name: 'A', date: DAY, time: 0.8, movement: 'Push', region: 'Shoulder', asym: '6% L', l: 227, r: 212 }),
+    ]
+    const s = parseValdGrid(grid, data.vald).sessions[0]
+    check(
+      'VALD import: an unknown movement is reported by name, not mapped to a neighbour',
+      s.tests.length === 1 &&
+        s.unmapped.length === 1 &&
+        s.unmapped[0].movement === 'Dorsiflexion',
+      `1 mapped, unmapped: ${s.unmapped.map((u) => `${u.bodyRegion} ${u.movement}`).join(', ')}`,
+    )
+  }
+
+  {
+    // The export names the STRONGER side; the app works in weak sides.
+    const p = parseAsymmetry('22% R')
+    check(
+      'VALD import: "22% R" names the stronger side, so the weak side is the other one',
+      p?.strong === 'Right' && p?.pct === 22,
+      'the importer inverts it to weakSide Left',
+    )
+  }
+
+  {
+    // A file that is not a DynaMo export fails loudly rather than importing nothing.
+    let threw = false
+    try {
+      parseValdGrid([['Client', 'Weight', 'Reps'], ['A', '80', '5']], data.vald)
+    } catch {
+      threw = true
+    }
+    check(
+      'VALD import: a file without Movement and Body Region is rejected, not silently empty',
+      threw,
+      'a spreadsheet of something else does not import as zero tests',
+    )
   }
 }
 

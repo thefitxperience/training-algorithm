@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ClientInput, DataBundle } from '../types'
 import type { Program } from '../lib/generate'
 import { hasAnyReading } from '../lib/vald'
@@ -41,6 +41,7 @@ function Machine({
   summary,
   action,
   forceOpen = false,
+  revealOn,
   children,
 }: {
   name: string
@@ -51,10 +52,20 @@ function Machine({
   action?: React.ReactNode
   /** an action that reveals something below has to open the card itself, or it shows nothing */
   forceOpen?: boolean
+  /**
+   * Bumped whenever something worth seeing arrives in the body — an import landing, say. The
+   * card opens itself, because the alternative is a button that reads as having done nothing.
+   * Unlike `forceOpen` this leaves Hide working.
+   */
+  revealOn?: number
   children: React.ReactNode
 }) {
   const [open, setOpen] = useState(false)
   const shown = open || forceOpen
+
+  useEffect(() => {
+    if (revealOn) setOpen(true)
+  }, [revealOn])
   const accent = { cyan: 'bg-udra-cyan', orange: 'bg-udra-orange', primary: 'bg-udra-blue' }[tone]
 
   return (
@@ -111,6 +122,8 @@ function ValdCard({
   const [query, setQuery] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  // Bumped on every upload, so a second upload re-opens the card after a Hide.
+  const [uploads, setUploads] = useState(0)
 
   // A gym-wide export runs to hundreds of tests; a scrolling list of them is not a chooser.
   const shortlist = useMemo(() => {
@@ -134,13 +147,19 @@ function ValdCard({
   const active = hasAnyReading(input.vald)
   const firing = program.vald.firing.length
   const bumps = program.vald.bumps.length
+  const waiting = imported !== null && imported.sessions.length > 1 && !active
   const summary = active
     ? `${Object.keys(input.vald).length} tests read · ${firing} asymmetr${firing === 1 ? 'y' : 'ies'} over threshold · ${bumps} exercise${bumps === 1 ? '' : 's'} now one-sided`
-    : undefined
+    : // An export covering the whole gym applies nothing until a client is picked. Said in the
+      // header too, so the card never reads as having ignored the file.
+      waiting
+      ? `${imported.sessions.length} tests in that export — pick whose to use`
+      : undefined
 
   const load = async (file: File) => {
     setBusy(true)
     setError(null)
+    setUploads((n) => n + 1)
     try {
       const result = await readValdFile(file, data.vald)
       if (result.sessions.length === 0) {
@@ -175,6 +194,7 @@ function ValdCard({
       blurb="Upload the DynaMo Excel export. Asymmetries add sets to the weaker side; the newton figures estimate working weights."
       active={active}
       summary={summary}
+      revealOn={uploads}
       action={
         <>
           <input

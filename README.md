@@ -317,15 +317,35 @@ real export: **313 upper, 169 lower, 140 full.**
 A day holding both halves is **not a fourth kind of test.** It is an upper and a lower run
 back to back, so the day splits into two tests and each movement is filed by its own half —
 exactly as the automator writes two workbooks. 46 days in the export split this way, and no
-movement lands in both halves. Picking one says so out loud: *"the same day also holds a
-lower-body test for this client — this reading covers only the upper half"*, with a link to
-switch. An upper-body test says nothing about the legs, and half a picture reads as a whole
-one unless something says otherwise.
+movement lands in both halves.
 
 One departure from the automator, which files movements one at a time because each has to
 land in a fixed cell of a workbook: a movement its lists do not name is filed **by region**.
 Shoulder Adduction is upper-body work whether or not a template has a cell for it, and
 without the fallback it belongs to neither half and gets counted in both.
+
+### Using several of one client's tests at once
+
+Splitting a day makes the halves selectable; it should not make them exclusive. The picker
+**ticks**, so an upper and a lower are read together as the union of both — 72 of the 548
+clients in the export have more than one test on record. Selection is held to **one client**:
+ticking someone else's test replaces the selection rather than adding to it, because merging
+two people's readings is not something anyone means to do.
+
+Where two chosen tests measure the same movement — an old full-body test alongside a fresh
+upper — the **latest** reading wins, by date and then by the time of day the rep was taken,
+which is what makes two tests on one date orderable at all. **The merge is per movement, not
+per test:** an August upper-body test alongside a July full-body one takes the shoulders from
+August and keeps the knees from July, rather than discarding the older test wholesale.
+
+What lost is named, not dropped: *"measured in more than one of those tests, so the latest
+reading is used: Shoulder Flexion (upper body, 2026-08-14, over 1 older)…"*. 7 of those 72
+clients have an overlap. Merging silently is how a six-month-old shoulder reading ends up
+shaping today's program with nothing on screen to say so.
+
+Anything else on record for the client in use is offered inline — *"this client has 1 other
+test in the export. Add lower body, 2026-08-13"* — because an upper-body test says nothing
+about the legs, and half a picture reads as a whole one unless something says otherwise.
 
 ### A movement measured twice
 
@@ -976,7 +996,7 @@ Places where the spec left a choice, and what was chosen:
 
 ## Acceptance criteria — current status
 
-`npm run acceptance` → **214 of 214 checks pass**. The five presets all run at `Full gym`, so
+`npm run acceptance` → **219 of 219 checks pass**. The five presets all run at `Full gym`, so
 the original criteria are unaffected by the equipment feature; the rest cover equipment
 tiers, split advice, set rounding, the injury, structure, InBody, VALD, BodyDot, Load, amend
 and time-cap layers, and the two importers — the Bodydot session reader and the DynaMo

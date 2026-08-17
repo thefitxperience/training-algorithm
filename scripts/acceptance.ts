@@ -30,7 +30,13 @@ import {
 } from '../src/lib/timecap'
 import { WORKED_EXAMPLE, goalWeights, type InBodyInput } from '../src/lib/inbody'
 import { asymmetryFromNewtons, type ValdInput } from '../src/lib/vald'
-import { movementBattery, parseAsymmetry, parseValdGrid } from '../src/lib/valdImport'
+import {
+  mergeSessions,
+  movementBattery,
+  parseAsymmetry,
+  parseValdGrid,
+  toValdInput,
+} from '../src/lib/valdImport'
 import { applyChain, roundTo } from '../src/lib/weight'
 import {
   amendType,
@@ -3095,6 +3101,85 @@ const fingerprint = (p: ReturnType<typeof run>) =>
       upper!.tests.every((t) => movementBattery(t.movement, t.bodyRegion) !== 'lower') &&
         lower!.tests.every((t) => movementBattery(t.movement, t.bodyRegion) !== 'upper'),
       'the trunk goes to the lower half, grip to the upper',
+    )
+  }
+
+  {
+    // The two halves of one day, used together.
+    const both = [
+      HEADER,
+      row({ name: 'A', date: DAY, time: 0.9, movement: 'Internal Rotation', region: 'Shoulder', asym: '8% R', l: 108, r: 168 }),
+      row({ name: 'A', date: DAY, time: 0.8, movement: 'Flexion', region: 'Elbow', asym: '2% R', l: 261, r: 263 }),
+      row({ name: 'A', date: DAY, time: 0.7, movement: 'Extension', region: 'Knee', asym: '5% R', l: 300, r: 316 }),
+      row({ name: 'A', date: DAY, time: 0.65, movement: 'Flexion', region: 'Hip', asym: '4% L', l: 126, r: 121 }),
+      row({ name: 'A', date: DAY, time: 0.6, movement: 'Lateral Flexion Right', region: 'Trunk', n: 155 }),
+      row({ name: 'A', date: DAY, time: 0.55, movement: 'Lateral Flexion Left', region: 'Trunk', n: 96 }),
+    ]
+    const s = parseValdGrid(both, data.vald).sessions
+    const m = mergeSessions(s)
+    const one = mergeSessions([s.find((x) => x.battery === 'upper')!])
+    check(
+      'VALD import: a client\'s upper and lower can be used together, as the union of both',
+      m.tests.length === one.tests.length + s.find((x) => x.battery === 'lower')!.tests.length &&
+        m.overlaps.length === 0,
+      `upper alone ${one.tests.length} movements, both together ${m.tests.length}, no overlap`,
+    )
+    check(
+      'VALD import: merged readings reach the layer as one set',
+      Object.keys(toValdInput(s)).length === m.tests.length,
+      `${Object.keys(toValdInput(s)).join(', ')}`,
+    )
+  }
+
+  {
+    // An old full-body test and a fresh upper. Both measure the shoulder.
+    const grid = [
+      HEADER,
+      row({ name: 'A', date: DAY, time: 0.9, movement: 'Push', region: 'Shoulder', asym: '4% L', l: 240, r: 230 }),
+      row({ name: 'A', date: DAY, time: 0.8, movement: 'Flexion', region: 'Elbow', asym: '2% R', l: 261, r: 263 }),
+      row({ name: 'A', date: DAY - 90, time: 0.9, movement: 'Push', region: 'Shoulder', asym: '26% R', l: 137, r: 185 }),
+      row({ name: 'A', date: DAY - 90, time: 0.8, movement: 'Flexion', region: 'Elbow', asym: '9% R', l: 200, r: 220 }),
+      row({ name: 'A', date: DAY - 90, time: 0.7, movement: 'Extension', region: 'Knee', asym: '5% R', l: 300, r: 316 }),
+    ]
+    const all = parseValdGrid(grid, data.vald).sessions
+    const m = mergeSessions(all)
+    const push = m.tests.find((t) => t.code === 'C-MID')
+    const knee = m.tests.find((t) => t.code === 'Q-KD')
+    check(
+      'VALD import: where two chosen tests measure the same movement, the latest reading wins',
+      push?.asymmetry === 4 && push?.weakSide === 'Right' && knee?.asymmetry === 5,
+      `shoulder push from the newer test (4%, not the older 26%), and the knee still comes` +
+        ' from the older one — the merge is per movement, not per test',
+    )
+    check(
+      'VALD import: a superseded reading is named, never silently overwritten',
+      m.overlaps.length === 2 &&
+        m.overlaps.every((o) => o.dropped.length === 1 && o.kept.includes('2026-08-17')),
+      m.overlaps.map((o) => `${o.test}: ${o.kept} over ${o.dropped.join('/')}`).join('; '),
+    )
+  }
+
+  {
+    // Two tests on ONE date measuring the same movement — only the clock separates them.
+    const grid = [
+      HEADER,
+      row({ name: 'A', date: DAY, time: 0.9, movement: 'Push', region: 'Shoulder', asym: '4% L', l: 240, r: 230 }),
+      row({ name: 'A', date: DAY, time: 0.8, movement: 'Flexion', region: 'Elbow', asym: '2% R', l: 261, r: 263 }),
+      row({ name: 'A', date: DAY, time: 0.7, movement: 'Extension', region: 'Knee', asym: '5% R', l: 300, r: 316 }),
+      row({ name: 'A', date: DAY, time: 0.65, movement: 'Flexion', region: 'Hip', asym: '4% L', l: 126, r: 121 }),
+    ]
+    const s = parseValdGrid(grid, data.vald).sessions
+    // Force an overlap the split would not normally produce, to pin the tiebreak itself.
+    const code = s[0].tests[0].code
+    const late = { ...s[0], tests: [{ ...s[0].tests[0], asymmetry: 4, at: 0.9 }] }
+    const early = { ...s[0], tests: [{ ...s[0].tests[0], asymmetry: 99, at: 0.1 }] }
+    const forwards = mergeSessions([early, late]).tests.find((t) => t.code === code)?.asymmetry
+    const backwards = mergeSessions([late, early]).tests.find((t) => t.code === code)?.asymmetry
+    check(
+      'VALD import: two tests on one date are separated by the clock, not by list order',
+      forwards === 4 && backwards === 4,
+      `chosen in either order the 0.9 reading wins (${forwards} / ${backwards}), not the 0.1 one` +
+        ' — list order would have given 99 one way round',
     )
   }
 

@@ -6,7 +6,9 @@ import { hasAnyInput } from '../lib/inbody'
 import { hasAnyBodyDot } from '../lib/bodydot'
 import {
   BATTERY_LABEL,
+  mergeSessions,
   readValdFile,
+  sessionLabel,
   toValdInput,
   type ImportedSession,
   type ValdImport,
@@ -118,7 +120,8 @@ function ValdCard({
 }) {
   const fileRef = useRef<HTMLInputElement>(null)
   const [imported, setImported] = useState<ValdImport | null>(null)
-  const [chosen, setChosen] = useState<ImportedSession | null>(null)
+  // Several tests can be used at once, but only ever one client's — see `pick`.
+  const [chosen, setChosen] = useState<ImportedSession[]>([])
   const [query, setQuery] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -133,16 +136,18 @@ function ValdCard({
     return all.filter((s) => s.name.toLowerCase().includes(q)).slice(0, 20)
   }, [imported, query])
 
-  // The upper and lower halves of the same day, when the client did both.
-  const otherHalf = useMemo(
+  const client = chosen[0]?.name ?? null
+  /** Everything else on record for the client whose tests are in use. */
+  const otherTests = useMemo(
     () =>
-      chosen?.pairedSameDay
-        ? (imported?.sessions.find(
-            (s) => s.name === chosen.name && s.date === chosen.date && s.battery !== chosen.battery,
-          ) ?? null)
-        : null,
-    [imported, chosen],
+      client === null
+        ? []
+        : (imported?.sessions ?? []).filter(
+            (s) => s.name === client && s.tests.length > 0 && !chosen.includes(s),
+          ),
+    [imported, chosen, client],
   )
+  const merged = useMemo(() => mergeSessions(chosen), [chosen])
 
   const active = hasAnyReading(input.vald)
   const firing = program.vald.firing.length
@@ -165,26 +170,39 @@ function ValdCard({
       if (result.sessions.length === 0) {
         setError('No DynaMo test rows were found in that file.')
         setImported(null)
-        setChosen(null)
+        setChosen([])
       } else {
         setImported(result)
         // One athlete, one date — nothing to choose, so apply it. An export covering a whole
         // gym holds hundreds, and picking the wrong person's is worse than one more click.
-        setChosen(null)
-        if (result.sessions.length === 1) apply(result.sessions[0])
+        setChosen([])
+        if (result.sessions.length === 1) apply([result.sessions[0]])
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
       setImported(null)
-      setChosen(null)
+      setChosen([])
     } finally {
       setBusy(false)
     }
   }
 
-  const apply = (session: ImportedSession) => {
-    setChosen(session)
-    setInput({ ...input, vald: toValdInput(session) })
+  const apply = (sessions: ImportedSession[]) => {
+    setChosen(sessions)
+    setInput({ ...input, vald: toValdInput(sessions) })
+  }
+
+  /**
+   * One row clicked. Tests belonging to the client already in use toggle on and off, so an
+   * upper and a lower can be read together; a different client replaces the selection outright,
+   * because a program is for one person and merging two people's readings is never a thing
+   * anyone means to do.
+   */
+  const pick = (s: ImportedSession) => {
+    if (client !== null && s.name !== client) return apply([s])
+    const without = chosen.filter((c) => c !== s)
+    // Never leave nothing selected — clicking the only chosen test keeps it.
+    apply(without.length === chosen.length ? [...chosen, s] : without.length ? without : [s])
   }
 
   return (
@@ -217,7 +235,7 @@ function ValdCard({
               variant="danger"
               onClick={() => {
                 setImported(null)
-                setChosen(null)
+                setChosen([])
                 setQuery('')
                 setInput({ ...input, vald: {} })
               }}
@@ -233,7 +251,8 @@ function ValdCard({
       {imported && imported.sessions.length > 1 && (
         <div className="mb-4">
           <div className="mb-2 text-[12px] font-bold">
-            That export holds {imported.sessions.length} tests. Pick the one to use:
+            That export holds {imported.sessions.length} tests. Pick whose to use — a client's
+            tests can be combined.
           </div>
           <input
             className={`${controlClass} mb-2`}
@@ -243,8 +262,8 @@ function ValdCard({
           />
           <div className="max-h-64 space-y-1.5 overflow-y-auto">
             {shortlist.map((s) => {
-              const id = `${s.name}|${s.date}|${s.battery}`
-              const picked = chosen !== null && id === sessionId(chosen)
+              const id = sessionId(s)
+              const picked = chosen.includes(s)
               // A test can survive the import with nothing usable in it — a trunk bend done on
               // one side only, say. It is still listed, because a trainer looking for it should
               // see that it exists, but there is nothing to apply.
@@ -253,8 +272,8 @@ function ValdCard({
                 <button
                   key={id}
                   disabled={empty}
-                  onClick={() => apply(s)}
-                  className={`flex w-full items-center justify-between gap-3 rounded-xl border px-3 py-2 text-left text-sm transition ${
+                  onClick={() => pick(s)}
+                  className={`flex w-full items-center gap-2.5 rounded-xl border px-3 py-2 text-left text-sm transition ${
                     empty
                       ? 'cursor-not-allowed border-udra-linen-300 opacity-50'
                       : picked
@@ -262,7 +281,18 @@ function ValdCard({
                         : 'border-udra-linen-300 hover:border-udra-blue'
                   }`}
                 >
-                  <span className="min-w-0">
+                  {/* A tick, not a radio: more than one of a client's tests can be on at once. */}
+                  <span
+                    className={`grid h-4 w-4 shrink-0 place-items-center rounded border text-[10px] leading-none font-bold ${
+                      picked
+                        ? 'border-udra-blue bg-udra-blue text-white'
+                        : 'border-udra-linen-300 text-transparent'
+                    }`}
+                    aria-hidden
+                  >
+                    ✓
+                  </span>
+                  <span className="min-w-0 flex-1">
                     <span className="block truncate font-semibold">{s.name}</span>
                     <span className="tnum text-[11px] text-udra-ink-500">
                       {s.date} ·{' '}
@@ -296,48 +326,68 @@ function ValdCard({
             {imported.sessions.reduce((n, s) => n + s.tests.length, 0)} mapped movements across{' '}
             {imported.sessions.length} test{imported.sessions.length === 1 ? '' : 's'}.
           </div>
-          {chosen && (
+          {client !== null && (
             <div className="text-udra-ink-700">
-              Using <span className="font-bold">{chosen.name}</span>, {chosen.date} —{' '}
-              {BATTERY_LABEL[chosen.battery].toLowerCase()}, {chosen.tests.length} movements.
+              Using <span className="font-bold">{client}</span> —{' '}
+              {chosen.map(sessionLabel).join(' + ').toLowerCase()}, {merged.tests.length} movements
+              in all.
               {/* A movement done more than once is a rep that was redone. Which attempt was
                   kept is a judgement, so it is stated rather than assumed. */}
-              {chosen.tests.some((t) => t.attempts > 1) && (
+              {merged.tests.some((t) => t.attempts > 1) && (
                 <>
                   {' '}
-                  {chosen.tests.filter((t) => t.attempts > 1).length} movement
-                  {chosen.tests.filter((t) => t.attempts > 1).length === 1 ? ' was' : 's were'}{' '}
+                  {merged.tests.filter((t) => t.attempts > 1).length} movement
+                  {merged.tests.filter((t) => t.attempts > 1).length === 1 ? ' was' : 's were'}{' '}
                   measured more than once; the last good attempt is the one used.
                 </>
               )}
             </div>
           )}
-          {/* An upper-body test says nothing about the legs. Where the other half exists on the
-              same day it is offered, because half a picture silently reads as a whole one. */}
-          {chosen?.pairedSameDay && (
+          {/* Merging silently is how a six-month-old shoulder reading ends up shaping today's
+              program with nothing on screen to say so. */}
+          {merged.overlaps.length > 0 && (
             <div className="text-udra-ink-700">
-              The same day also holds{' '}
-              {chosen.battery === 'upper' ? 'a lower-body test' : 'an upper-body test'} for this
-              client — this reading covers only the {chosen.battery} half.
-              {otherHalf && (
-                <>
-                  {' '}
-                  <button
-                    className="font-bold text-udra-blue underline underline-offset-2"
-                    onClick={() => apply(otherHalf)}
-                  >
-                    Use the other half instead
-                  </button>
-                  .
-                </>
+              Measured in more than one of those tests, so the latest reading is used:{' '}
+              {merged.overlaps
+                .map((o) => `${o.test} (${o.kept.toLowerCase()}, over ${o.dropped.length} older)`)
+                .join('; ')}
+              .
+            </div>
+          )}
+          {/* An upper-body test says nothing about the legs, so anything else on record for this
+              client is offered rather than left to be noticed. */}
+          {otherTests.length > 0 && (
+            <div className="text-udra-ink-700">
+              This client has {otherTests.length} other test{otherTests.length === 1 ? '' : 's'} in
+              the export.{' '}
+              {otherTests.map((s) => (
+                <button
+                  key={sessionId(s)}
+                  className="mr-1.5 font-bold text-udra-blue underline underline-offset-2"
+                  onClick={() => apply([...chosen, s])}
+                >
+                  Add {sessionLabel(s).toLowerCase()}
+                </button>
+              ))}
+              {otherTests.length > 1 && (
+                <button
+                  className="font-bold text-udra-blue underline underline-offset-2"
+                  onClick={() => apply([...chosen, ...otherTests])}
+                >
+                  Add all
+                </button>
               )}
             </div>
           )}
           {/* A short import is never silent: anything the data file does not name is listed. */}
-          {chosen && chosen.unmapped.length > 0 && (
+          {chosen.some((s) => s.unmapped.length > 0) && (
             <div className="text-udra-ink-700">
               Not used, because this app has no test for them:{' '}
-              {[...new Set(chosen.unmapped.map((u) => `${u.bodyRegion} ${u.movement}`))].join(', ')}
+              {[
+                ...new Set(
+                  chosen.flatMap((s) => s.unmapped.map((u) => `${u.bodyRegion} ${u.movement}`)),
+                ),
+              ].join(', ')}
               .
             </div>
           )}

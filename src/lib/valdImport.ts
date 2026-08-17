@@ -36,6 +36,8 @@ export interface ImportedTest {
   rightN?: number
   /** how many times this movement was measured in the session; the latest attempt is the one kept */
   attempts: number
+  /** time of day of the kept attempt, as a fraction of a day — orders two tests on one date */
+  at?: number
 }
 
 /** The three batteries DynaMo is run as. There is no fourth. */
@@ -297,6 +299,7 @@ export function parseValdGrid(grid: Grid, data: ValdData): ValdImport {
       leftN: num(cell(cLeft)),
       rightN: num(cell(cRight)),
       attempts: 1,
+      at: num(cell(cTime)),
     }
     if (asym) {
       entry.asymmetry = asym.pct
@@ -364,6 +367,7 @@ export function parseValdGrid(grid: Grid, data: ValdData): ValdImport {
       leftN: sides.left!.force,
       rightN: sides.right!.force,
       attempts: 1,
+      at: Math.max(sides.left!.at ?? 0, sides.right!.at ?? 0) || undefined,
     })
   }
 
@@ -411,10 +415,65 @@ export async function readValdFile(file: File, data: ValdData): Promise<ValdImpo
   return parseValdGrid(await readFirstSheet(await file.arrayBuffer()), data)
 }
 
-/** A session -> the reading map the VALD layer takes. Fields absent from the sheet stay absent. */
-export function toValdInput(session: ImportedSession): ValdInput {
+export interface MergedTests {
+  tests: ImportedTest[]
+  /** movements measured in more than one of the chosen tests, and which reading won */
+  overlaps: { code: string; test: string; kept: string; dropped: string[] }[]
+}
+
+/** "Upper body, 2026-08-13" — how a test is named wherever one has to be identified. */
+export const sessionLabel = (s: ImportedSession) => `${BATTERY_LABEL[s.battery]}, ${s.date}`
+
+/**
+ * Several of one client's tests into one set of readings.
+ *
+ * An upper and a lower are two halves of one picture, and a client who tested both should not
+ * have to choose which half the program sees. Where the same movement appears in more than
+ * one chosen test — an old full-body test alongside a fresh upper, say — the **latest**
+ * reading wins, by date and then by the time of day the rep was taken, which is what makes
+ * two tests on one date orderable at all.
+ *
+ * What lost is returned rather than dropped: merging silently is how a six-month-old shoulder
+ * reading ends up shaping today's program with nothing on screen to say so.
+ */
+export function mergeSessions(sessions: ImportedSession[]): MergedTests {
+  const held = new Map<string, { test: ImportedTest; from: ImportedSession }>()
+  const seen = new Map<string, ImportedSession[]>()
+
+  for (const s of sessions) {
+    for (const t of s.tests) {
+      seen.set(t.code, [...(seen.get(t.code) ?? []), s])
+      const prev = held.get(t.code)
+      const newer =
+        prev === undefined ||
+        s.date > prev.from.date ||
+        (s.date === prev.from.date && (t.at ?? 0) > (prev.test.at ?? 0))
+      if (newer) held.set(t.code, { test: t, from: s })
+    }
+  }
+
+  const overlaps: MergedTests['overlaps'] = []
+  for (const [code, froms] of seen) {
+    if (froms.length < 2) continue
+    const kept = held.get(code)!
+    overlaps.push({
+      code,
+      test: kept.test.test.replace(' Strength Asymmetry', ''),
+      kept: sessionLabel(kept.from),
+      dropped: froms.filter((f) => f !== kept.from).map(sessionLabel),
+    })
+  }
+
+  return { tests: [...held.values()].map((h) => h.test), overlaps }
+}
+
+/**
+ * One or more tests -> the reading map the VALD layer takes. Fields absent from the sheet
+ * stay absent.
+ */
+export function toValdInput(sessions: ImportedSession | ImportedSession[]): ValdInput {
   const out: ValdInput = {}
-  for (const t of session.tests) {
+  for (const t of mergeSessions(Array.isArray(sessions) ? sessions : [sessions]).tests) {
     out[t.code] = {
       asymmetry: t.asymmetry,
       weakSide: t.weakSide,

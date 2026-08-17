@@ -46,6 +46,12 @@ import {
   realBands,
   type BodyDotInput,
 } from '../src/lib/bodydot'
+import {
+  INDICATOR_SOURCES,
+  latestPerDay,
+  readSession,
+  scaleFor,
+} from '../src/lib/bodydotApi'
 import type { ClientInput, DataBundle } from '../src/types'
 
 const dir = join(process.cwd(), 'public', 'data')
@@ -2788,6 +2794,144 @@ const fingerprint = (p: ReturnType<typeof run>) =>
     )
     const restUsed = restOf
     void restUsed
+  }
+}
+
+// ---- BodyDot import (Bodydot API) ------------------------------------------
+// Offline: the indicator map and the reading rules are checked against a synthetic session
+// shaped like a real one. The transport is not exercised here — it needs the live service.
+{
+  const bands = realBands(data.bodydot)
+  const codes = bands.map((b) => b.code)
+  const mapped = Object.keys(INDICATOR_SOURCES)
+
+  check(
+    'BodyDot import: every one of the 26 indicators has a source in a Bodydot session',
+    codes.every((c) => mapped.includes(c)) && mapped.every((c) => codes.includes(c)),
+    `${mapped.length} mapped against ${codes.length} bands` +
+      `; unmapped: ${codes.filter((c) => !mapped.includes(c)).join(', ') || 'none'}` +
+      `; unknown: ${mapped.filter((c) => !codes.includes(c)).join(', ') || 'none'}`,
+  )
+
+  {
+    // The posture form in the VALD-automator wires 15 of the 26 and has no source at all for
+    // S07, which IS in the arsenal. Asserted so the gap cannot quietly reopen.
+    const arsenalCodes = bands.filter((b) => b.inArsenal).map((b) => b.code)
+    check(
+      'BodyDot import: every arsenal indicator is sourced, S07 included',
+      arsenalCodes.every((c) => mapped.includes(c)) && mapped.includes('S07'),
+      `${arsenalCodes.length} arsenal indicators, all sourced (the posture form misses S07 Anterior Pelvic Tilt)`,
+    )
+  }
+
+  check(
+    'BodyDot import: distances scale from metres to cm, angles do not scale',
+    bands.every((b) => scaleFor(b) === (b.unit === 'cm' ? 100 : 1)),
+    `${bands.filter((b) => b.unit === 'cm').length} cm indicators scaled x100, the rest left as degrees`,
+  )
+
+  {
+    // A session shaped exactly like a real one: front view, both side views with DIFFERENT
+    // values, one cancelled step, and no squat or toe-touch at all.
+    const session = {
+      id: 'test',
+      createdAt: '2026-08-17T09:00:00.000Z',
+      sequences: [
+        {
+          code: 'custom',
+          stepResults: [
+            {
+              stepCode: 'standingFront',
+              status: 'Analyzed',
+              data: {
+                values: [
+                  { valueCode: 'leftShoulderSlope', value: 13 }, // normal
+                  { valueCode: 'rightShoulderSlope', value: 21 }, // abnormal high
+                  { valueCode: 'frontalASISAlignment', value: -3.1 }, // signed, tilts Left
+                  { valueCode: 'coronalBalance', value: 0.03 }, // metres -> 3 cm
+                ],
+              },
+            },
+            {
+              stepCode: 'standingRight',
+              status: 'Analyzed',
+              data: { values: [{ valueCode: 'thoracicKyphosis', value: 41 }] },
+            },
+            {
+              stepCode: 'standingLeft',
+              status: 'Analyzed',
+              data: { values: [{ valueCode: 'thoracicKyphosisLeft', value: 62 }] },
+            },
+            { stepCode: 'overheadSquatRight', status: 'Canceled', data: { values: [] } },
+          ],
+        },
+      ],
+    }
+    const imp = readSession(session, data.bodydot)
+    const by = new Map(imp.indicators.map((i) => [i.code, i]))
+
+    check(
+      'BodyDot import: where both sides are measured, the WORSE side becomes the finding',
+      by.get('F03')?.side === 'Right' &&
+        by.get('F03')?.value === 21 &&
+        by.get('F03')?.bySide?.left === 13 &&
+        // The two standing views are separate steps; reading both from one step left the
+        // left view unread and made every sagittal finding claim the right side.
+        by.get('S05')?.side === 'Left' &&
+        by.get('S05')?.value === 62,
+      `shoulder slope L13/R21 -> Right 21 (${by.get('F03')?.tier}); kyphosis R41/L62 -> Left 62 (${by.get('S05')?.tier})`,
+    )
+
+    check(
+      'BodyDot import: the frontal pelvic reading stays signed, and its side is read off the sign',
+      by.get('F05')?.value === -3.1 && by.get('F05')?.side === 'Left',
+      `frontalASISAlignment -3.1 -> value -3.1, side Left (the band runs -2.0 to 2.0, so an absolute value would lose the direction)`,
+    )
+
+    check(
+      'BodyDot import: a metre distance is converted to the cm the band is written in',
+      Math.abs((by.get('F07')?.value ?? 0) - 3) < 1e-9,
+      `coronalBalance 0.03 m -> 3 cm`,
+    )
+
+    check(
+      'BodyDot import: a step that was not analyzed is reported missing, never guessed',
+      imp.missing.length === 26 - imp.indicators.length &&
+        imp.missing.some((m) => m.code === 'Q01') &&
+        imp.missing.some((m) => m.code === 'T03') &&
+        !imp.indicators.some((i) => i.code === 'Q01'),
+      `${imp.indicators.length} read, ${imp.missing.length} reported missing (the cancelled squat and the absent toe touch)`,
+    )
+
+    check(
+      'BodyDot import: the MAJORITY validity rule matches the report generator',
+      imp.validity.analyzed === 3 && imp.validity.total === 4 && imp.validity.valid,
+      `3 of 4 steps analyzed -> valid`,
+    )
+
+    {
+      // Two sessions on one day is a failed attempt and its redo; the later one counts.
+      const kept = latestPerDay([
+        { id: 'a', createdAt: '2026-08-17T09:00:00.000Z' },
+        { id: 'b', createdAt: '2026-08-17T11:30:00.000Z' },
+        { id: 'c', createdAt: '2026-08-16T09:00:00.000Z' },
+      ])
+      check(
+        'BodyDot import: several tests on one day collapse to the latest',
+        kept.length === 2 && kept[0].id === 'b' && kept[1].id === 'c',
+        `3 sessions across 2 days -> ${kept.map((k) => k.id).join(', ')}`,
+      )
+    }
+
+    {
+      // The readings have to drive the layer, not just parse.
+      const p = run({ ...REF, bodydot: imp.readings })
+      check(
+        'BodyDot import: imported readings drive the corrective block',
+        p.bodydot.active && p.bodydot.findings.length > 0,
+        `${p.bodydot.findings.length} findings, ${p.bodydot.correctives.length} correctives from a 3-step scan`,
+      )
+    }
   }
 }
 

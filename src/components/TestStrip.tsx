@@ -5,6 +5,8 @@ import { hasAnyReading, type ValdInput } from '../lib/vald'
 import { hasAnyInput } from '../lib/inbody'
 import { hasAnyBodyDot } from '../lib/bodydot'
 import { readValdFile, toValdInput, type ValdImport } from '../lib/valdImport'
+import type { BodyDotImport } from '../lib/bodydotApi'
+import { BodyDotConnect } from './BodyDotConnect'
 import { ValdPanel } from './ValdPanel'
 import { InBodyPanel } from './InBodyPanel'
 import { BodyDotPanel } from './BodyDotPanel'
@@ -29,6 +31,7 @@ function Machine({
   active,
   summary,
   action,
+  forceOpen = false,
   children,
 }: {
   name: string
@@ -37,9 +40,12 @@ function Machine({
   active: boolean
   summary?: string
   action?: React.ReactNode
+  /** an action that reveals something below has to open the card itself, or it shows nothing */
+  forceOpen?: boolean
   children: React.ReactNode
 }) {
   const [open, setOpen] = useState(false)
+  const shown = open || forceOpen
   const accent = { cyan: 'bg-udra-cyan', orange: 'bg-udra-orange', primary: 'bg-udra-blue' }[tone]
 
   return (
@@ -61,12 +67,18 @@ function Machine({
 
       <div className="flex flex-wrap items-center gap-2 border-t border-udra-linen-200 px-4 py-2.5">
         {action}
-        <Button size="sm" variant="ghost" className="ml-auto" onClick={() => setOpen((v) => !v)}>
-          {open ? 'Hide' : active ? 'Show readings' : 'Enter by hand'}
+        <Button
+          size="sm"
+          variant="ghost"
+          className="ml-auto"
+          disabled={forceOpen}
+          onClick={() => setOpen((v) => !v)}
+        >
+          {shown ? 'Hide' : active ? 'Show readings' : 'Enter by hand'}
         </Button>
       </div>
 
-      {open && <div className="border-t border-udra-linen-200 p-4">{children}</div>}
+      {shown && <div className="border-t border-udra-linen-200 p-4">{children}</div>}
     </Card>
   )
 }
@@ -282,6 +294,13 @@ function BodyDotCard({
   setInput: (i: ClientInput) => void
   program: Program
 }) {
+  const [connecting, setConnecting] = useState(false)
+  const [source, setSource] = useState<{
+    client: string
+    date: string
+    imported: BodyDotImport
+  } | null>(null)
+
   const active = hasAnyBodyDot(input.bodydot)
   const findings = program.bodydot.findings.length
   const correctives = program.bodydot.correctives.length
@@ -296,14 +315,97 @@ function BodyDotCard({
       blurb="Pull a client's latest posture scan. Findings outside their band add corrective work to the end of every session."
       active={active}
       summary={summary}
+      forceOpen={connecting}
       action={
-        active ? (
-          <Button size="sm" variant="danger" onClick={() => setInput({ ...input, bodydot: {} })}>
-            Clear
+        <>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => setConnecting((v) => !v)}
+          >
+            {connecting ? 'Cancel' : active ? 'Pull another scan' : 'Pull a scan'}
           </Button>
-        ) : undefined
+          {active && (
+            <Button
+              size="sm"
+              variant="danger"
+              onClick={() => {
+                setSource(null)
+                setInput({ ...input, bodydot: {} })
+              }}
+            >
+              Clear
+            </Button>
+          )}
+        </>
       }
     >
+      {connecting && (
+        <div className="mb-4 rounded-xl border border-udra-blue-200 bg-udra-blue-50 p-3">
+          <BodyDotConnect
+            data={data.bodydot}
+            onApply={(readings, imported, client, session) => {
+              setSource({
+                client: client.name,
+                date: session.createdAt.slice(0, 10),
+                imported,
+              })
+              setConnecting(false)
+              setInput({ ...input, bodydot: readings })
+            }}
+          />
+        </div>
+      )}
+
+      {source && (
+        <div className="mb-4 space-y-1 text-[12px]">
+          <div className="font-bold">
+            {source.client} · scanned {source.date}
+          </div>
+          <div className="text-udra-ink-500">
+            Read {source.imported.indicators.length} of 26 indicators from{' '}
+            {source.imported.analyzedSteps.length} analyzed step
+            {source.imported.analyzedSteps.length === 1 ? '' : 's'}.
+          </div>
+          {/* An incomplete scan is stated, never quietly treated as a full one. */}
+          {!source.imported.validity.valid && (
+            <div className="text-udra-flame">
+              Only {source.imported.validity.analyzed} of {source.imported.validity.total} steps in
+              that test were analyzed, so this is a partial reading.
+            </div>
+          )}
+          {source.imported.missing.length > 0 && (
+            <div className="text-udra-ink-500">
+              Not measured: {source.imported.missing.map((m) => m.indicator).join(', ')}.
+            </div>
+          )}
+          {/* Where the scan reports each side, the WORSE one is the finding — said out loud,
+              because the other side's number is on the client's Bodydot report. */}
+          {source.imported.indicators.some((i) => i.bySide) && (
+            <details>
+              <summary className="cursor-pointer text-udra-ink-500">
+                Both sides were measured on{' '}
+                {source.imported.indicators.filter((i) => i.bySide).length} indicators — the worse
+                side is the one used
+              </summary>
+              <ul className="mt-1 space-y-0.5">
+                {source.imported.indicators
+                  .filter((i) => i.bySide)
+                  .map((i) => (
+                    <li key={i.code} className="tnum text-udra-ink-500">
+                      {i.indicator}: L {i.bySide!.left.toFixed(1)} / R {i.bySide!.right.toFixed(1)} →{' '}
+                      <span className="font-semibold">
+                        {i.side} {i.value.toFixed(1)}
+                      </span>{' '}
+                      ({i.tier})
+                    </li>
+                  ))}
+              </ul>
+            </details>
+          )}
+        </div>
+      )}
+
       <BodyDotPanel
         data={data.bodydot}
         input={input.bodydot}

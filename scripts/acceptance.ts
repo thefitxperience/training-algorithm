@@ -32,6 +32,7 @@ import { WORKED_EXAMPLE, goalWeights, type InBodyInput } from '../src/lib/inbody
 import { NOT_PRINTED, readInBodyTokens } from '../src/lib/inbodyScan'
 import { range, toRows } from '../src/lib/inbodyTokens'
 import { asymmetryFromNewtons, type ValdInput } from '../src/lib/vald'
+import { sampleClient, type SampleOptions } from '../src/lib/sample'
 import {
   mergeSessions,
   movementBattery,
@@ -3499,6 +3500,95 @@ const fingerprint = (p: ReturnType<typeof run>) =>
     })(),
     'the gap is measured against the token before it, not against the start of the row',
   )
+}
+
+// ---- Sample clients (the Quick test button) ---------------------------------
+// The button exists to try the thing out, so a sample that cannot generate would make it look
+// broken. Swept over 300 seeds rather than spot-checked.
+{
+  const SEEDS = 300
+  const ALL = { pain: true, vald: true, inbody: true, bodydot: true }
+
+  {
+    const failures: string[] = []
+    const fellBack: number[] = []
+    for (let s = 0; s < SEEDS; s++) {
+      const { input, seed } = sampleClient(data, ALL, s * 7919)
+      if (seed === s * 7919 + 39) fellBack.push(s) // exhausted its redraws
+      const r = run(input)
+      if (!r.days.length) failures.push(`seed ${seed}: no days`)
+    }
+    check(
+      'Quick test: every sample client generates a program',
+      failures.length === 0 && fellBack.length === 0,
+      `${SEEDS} seeds, all four machines on` +
+        (failures.length ? `; ${failures.slice(0, 3).join('; ')}` : '') +
+        (fellBack.length ? `; ${fellBack.length} exhausted their redraws` : ''),
+    )
+  }
+
+  check(
+    'Quick test: the same seed always produces the same client',
+    JSON.stringify(sampleClient(data, ALL, 12345).input) ===
+      JSON.stringify(sampleClient(data, ALL, 12345).input),
+    'a sample that turns something up has to be reachable again by its seed',
+  )
+
+  {
+    // Each machine is a separate tick, so a layer can be tried on its own.
+    const only = (o: SampleOptions) => sampleClient(data, o, 4242).input
+    const bare = only({ pain: false })
+    check(
+      'Quick test: an unticked machine contributes nothing',
+      Object.keys(bare.inbody).length === 0 &&
+        Object.keys(bare.vald).length === 0 &&
+        Object.keys(bare.bodydot).length === 0 &&
+        Object.keys(bare.pains).length === 0 &&
+        Object.keys(only({ vald: true }).inbody).length === 0 &&
+        Object.keys(only({ inbody: true }).vald).length === 0,
+      'the point of the ticks is seeing one layer at a time; drawing everything hides each one',
+    )
+  }
+
+  {
+    // A sample whose numbers could not have come off the machine tests nothing.
+    let worst = ''
+    for (let s = 0; s < SEEDS && !worst; s++) {
+      const { input } = sampleClient(data, ALL, s * 104729)
+      for (const [code, r] of Object.entries(input.vald)) {
+        if ((r.asymmetry ?? 0) < 0 || (r.asymmetry ?? 0) > 60) worst = `${code} asymmetry ${r.asymmetry}%`
+        // The forces must agree with the percentage, or the reading contradicts itself.
+        if (r.leftN !== undefined && r.rightN !== undefined && r.asymmetry !== undefined) {
+          const implied = asymmetryFromNewtons(r.leftN, r.rightN)
+          if (Math.abs(implied - r.asymmetry) > 1) worst = `${code}: ${r.asymmetry}% against forces implying ${implied.toFixed(1)}%`
+        }
+      }
+      const b = input.inbody
+      if (b.smm !== undefined && b.smm > (b.tbw ?? Infinity) * 2) worst = `smm ${b.smm} against tbw ${b.tbw}`
+      if (b.pbf !== undefined && (b.pbf < 3 || b.pbf > 60)) worst = `pbf ${b.pbf}%`
+      if (input.age < 12 || input.age > 90) worst = `age ${input.age}`
+    }
+    check(
+      'Quick test: sample readings stay inside what the instruments actually report',
+      worst === '',
+      worst || 'asymmetries agree with their own newtons, and no scan contradicts itself',
+    )
+  }
+
+  {
+    // The point of a sample is that it exercises the layers, not that it merely runs.
+    let fired = 0
+    for (let s = 0; s < 60; s++) {
+      const p = run(sampleClient(data, ALL, s * 65537).input)
+      if (p.vald.firing.length > 0 || p.bodydot.findings.length > 0 || p.inbody.notes.length > 0)
+        fired++
+    }
+    check(
+      'Quick test: samples actually reach the rule layers',
+      fired >= 55,
+      `${fired} of 60 samples fired at least one of the VALD, InBody or BodyDot layers`,
+    )
+  }
 }
 
 // ---- Report ----------------------------------------------------------------

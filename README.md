@@ -93,7 +93,35 @@ actor, accepted, timestamp.
 - [src/lib/audit.ts](src/lib/audit.ts) — volume audit, recomputed from the chosen
   exercises rather than read from the allocation's `delivered` field.
 - [src/lib/presets.ts](src/lib/presets.ts) — the five regression presets.
+- [src/lib/sample.ts](src/lib/sample.ts) — made-up clients for the Quick test button.
 - [scripts/acceptance.ts](scripts/acceptance.ts) — headless assertions over the same code.
+
+### Two pages, and what sits on each
+
+Page one is who the client is and what hurts. Page two is the program, with the machines
+above it and **how the session is run** beside it.
+
+That last one moved. It is the only setting worth flipping back and forth — it changes no
+exercise and no set, only how long a session takes — and the thing to judge it against is the
+day cards directly underneath, not a form filled in before any of them exist.
+
+### Quick test
+
+A whole made-up client in one press, from the header: details and pains always, plus whichever
+of VALD, InBody and BodyDot are ticked. The ticks matter — most of what is worth looking at is
+one layer on its own, and drawing everything every time makes each layer's contribution
+impossible to see. The panel stays open so the button can be pressed repeatedly, and the seed
+is shown, because "the one with the odd trunk reading" is not a way of finding it again.
+
+Nothing is drawn flat. A DynaMo battery is an upper, a lower or the whole set, its asymmetries
+weighted low because most people are close to even, and its newtons derived from the
+percentage so a reading cannot contradict itself. A scan is built from one weight and one body
+fat figure, with muscle and body water following from them. Posture readings are drawn against
+each indicator's own printed band, since the sheet mixes degrees and centimetres. A draw that
+cannot generate is redrawn rather than handed to the UI.
+
+Swept over 300 seeds: every sample generates, none needs its redraws, and 60 of 60 reach at
+least one rule layer.
 
 ## Injury / pain filter
 
@@ -1071,7 +1099,7 @@ Places where the spec left a choice, and what was chosen:
 
 ## Acceptance criteria — current status
 
-`npm run acceptance` → **230 of 230 checks pass**. The five presets all run at `Full gym`, so
+`npm run acceptance` → **235 of 235 checks pass**. The five presets all run at `Full gym`, so
 the original criteria are unaffected by the equipment feature; the rest cover equipment
 tiers, split advice, set rounding, the injury, structure, InBody, VALD, BodyDot, Load, amend
 and time-cap layers, and the three importers — the Bodydot session reader, the DynaMo export

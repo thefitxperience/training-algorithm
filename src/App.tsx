@@ -5,6 +5,8 @@ import { buildAudit } from './lib/audit'
 import { roundSets } from './lib/rounding'
 import { PRESETS } from './lib/presets'
 import { ClientPanel } from './components/ClientPanel'
+import { StructurePicker } from './components/StructurePicker'
+import { QuickTest } from './components/QuickTest'
 import { ProgramPanel, type CapWiring } from './components/ProgramPanel'
 import { MedicalDisclaimer, PainPanel } from './components/PainPanel'
 import { TestStrip } from './components/TestStrip'
@@ -333,6 +335,17 @@ export default function App() {
     )
   }
 
+  // One press fills in a whole client — details, pains, and whichever machines are ticked.
+  const quickTest = (
+    <QuickTest
+      data={data}
+      onGenerate={(sample) => {
+        setInput(sample)
+        setPhase('program')
+      }}
+    />
+  )
+
   const hasPains = Object.keys(input.pains).length > 0
   const painCount = Object.keys(input.pains).length
 
@@ -360,7 +373,7 @@ export default function App() {
   // ---- phase 1: set the client up ------------------------------------------
   if (phase === 'setup') {
     return (
-      <Shell>
+      <Shell action={quickTest}>
         <div className="mx-auto max-w-4xl space-y-4">
           <div className="pt-2 pb-1">
             <h1 className="text-2xl font-extrabold tracking-tight">Build a training program</h1>
@@ -378,8 +391,6 @@ export default function App() {
               splits={data.splits}
               ageBracket={bracket}
               activePreset={activePreset}
-              structureOptions={structureInfo?.options ?? []}
-              structureNote={structureInfo?.note ?? ''}
               effectiveGoal={result?.ok ? result.program.inbody.dominantGoal || undefined : undefined}
             />
           </Card>
@@ -426,7 +437,7 @@ export default function App() {
 
   // ---- phase 2: the program, plus anything measured ------------------------
   return (
-    <Shell>
+    <Shell action={quickTest}>
       <div className="mx-auto max-w-[1600px] space-y-4">
         <Card className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
           <div className="flex flex-wrap items-center gap-2 text-sm">
@@ -472,6 +483,18 @@ export default function App() {
               </Card>
             )}
 
+            {/* Beside the program, not in the client's details: it changes no exercise and no
+                set, only how long a session takes, so the thing to judge it against is the day
+                cards directly underneath. */}
+            <Card className="p-4">
+              <StructurePicker
+                input={input}
+                setInput={setInput}
+                options={structureInfo?.options ?? []}
+                note={structureInfo?.note ?? ''}
+              />
+            </Card>
+
             <ProgramPanel
               program={result.program}
               input={input}
@@ -515,7 +538,7 @@ export default function App() {
   )
 }
 
-function Shell({ children }: { children: React.ReactNode }) {
+function Shell({ children, action }: { children: React.ReactNode; action?: React.ReactNode }) {
   return (
     <div className="min-h-full">
       <header className="sticky top-0 z-20 border-b border-udra-linen-200 bg-udra-linen/85 backdrop-blur">
@@ -524,6 +547,7 @@ function Shell({ children }: { children: React.ReactNode }) {
           <span className="hidden text-sm font-semibold text-udra-ink-500 sm:inline">
             Program Generator
           </span>
+          {action && <div className="ml-auto">{action}</div>}
         </div>
       </header>
       <main className="p-4 pb-16">{children}</main>

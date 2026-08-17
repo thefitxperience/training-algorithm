@@ -9,12 +9,15 @@ export function PainPanel({
   pains,
   setPains,
   compact,
+  showTitle = true,
 }: {
   injury: InjuryData
   pains: PainSelection
   setPains: (p: PainSelection) => void
-  /** bar layout in the simple view — collapsed behind a summary until opened */
+  /** collapsed behind a summary until opened */
   compact?: boolean
+  /** false where the surrounding card already carries the heading */
+  showTitle?: boolean
 }) {
   const ticked = Object.keys(pains)
   const [open, setOpen] = useState(false)
@@ -34,10 +37,12 @@ export function PainPanel({
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-sm font-bold text-slate-800">
-          Pain or injury
+        <h2 className="text-sm font-bold">
+          {showTitle && 'Pain or injury'}
           {ticked.length > 0 && (
-            <span className="ml-1.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">
+            <span
+              className={`rounded-full bg-udra-flame/15 px-2 py-0.5 text-[10px] font-bold text-udra-flame ${showTitle ? 'ml-1.5' : ''}`}
+            >
               {ticked.length} reported
             </span>
           )}
@@ -46,7 +51,7 @@ export function PainPanel({
           {ticked.length > 0 && (
             <button
               onClick={() => setPains({})}
-              className="rounded border border-slate-300 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600 hover:bg-slate-100"
+              className="rounded-full border border-udra-flame/40 px-2 py-0.5 text-[10px] font-bold text-udra-flame transition hover:bg-udra-flame/10"
             >
               Clear all
             </button>
@@ -54,7 +59,7 @@ export function PainPanel({
           {compact && (
             <button
               onClick={() => setOpen(!open)}
-              className="rounded border border-slate-300 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600 hover:bg-slate-100"
+              className="rounded-full bg-udra-blue px-3 py-1 text-[11px] font-bold text-white transition hover:bg-udra-blue-700"
             >
               {open ? 'Hide' : 'Report pain'}
             </button>

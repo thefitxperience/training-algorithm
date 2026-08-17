@@ -22,3 +22,11 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Real client test data — InBody printouts and VALD exports carry names, member IDs and
+# health measurements. They are used to develop the importers and are deliberately NOT
+# committed: this repo is destined for a public GitHub Pages site.
+Test inbody*.pdf
+Test inbody*.JPG
+Test inbody*.jpg
+VALD export*.xlsx

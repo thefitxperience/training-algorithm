@@ -7,13 +7,10 @@ import { PRESETS } from './lib/presets'
 import { ClientPanel } from './components/ClientPanel'
 import { ProgramPanel, type CapWiring } from './components/ProgramPanel'
 import { MedicalDisclaimer, PainPanel } from './components/PainPanel'
-import { InBodyPanel } from './components/InBodyPanel'
-import { ValdPanel } from './components/ValdPanel'
+import { TestStrip } from './components/TestStrip'
 import { WORKED_EXAMPLE, hasAnyInput, type InBodyInput } from './lib/inbody'
 import { hasAnyReading, type ValdInput } from './lib/vald'
 import { hasAnyBodyDot, type BodyDotInput } from './lib/bodydot'
-import { BodyDotPanel } from './components/BodyDotPanel'
-import { LoadPanel } from './components/LoadPanel'
 import { PinsPanel, type AmendWiring } from './components/AmendPanel'
 import type { Pin } from './lib/amend'
 import type { CapPin } from './lib/timecap'
@@ -21,9 +18,8 @@ import { AuditPanel } from './components/AuditPanel'
 import { EQUIPMENT_TIERS, type EquipmentTier } from './lib/equipment'
 import type { PainSelection, Side } from './lib/injury'
 import { STRUCTURES, structureBadges, type Structure } from './lib/structure'
+import { Button, Card, Logo, Note, Pill, SectionTitle } from './components/ui'
 import type { ClientInput, DataBundle } from './types'
-
-export type View = 'simple' | 'detailed'
 
 /** Client state lives in the query string so a given program is a linkable regression case. */
 function painsFromUrl(q: URLSearchParams): PainSelection | null {
@@ -181,12 +177,19 @@ function inputFromUrl(): ClientInput {
   }
 }
 
+/**
+ * Two phases, in the order the work actually happens: set the client up, generate, then
+ * attach test results to a program that already exists. A link that already carries a
+ * client opens on the program, so a shared URL lands where it is useful.
+ */
+type Phase = 'setup' | 'program'
+
 export default function App() {
   const [data, setData] = useState<DataBundle | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [input, setInput] = useState<ClientInput>(inputFromUrl)
-  const [view, setView] = useState<View>(
-    new URLSearchParams(window.location.search).get('view') === 'detailed' ? 'detailed' : 'simple',
+  const [phase, setPhase] = useState<Phase>(() =>
+    window.location.search.length > 1 ? 'program' : 'setup',
   )
 
   useEffect(() => {
@@ -260,9 +263,8 @@ export default function App() {
           .map((c) => [c.dayIndex, c.actor, Date.parse(c.timestamp) || 0].join(';'))
           .join(','),
       )
-    q.set('view', view)
     window.history.replaceState(null, '', `?${q.toString()}`)
-  }, [input, view])
+  }, [input])
 
   const bracket = useMemo(
     () => (data ? ageBracket(input.age, data.config.ages) : ''),
@@ -292,7 +294,7 @@ export default function App() {
       // and it would re-run the time-cap search three more times on every keystroke.
       const r = generate(data, { ...input, structure: s, caps: [] })
       const minutes = r.ok
-        ? r.program.days.reduce((sum, d) => sum + d.minutes, 0) / r.program.days.length
+        ? r.program.days.reduce((sum, d) => sum + d.wholeSetMinutes, 0) / r.program.days.length
         : 0
       return { structure: s, badge: badges.badges[s], minutes }
     })
@@ -313,19 +315,26 @@ export default function App() {
 
   if (loadError) {
     return (
-      <div className="p-8">
-        <div className="rounded border border-red-300 bg-red-50 p-4 text-sm text-red-900">
-          <strong>Could not load data.</strong> {loadError}
-        </div>
-      </div>
+      <Shell>
+        <Card className="p-6">
+          <Note tone="flame" title="Could not load the program library">
+            {loadError}
+          </Note>
+        </Card>
+      </Shell>
     )
   }
 
   if (!data) {
-    return <div className="p-8 text-sm text-slate-500">Loading the program library…</div>
+    return (
+      <Shell>
+        <p className="text-sm text-udra-ink-500">Loading the program library…</p>
+      </Shell>
+    )
   }
 
   const hasPains = Object.keys(input.pains).length > 0
+  const painCount = Object.keys(input.pains).length
 
   // An amend is a pin: it re-runs the generator holding the choice rather than editing the
   // output, so a re-test or a new scan cannot silently discard it.
@@ -342,201 +351,182 @@ export default function App() {
       }
     : undefined
 
-  // A press is a per-day pin too: the generator re-runs holding it, so the cut survives a
-  // re-test or a new scan the same way an amend does.
   const capWiring: CapWiring = {
     caps: input.caps,
     setCaps: (caps) => setInput({ ...input, caps }),
     actor: 'client',
   }
 
-  const programOrError = result?.ok ? (
-    <ProgramPanel
-      program={result.program}
-      input={input}
-      view={view}
-      injury={data.injury}
-      amend={amendWiring}
-      cap={capWiring}
-    />
-  ) : (
-    <div className="rounded border-2 border-red-300 bg-red-50 px-4 py-3">
-      <div className="text-sm font-bold text-red-900">Cannot generate a program</div>
-      <div className="mt-1 text-sm text-red-800">{result?.error}</div>
-    </div>
-  )
+  // ---- phase 1: set the client up ------------------------------------------
+  if (phase === 'setup') {
+    return (
+      <Shell>
+        <div className="mx-auto max-w-4xl space-y-4">
+          <div className="pt-2 pb-1">
+            <h1 className="text-2xl font-extrabold tracking-tight">Build a training program</h1>
+            <p className="mt-1 text-sm text-udra-ink-500">
+              Start with who the client is and anything that hurts. Test results — VALD, InBody,
+              BodyDot — are attached afterwards, to a program that already exists.
+            </p>
+          </div>
 
+          <Card className="p-5">
+            <ClientPanel
+              input={input}
+              setInput={setInput}
+              config={data.config}
+              splits={data.splits}
+              ageBracket={bracket}
+              activePreset={activePreset}
+              structureOptions={structureInfo?.options ?? []}
+              structureNote={structureInfo?.note ?? ''}
+              effectiveGoal={result?.ok ? result.program.inbody.dominantGoal || undefined : undefined}
+            />
+          </Card>
+
+          <Card className="p-5">
+            <SectionTitle hint="Anything reported here is filtered out of the whole library before a single exercise is chosen. Nothing that would load a painful area survives it.">
+              Pain or injury
+            </SectionTitle>
+            <div className="mt-3">
+              <PainPanel
+                injury={data.injury}
+                pains={input.pains}
+                setPains={(pains) => setInput({ ...input, pains })}
+                compact
+                showTitle={false}
+              />
+            </div>
+          </Card>
+
+          {hasPains && <MedicalDisclaimer injury={data.injury} />}
+
+          {result && !result.ok && (
+            <Note tone="flame" title="No program exists for this combination">
+              {result.error}
+            </Note>
+          )}
+
+          <div className="sticky bottom-4 flex justify-end">
+            <Button
+              variant="primary"
+              size="lg"
+              disabled={!result?.ok}
+              onClick={() => setPhase('program')}
+              className="shadow-lg"
+            >
+              Generate program
+              <span aria-hidden>→</span>
+            </Button>
+          </div>
+        </div>
+      </Shell>
+    )
+  }
+
+  // ---- phase 2: the program, plus anything measured ------------------------
+  return (
+    <Shell>
+      <div className="mx-auto max-w-[1600px] space-y-4">
+        <Card className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <span className="font-bold">
+              {input.sex}, {input.age}
+            </span>
+            <span className="text-udra-linen-300">·</span>
+            <span className="font-semibold">{input.goal}</span>
+            <span className="text-udra-linen-300">·</span>
+            <span>{input.level}</span>
+            <span className="text-udra-linen-300">·</span>
+            <span>
+              {input.days} days · {input.split}
+            </span>
+            <Pill tone="primary" className="capitalize">
+              {input.structure}
+            </Pill>
+            {painCount > 0 && (
+              <Pill tone="flame">
+                {painCount} pain{painCount === 1 ? '' : 's'} reported
+              </Pill>
+            )}
+          </div>
+          <Button className="ml-auto" onClick={() => setPhase('setup')}>
+            Edit client
+          </Button>
+        </Card>
+
+        {result?.ok ? (
+          <>
+            <TestStrip
+              data={data}
+              input={input}
+              setInput={setInput}
+              program={result.program}
+            />
+
+            {hasPains && <MedicalDisclaimer injury={data.injury} />}
+
+            {amendWiring && (result.program.amend.active || input.pins.length > 0) && (
+              <Card className="p-4">
+                <PinsPanel program={result.program} wiring={amendWiring} />
+              </Card>
+            )}
+
+            <ProgramPanel
+              program={result.program}
+              input={input}
+              injury={data.injury}
+              amend={amendWiring}
+              cap={capWiring}
+            />
+
+            {/* One view means one view. What used to be the detailed view is engineering
+                output — kept, because it is how the program is checked, but folded away so
+                it is not the first thing anyone reads. */}
+            <details className="rounded-2xl border border-udra-linen-200 bg-white">
+              <summary className="cursor-pointer px-4 py-3 text-sm font-bold">
+                Technical detail
+                <span className="ml-2 font-normal text-udra-ink-500">
+                  volume audit, fallback events, allocation key
+                </span>
+              </summary>
+              <div className="border-t border-udra-linen-200 p-4">
+                {audit && (
+                  <AuditPanel
+                    audit={audit}
+                    config={data.config}
+                    sex={input.sex}
+                    rounding={roundSets(result.program)}
+                  />
+                )}
+                <div className="mt-3 font-mono text-[11px] text-udra-ink-500">
+                  {result.program.key}
+                </div>
+              </div>
+            </details>
+          </>
+        ) : (
+          <Note tone="flame" title="Cannot generate a program">
+            {result?.error}
+          </Note>
+        )}
+      </div>
+    </Shell>
+  )
+}
+
+function Shell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-full">
-      <header className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-white px-4 py-3">
-        <h1 className="text-base font-bold text-slate-900">UDRA Training Program Generator</h1>
-        <div className="flex items-center gap-1 rounded border border-slate-300 p-0.5">
-          {(['simple', 'detailed'] as const).map((v) => (
-            <button
-              key={v}
-              onClick={() => setView(v)}
-              className={`rounded px-2.5 py-1 text-xs font-semibold capitalize transition ${
-                view === v ? 'bg-slate-800 text-white' : 'text-slate-600 hover:bg-slate-100'
-              }`}
-            >
-              {v} view
-            </button>
-          ))}
+      <header className="sticky top-0 z-20 border-b border-udra-linen-200 bg-udra-linen/85 backdrop-blur">
+        <div className="mx-auto flex max-w-[1600px] items-center gap-3 px-4 py-3">
+          <Logo className="h-8" />
+          <span className="hidden text-sm font-semibold text-udra-ink-500 sm:inline">
+            Program Generator
+          </span>
         </div>
       </header>
-
-      {view === 'simple' ? (
-        // Simple view: client controls run horizontally across the top, program in day
-        // sections underneath.
-        <div className="mx-auto max-w-7xl space-y-4 p-4">
-          <ClientPanel
-            input={input}
-            setInput={setInput}
-            config={data.config}
-            splits={data.splits}
-            ageBracket={bracket}
-            activePreset={activePreset}
-            layout="bar"
-            structureOptions={structureInfo?.options ?? []}
-            structureNote={structureInfo?.note ?? ''}
-            effectiveGoal={result?.ok ? result.program.inbody.dominantGoal || undefined : undefined}
-          />
-          {result?.ok && (
-            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-              <InBodyPanel
-                data={data.inbody}
-                input={input.inbody}
-                setInput={(inbody) => setInput({ ...input, inbody })}
-                result={result.program.inbody}
-                compact
-              />
-            </div>
-          )}
-          {result?.ok && (
-            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-              <ValdPanel
-                data={data.vald}
-                input={input.vald}
-                setInput={(vald) => setInput({ ...input, vald })}
-                result={result.program.vald}
-                compact
-              />
-              <div className="mt-3 border-t border-slate-200 pt-3">
-                <LoadPanel data={data.load} result={result.program.load} compact />
-              </div>
-            </div>
-          )}
-          {result?.ok && (
-            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-              <BodyDotPanel
-                data={data.bodydot}
-                input={input.bodydot}
-                setInput={(bodydot) => setInput({ ...input, bodydot })}
-                result={result.program.bodydot}
-                compact
-              />
-            </div>
-          )}
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <PainPanel
-              injury={data.injury}
-              pains={input.pains}
-              setPains={(pains) => setInput({ ...input, pains })}
-              compact
-            />
-          </div>
-          {result?.ok && amendWiring && (
-            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-              <PinsPanel program={result.program} wiring={amendWiring} />
-            </div>
-          )}
-          {hasPains && <MedicalDisclaimer injury={data.injury} />}
-          {programOrError}
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 gap-4 p-4 lg:grid-cols-[16rem_minmax(0,1fr)_24rem]">
-          <aside className="lg:sticky lg:top-4 lg:self-start">
-            <div className="rounded border border-slate-200 bg-white p-3 shadow-sm">
-              <ClientPanel
-                input={input}
-                setInput={setInput}
-                config={data.config}
-                splits={data.splits}
-                    ageBracket={bracket}
-                activePreset={activePreset}
-                structureOptions={structureInfo?.options ?? []}
-                structureNote={structureInfo?.note ?? ''}
-                effectiveGoal={result?.ok ? result.program.inbody.dominantGoal || undefined : undefined}
-              />
-              {result?.ok && (
-                <div className="mt-4 border-t border-slate-200 pt-3">
-                  <InBodyPanel
-                    data={data.inbody}
-                    input={input.inbody}
-                    setInput={(inbody) => setInput({ ...input, inbody })}
-                    result={result.program.inbody}
-                  />
-                </div>
-              )}
-              {result?.ok && (
-                <div className="mt-4 border-t border-slate-200 pt-3">
-                  <ValdPanel
-                    data={data.vald}
-                    input={input.vald}
-                    setInput={(vald) => setInput({ ...input, vald })}
-                    result={result.program.vald}
-                  />
-                  <div className="mt-3 border-t border-slate-200 pt-3">
-                    <LoadPanel data={data.load} result={result.program.load} />
-                  </div>
-                </div>
-              )}
-              {result?.ok && (
-                <div className="mt-4 border-t border-slate-200 pt-3">
-                  <BodyDotPanel
-                    data={data.bodydot}
-                    input={input.bodydot}
-                    setInput={(bodydot) => setInput({ ...input, bodydot })}
-                    result={result.program.bodydot}
-                  />
-                </div>
-              )}
-              <div className="mt-4 border-t border-slate-200 pt-3">
-                <PainPanel
-                  injury={data.injury}
-                  pains={input.pains}
-                  setPains={(pains) => setInput({ ...input, pains })}
-                />
-              </div>
-              {result?.ok && amendWiring && (
-                <div className="mt-4 border-t border-slate-200 pt-3">
-                  <PinsPanel program={result.program} wiring={amendWiring} />
-                </div>
-              )}
-            </div>
-          </aside>
-
-          <main className="space-y-4">
-            {hasPains && <MedicalDisclaimer injury={data.injury} />}
-            {programOrError}
-          </main>
-
-          <aside className="lg:sticky lg:top-4 lg:self-start">
-            {audit && result?.ok ? (
-              <AuditPanel
-                audit={audit}
-                config={data.config}
-                sex={input.sex}
-                rounding={roundSets(result.program)}
-              />
-            ) : (
-              <div className="rounded border border-slate-200 bg-white p-3 text-xs text-slate-500">
-                No audit — no program generated.
-              </div>
-            )}
-          </aside>
-        </div>
-      )}
+      <main className="p-4 pb-16">{children}</main>
     </div>
   )
 }

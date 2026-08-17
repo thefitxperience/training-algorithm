@@ -1,5 +1,43 @@
 @import 'tailwindcss';
 
+/* Sora, self-hosted. Google serves one variable file for every weight, so this is a
+   single 25 KB request rather than five, and the app keeps working with no network. */
+@font-face {
+  font-family: 'Sora';
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: swap;
+  src: url('/fonts/sora.woff2') format('woff2');
+}
+
+/* UDRA brand palette, from the brand guidelines. Primary carries the interface; the
+   secondaries are alarms and highlights and are never used as large fills; the tertiaries
+   label the three machines so a reading can be traced to the box it came out of. */
+@theme {
+  --font-sans:
+    'Sora', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  --color-udra-blue: #005eff;
+  --color-udra-linen: #efece6;
+  --color-udra-flame: #ff403c;
+  --color-udra-neon: #ffff59;
+  --color-udra-cyan: #64e0ff;
+  --color-udra-orange: #ff8132;
+
+  /* Tints of UDRA Blue, for surfaces and borders that must not shout. */
+  --color-udra-blue-50: #eef4ff;
+  --color-udra-blue-100: #d9e6ff;
+  --color-udra-blue-200: #b3ccff;
+  --color-udra-blue-700: #0049c7;
+  --color-udra-blue-900: #002a72;
+
+  /* Linen, darkened, for hairlines and secondary text on the linen ground. */
+  --color-udra-linen-200: #e2ddd2;
+  --color-udra-linen-300: #cdc6b8;
+  --color-udra-ink-500: #6f6a60;
+  --color-udra-ink-700: #3d3a34;
+}
+
 html,
 body,
 #root {
@@ -7,7 +45,21 @@ body,
 }
 
 body {
-  background-color: #f8fafc;
-  color: #0f172a;
-  font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  background-color: var(--color-udra-linen);
+  color: #000;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Numbers in the program table are read down a column — sets against sets, weights
+   against weights — so they get tabular figures whatever the weight. */
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/* The focus ring is brand blue everywhere, including on the linen ground where the
+   browser default is nearly invisible. */
+*:focus-visible {
+  outline: 2px solid var(--color-udra-blue);
+  outline-offset: 2px;
 }

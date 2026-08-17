@@ -510,9 +510,17 @@ function gaveUpSentence(m: CapDayModel, steps: CapStep[]): string {
 export interface PlanOptions {
   /** minutes; 60 in the data file, and strictly 60 — a plan landing at 60.2 has not reached it */
   target?: number
+  /**
+   * How many states the search may expand before it settles for the best plan it has found.
+   *
+   * The budget is counted in STATES, never in milliseconds. A wall-clock budget was tried
+   * and reverted: it makes the plan depend on how busy the machine is, so the same day
+   * pressed twice on a loaded laptop returns two different plans — which the acceptance
+   * suite caught, and which is the one property a client-facing button cannot lose. States
+   * are deterministic and bound the wall clock closely enough (40,000 ≈ 2 s at the worst
+   * day measured), so this gives both.
+   */
   nodeLimit?: number
-  /** wall-clock budget in ms; a button press must not freeze the page */
-  timeLimitMs?: number
 }
 
 /**
@@ -526,8 +534,7 @@ export interface PlanOptions {
  */
 export function planCap(m: CapDayModel, opts: PlanOptions = {}): CapPlan {
   const target = opts.target ?? m.data.target
-  const nodeLimit = opts.nodeLimit ?? 60_000
-  const timeLimitMs = opts.timeLimitMs ?? 2_000
+  const nodeLimit = opts.nodeLimit ?? 40_000
   const targetSeconds = target * 60
   const base = baseState(m)
   const beforeSeconds = capSeconds(m, base)
@@ -600,7 +607,6 @@ export function planCap(m: CapDayModel, opts: PlanOptions = {}): CapPlan {
     seedState = seed.state
     seedSeconds = seed.seconds
   }
-  const startedAt = Date.now()
   /** the cheapest reaching plan known — a real node if one was found, else the greedy seed */
   const bound = () => (best ? best.cost : seedCost)
 
@@ -619,11 +625,8 @@ export function planCap(m: CapDayModel, opts: PlanOptions = {}): CapPlan {
       return done(stepsTo(node), node.state, node.seconds, 'cheapest plan reaching the target', expanded)
     }
 
-    if (expanded >= nodeLimit || Date.now() - startedAt >= timeLimitMs) {
-      const why =
-        expanded >= nodeLimit
-          ? `${nodeLimit.toLocaleString()} states`
-          : `${(timeLimitMs / 1000).toFixed(0)} seconds`
+    if (expanded >= nodeLimit) {
+      const why = `${nodeLimit.toLocaleString()} states`
       const cutShort = `this plan reaches ${target} min, but the search ran past ${why} before it could prove no cheaper one exists`
       if (best) return done(stepsTo(best), best.state, best.seconds, cutShort, expanded, false)
       if (seedSteps && seedState)

@@ -1,14 +1,8 @@
-import type { ClientInput, Config, Exercise, Sex, SplitBadge, Splits } from '../types'
+import type { ClientInput, Config, Sex, SplitBadge, Splits } from '../types'
 import { splitsKey } from '../lib/generate'
 import { PRESETS } from '../lib/presets'
 import { splitAdvice } from '../lib/splitAdvice'
 import { type Badge, type Structure } from '../lib/structure'
-import {
-  EQUIPMENT_TIERS,
-  TIER_DESCRIPTION,
-  libraryCoverage,
-  type EquipmentTier,
-} from '../lib/equipment'
 
 const BADGE_STYLES: Record<string, string> = {
   Recommended: 'bg-green-100 text-green-800 border-green-300',
@@ -62,7 +56,6 @@ export function ClientPanel({
   setInput,
   config,
   splits,
-  exercises,
   ageBracket,
   activePreset,
   layout = 'sidebar',
@@ -74,7 +67,6 @@ export function ClientPanel({
   setInput: (i: ClientInput) => void
   config: Config
   splits: Splits
-  exercises: Exercise[]
   ageBracket: string
   activePreset: string | null
   layout?: PanelLayout
@@ -97,7 +89,6 @@ export function ClientPanel({
   const suggestion = advice.recommended[0] ?? advice.best
   const isBadged = suggestion?.row?.badge === 'Recommended'
   const onSuggestion = suggestion?.split === input.split
-  const coverage = libraryCoverage(exercises, input.equipment)
   const bar = layout === 'bar'
 
   const key = splitsKey(input)
@@ -193,32 +184,6 @@ export function ClientPanel({
           </option>
         ))}
       </select>
-    </Field>
-  )
-
-  const equipmentField = (
-    <Field label="Equipment">
-      <select
-        className={selectClass}
-        value={input.equipment}
-        onChange={(e) => set('equipment', e.target.value as EquipmentTier)}
-        title={TIER_DESCRIPTION[input.equipment]}
-      >
-        {EQUIPMENT_TIERS.map((t) => (
-          <option key={t}>{t}</option>
-        ))}
-      </select>
-      <div className="mt-1 text-[10px] text-slate-500">
-        {!bar && TIER_DESCRIPTION[input.equipment]}
-        <div
-          className={`mt-0.5 font-semibold ${
-            coverage.available < coverage.total * 0.3 ? 'text-amber-700' : 'text-slate-600'
-          }`}
-        >
-          {coverage.available} of {coverage.total} exercises available
-          {coverage.available < coverage.total && !bar && ' — expect substitutions and dropped slots below'}
-        </div>
-      </div>
     </Field>
   )
 
@@ -378,8 +343,7 @@ export function ClientPanel({
           {levelField}
           {goalField}
           {daysField}
-          {splitField('md:col-span-2')}
-          {equipmentField}
+          {splitField('md:col-span-3')}
           {structureField('col-span-2 md:col-span-2')}
           <div className="col-span-2 md:col-span-2">{suggestionBlock}</div>
         </div>
@@ -405,7 +369,6 @@ export function ClientPanel({
         {splitField()}
         {suggestionBlock}
         {badgeBlock}
-        {equipmentField}
         {structureField()}
       </section>
     </div>

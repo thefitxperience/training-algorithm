@@ -608,6 +608,12 @@ split is still suppressed outright for non-18-29 clients, as before.
 
 ## Equipment
 
+**The equipment tier is no longer exposed in the client panel.** The field, the library
+filter and the whole fallback path below are still live — `ClientInput.equipment` defaults to
+`Full gym` from the presets and can still be set through the URL (`?equipment=Bodyweight%20only`)
+— but a client is not asked to pick a tier. Everything in this section describes the
+mechanism, which is unchanged.
+
 `equipment` in `exercises.json` is a `/`-separated list of **alternatives**
 ("BB / DB / Smith"), so an exercise is available if any one option is. The 28 distinct
 tokens are bucketed in [src/lib/equipment.ts](src/lib/equipment.ts) into three client tiers:

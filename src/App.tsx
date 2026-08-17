@@ -347,7 +347,6 @@ export default function App() {
             setInput={setInput}
             config={data.config}
             splits={data.splits}
-            exercises={data.exercises}
             ageBracket={bracket}
             activePreset={activePreset}
             layout="bar"
@@ -416,8 +415,7 @@ export default function App() {
                 setInput={setInput}
                 config={data.config}
                 splits={data.splits}
-                exercises={data.exercises}
-                ageBracket={bracket}
+                    ageBracket={bracket}
                 activePreset={activePreset}
                 structureOptions={structureInfo?.options ?? []}
                 structureNote={structureInfo?.note ?? ''}

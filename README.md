@@ -687,10 +687,11 @@ Three things were added on top, none of which weaken the guarantee:
   nowhere.
 
 **Budget: 60,000 states or 2 seconds.** A button press must not freeze the page. Across 624
-pressed days: median search **2 ms**, p90 **82 ms**, max **2.1 s**; 4.6% run past a second.
-The 4.6% return a plan that **reaches** 60 but is not proven minimal, labelled
+pressed days without readings: median search **2 ms**, p90 **82 ms**, max **2.1 s**; 4.6% run
+past a second. Those return a plan that **reaches** 60 but is not proven minimal, labelled
 `NOT PROVEN CHEAPEST` in the UI with the reason on hover. Before branch-and-bound and the
-seed, three of those days took **24 seconds** each and fell back to the shortest-safe state.
+greedy seed, three of those days took **24 seconds** each and fell back to the shortest-safe
+state — a 24-second freeze on a button press, found by clicking it rather than by the suite.
 
 Optimality is re-proved from outside for every plan the search claims is minimal: the suite
 brute-forces every state reachable below the plan's own cost and asserts none of them reaches
@@ -712,27 +713,39 @@ decisions, not fixes, so nothing has been changed to make the number look better
 
 ### Lever-use distribution
 
-Share of the pressed **days** each lever appears on, which is the figure comparable with
-"supersetting alone solves about a third of days". Measured across the acceptance sweep
-(23 pressed days, loaded clients with scans and readings):
+Measured by pressing **every** over-60 day across a goal × level × age × frequency × split ×
+structure grid, with an InBody scan, VALD readings and three posture findings on every client
+so all twelve levers are actually in play: **2,612 pressed days, 17,988 pulls**. 97% reached
+60 minutes; 3% reported a shortfall. Median plan **27 points**, p90 **204**, max **474**.
 
-| Lever | measured (share of days) | spec |
-|---|---|---|
-| Structure step | 87% | 34% |
-| Rest | 30% | 23% |
-| InBody filler | 30% | 15% |
-| Remove exercise | **0%** | 11% |
-| Set cuts | 52% | — |
-| Correctives | 48% | — |
+Counted two ways, because they say different things — share of days is the one comparable
+with "supersetting alone solves about a third of days":
 
-By **pulls** rather than days the picture inverts — structure 14%, rest 14%, filler 10%,
-remove 0%, sets 46%, correctives 16% — because a handful of very long sessions need a dozen
-set cuts each and dominate the count. The structure step alone solved **5 of 23** days (22%),
-against the spec's "about a third".
+| Lever | share of pressed days | share of pulls | spec |
+|---|---|---|---|
+| Structure step | 55% | 8% | 34% |
+| Rest | 27% | 8% | 23% |
+| InBody filler | 58% | 22% | 15% |
+| Remove exercise | **0%** | **0%** | 11% |
+| Set cuts | 43% | 36% | — |
+| Correctives | 74% | 26% | — |
 
-The two large divergences both trace to the accessory finding above: with no 4-point lever
-available, the search leans harder on the structure step (which is 2 points and buys a lot)
-and on set cuts, and `remove exercise` has nothing to remove.
+Share of pulls is dominated by the long sessions that need a dozen 18-point primary set cuts
+each; share of days is not. **The structure step alone solved only 117 of 2,612 days (4%)**,
+against the spec's "about a third" — on this grid it is a component of most plans rather than
+a whole plan.
+
+Three divergences from the spec's 34 / 23 / 15 / 11, all traceable:
+
+- **Remove exercise at 0%** — the accessory finding above. There is nothing accessory-tier to
+  remove, and set cuts beat removal per point until every accessory is at its floor.
+- **Correctives at 74% and filler at 58%** are inflated by the sweep itself: every client in
+  it has a scan and three posture findings, which a real population would not. On the five
+  presets (mostly no readings) they fall to 48% and 30%.
+- **Structure at 55%, well under the days it appears on in the preset sweep (87%)**, because
+  half the grid already runs supersets and is offered triset or nothing.
+
+Nothing here has been reweighted to close the gap with the spec's figures.
 
 ### Floors — all four hold
 

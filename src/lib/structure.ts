@@ -260,25 +260,30 @@ export function timeParams(data: StructureData, goal: string, structure: Structu
 }
 
 /**
- * straight : size x sets x (work + rest)
- * paired   : sets x (size x work + (size-1) x transition + rest x restMultiplier)
+ *   S = sum of the members' set counts
+ *   R = max of the members' set counts        // the number of ROUNDS
+ *   block_seconds = work x S + (S - R) x transition + R x rest x restMultiplier
  *
- * Rest is taken once per round for paired structures, never after each exercise — the only
- * reading under which a rest multiplier of 1.00 and a real time saving are both true.
+ * Rest is taken once per ROUND, and there are R rounds. A transition happens only where a
+ * round holds more than one member, which is exactly S - R times.
  *
- * Where a block's exercises carry different set counts, the block runs for the longest of
- * them, so `sets` is the max across the block.
+ * The members of a block usually do NOT share a set count — Stage 1 solves sets per muscle
+ * group, so a 3-set row genuinely pairs with a 2-set curl. The earlier form charged
+ * `sets x (size x work + …)` with `sets` as the max, which invented work for the short
+ * member: a 3+2 Build Muscle superset at 75 s rest came out at 540 s against a true 480 s,
+ * a 12% overstatement. Straight sets are identical under both: S = R, so a single 3-set
+ * exercise is 45x3 + 0 + 3x75 = 360 s either way.
  */
 export function blockSeconds(block: Block, setsFor: (i: number) => number, p: TimeParams): number {
-  const size = block.indices.length
-  const sets = Math.max(...block.indices.map(setsFor))
-  if (size === 1) return sets * (p.workSeconds + p.restSeconds)
-  // The block's own multiplier wins where it has been resolved; `p.restMultiplier` is the
-  // program-level fallback and is only correct when the two happen to agree.
-  const restMultiplier = block.restMultiplier ?? p.restMultiplier
-  return (
-    sets * (size * p.workSeconds + (size - 1) * p.transitionSeconds + p.restSeconds * restMultiplier)
-  )
+  const counts = block.indices.map(setsFor)
+  const S = counts.reduce((a, b) => a + b, 0)
+  const R = Math.max(...counts)
+  // A single-exercise block takes no multiplier, whatever the program-level figure is. Above
+  // that the block's own multiplier wins; `p.restMultiplier` is only a fallback for callers
+  // that have not resolved it.
+  const restMultiplier =
+    block.indices.length === 1 ? 1 : (block.restMultiplier ?? p.restMultiplier)
+  return p.workSeconds * S + (S - R) * p.transitionSeconds + R * p.restSeconds * restMultiplier
 }
 
 export function sessionMinutes(blocks: Block[], setsFor: (i: number) => number, p: TimeParams): number {

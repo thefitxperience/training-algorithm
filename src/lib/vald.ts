@@ -256,7 +256,12 @@ export interface AllocateContext {
    * reaches around the injury layer and around the Stage 1 safety rules both.
    */
   canSwapIn: (ex: Exercise) => boolean
-  /** returns true if adding `extraSets` to this day would breach its ceiling */
+  /**
+   * True if adding `extraSets` to this day would breach a session-length cap. The generator
+   * no longer imposes one — session length is the client's decision, taken with the time-cap
+   * button — so it passes `() => false`. Kept on the contract so a caller that does want a
+   * cap can impose one without this layer changing.
+   */
   wouldBreachSessionCap: (dayIndex: number, extraSets: number, newUnilateralSlots: number) => boolean
 }
 
@@ -356,7 +361,8 @@ export function allocate(
         swapTo = resolved.swapTo
       }
 
-      // extra sets are real local fatigue and count in full against the session ceiling
+      // Extra sets are real local fatigue, so they count in full against whatever cap the
+      // caller imposes. The generator imposes none — see `wouldBreachSessionCap`.
       const newUnilateral = existing ? 0 : form === 'already' ? 0 : 1
       if (ctx.wouldBreachSessionCap(day.index, 1, newUnilateral)) continue
 

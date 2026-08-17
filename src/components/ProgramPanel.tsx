@@ -4,11 +4,17 @@ import type { Program } from '../lib/generate'
 import { pickKey, roundSets } from '../lib/rounding'
 import { equipmentOptions, isTokenAvailable } from '../lib/equipment'
 import { copyFor, type Side } from '../lib/injury'
-import { sessionMinutes } from '../lib/structure'
 import { LoadCell } from './LoadPanel'
 import { AmendControl, type AmendWiring } from './AmendPanel'
 import { CORRECTIVE_REST_SECONDS } from '../lib/bodydot'
+import type { CapPin } from '../lib/timecap'
 import type { ClientInput, InjuryData } from '../types'
+
+export interface CapWiring {
+  caps: CapPin[]
+  setCaps: (caps: CapPin[]) => void
+  actor: string
+}
 
 /** The side to actually train is the one the pain is NOT on. */
 const otherSide = (painSide?: Side) =>
@@ -36,12 +42,14 @@ export function ProgramPanel({
   view,
   injury,
   amend,
+  cap,
 }: {
   program: Program
   input: ClientInput
   view: View
   injury: InjuryData
   amend?: AmendWiring
+  cap?: CapWiring
 }) {
   const { block, days, warnings } = program
   const short = block.deliveredDays < input.days
@@ -54,16 +62,23 @@ export function ProgramPanel({
   const rounding = useMemo(() => roundSets(program), [program])
   const setsFor = (dayIndex: number, position: number, raw: number) =>
     detailed ? raw : (rounding.byPick.get(pickKey(dayIndex, position)) ?? raw)
-  // Simple view prescribes whole sets, so its session length follows from those. Corrective
-  // work is already whole-numbered and sits outside the block model, so it is added on.
-  const minutesFor = (day: (typeof days)[number]) =>
-    detailed
-      ? day.minutes
-      : sessionMinutes(
-          day.blocks,
-          (i) => rounding.byPick.get(pickKey(day.index, i)) ?? day.exercises[i].sets,
-          program.timeParams,
-        ) + day.correctiveMinutes
+  // One session length, shown in both views: the one that follows from the whole-number sets
+  // the client is actually prescribed. A 3.5-set slot is performed as 3 or as 4, never as
+  // 3.5, so the raw fractional figure is not a session anyone trains. It is also the figure
+  // the time cap drives to 60, which is what keeps the button honest.
+  const minutesFor = (day: (typeof days)[number]) => day.wholeSetMinutes
+
+  const target = program.timecap.target
+  const planFor = (dayIndex: number) =>
+    program.timecap.applied.find((a) => a.dayIndex === dayIndex)?.plan
+  const pressCap = (dayIndex: number) =>
+    cap?.setCaps([
+      ...cap.caps.filter((c) => c.dayIndex !== dayIndex),
+      { dayIndex, actor: cap.actor, timestamp: new Date().toISOString() },
+    ])
+  const undoCap = (dayIndex: number) =>
+    cap?.setCaps(cap.caps.filter((c) => c.dayIndex !== dayIndex))
+  const pts = (n: number) => `${n} training point${n === 1 ? '' : 's'}`
 
   return (
     <div className="space-y-4">
@@ -241,18 +256,75 @@ export function ProgramPanel({
                 })()}
               <span
                 className={
-                  day.overCeiling && detailed
-                    ? 'rounded bg-red-100 px-1.5 py-0.5 font-semibold text-red-800'
-                    : detailed
-                      ? 'font-semibold text-slate-700'
-                      : 'rounded-full bg-slate-800 px-2 py-0.5 font-semibold text-white'
+                  detailed
+                    ? 'font-semibold text-slate-700'
+                    : 'rounded-full bg-slate-800 px-2 py-0.5 font-semibold text-white'
                 }
               >
                 {minutesFor(day).toFixed(0)} min
-                {day.overCeiling && detailed && ` — over ${program.timeCeiling} min ceiling`}
               </span>
+              {/* Rendered if and only if the day is over the target. At or under it there is
+                  nothing useful the button could do, and a greyed-out control invites a
+                  question with no answer. */}
+              {cap && !planFor(day.index) && minutesFor(day) > target && (
+                <button
+                  onClick={() => pressCap(day.index)}
+                  className="rounded-full bg-amber-500 px-2.5 py-0.5 text-[11px] font-bold text-white shadow-sm transition hover:bg-amber-600"
+                >
+                  Reduce to {target} min
+                </button>
+              )}
             </div>
           </div>
+
+          {(() => {
+            const plan = planFor(day.index)
+            if (!plan) return null
+            return (
+              <div className="border-b border-amber-200 bg-amber-50/70 px-4 py-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-[11px] font-bold text-amber-900">
+                    {plan.reached
+                      ? `Reduced to ${target} min — ${plan.minutesBefore.toFixed(0)} → ${plan.minutesAfter.toFixed(0)} min for ${pts(plan.points)}`
+                      : `Could not reach ${target} min — ${plan.minutesBefore.toFixed(0)} → ${plan.minutesAfter.toFixed(1)} min, still ${plan.shortfall.toFixed(1)} min over`}
+                    {plan.reached && !plan.proven && (
+                      <span
+                        className="ml-1.5 rounded bg-amber-200 px-1 py-0.5 text-[10px] font-bold text-amber-900"
+                        title={plan.reason}
+                      >
+                        NOT PROVEN CHEAPEST
+                      </span>
+                    )}
+                  </span>
+                  {cap && (
+                    <button
+                      onClick={() => undoCap(day.index)}
+                      className="rounded border border-amber-400 px-2 py-0.5 text-[11px] font-semibold text-amber-900 transition hover:bg-amber-100"
+                    >
+                      Undo
+                    </button>
+                  )}
+                </div>
+                {/* Never silently, and never by cutting a protected lever. */}
+                {!plan.reached && (
+                  <div className="mt-1 rounded border border-red-300 bg-red-50 px-2 py-1 text-[11px] text-red-900">
+                    {plan.reason}.
+                  </div>
+                )}
+                {plan.steps.length > 0 && (
+                  <ol className="mt-1 list-decimal space-y-0.5 pl-5 text-[11px] text-amber-900">
+                    {plan.steps.map((s, i) => (
+                      <li key={i}>
+                        {s.detail}
+                        <span className="ml-1 opacity-60">({s.cost})</span>
+                      </li>
+                    ))}
+                  </ol>
+                )}
+                <div className="mt-1 text-[11px] text-amber-800 italic">{plan.gaveUp}</div>
+              </div>
+            )
+          })()}
 
           <div className="overflow-x-auto">
           <table className={`w-full text-left ${detailed ? 'text-xs' : 'text-[13px]'}`}>

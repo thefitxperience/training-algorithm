@@ -259,6 +259,15 @@ export function PinsPanel({
         <span className="ml-1.5 rounded-full bg-sky-100 px-1.5 py-0.5 text-[10px] font-bold text-sky-800">
           {amend.applied.length} active
         </span>
+        {/* Cutting sets shortens the week too, so a time cap shows up in the same place a
+            swap does rather than moving volume with nothing on screen to explain it. */}
+        {program.timecap.applied.length > 0 && (
+          <span className="ml-1.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">
+            {program.timecap.applied.length} day
+            {program.timecap.applied.length === 1 ? '' : 's'} shortened to{' '}
+            {program.timecap.target} min
+          </span>
+        )}
       </h2>
 
       {all.length > 0 && (

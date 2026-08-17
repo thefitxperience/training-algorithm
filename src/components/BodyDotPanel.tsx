@@ -262,7 +262,11 @@ export function BodyDotPanel({
 
           {result.trimmed.length > 0 && (
             <div className="rounded border border-amber-300 bg-amber-50 px-2 py-1 text-[10px] text-amber-900">
-              <span className="font-semibold">Dropped to stay inside the time ceiling:</span>
+              {/* Nothing trims a session at generation any more — this list is only ever
+                  written by the time-cap button, so it says who asked. */}
+              <span className="font-semibold">
+                Dropped when you shortened a session with "Reduce to 60 min":
+              </span>
               <ul className="mt-0.5 space-y-0.5">
                 {result.trimmed.map((t, i) => (
                   <li key={i}>

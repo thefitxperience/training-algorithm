@@ -5,6 +5,7 @@ import type { InBodyInput } from './lib/inbody'
 import type { ValdInput } from './lib/vald'
 import type { BodyDotInput } from './lib/bodydot'
 import type { Pin } from './lib/amend'
+import type { CapPin } from './lib/timecap'
 
 export type Sex = 'Male' | 'Female'
 export type Tier = 'primary' | 'secondary' | 'accessory'
@@ -12,6 +13,11 @@ export type ExerciseType = 'compound' | 'isolation' | 'carry' | 'isometric' | 'm
 
 export interface Config {
   indirectCredit: number
+  /**
+   * The goal's old per-session ceiling. Nothing reads it any more: the allocation guarantees
+   * volume only, nothing trims a session at generation, and session length is the client's
+   * decision, taken with the time-cap button. Kept because data files are never edited here.
+   */
   timeCeiling: Record<string, number>
   warmupMinutes: number
   repsMid: Record<string, number>
@@ -325,6 +331,55 @@ export interface AmendData {
   openItems: Record<string, string>
 }
 
+export interface TimeCapLever {
+  id: string
+  cost: number
+  label?: string
+  /** present on the three rest levers — a rest minute costs a different amount per goal */
+  goal?: string
+  step?: string
+  limit?: string
+  floor?: string
+  /** the main lift, and only the main lift; the search never generates it */
+  blocked?: boolean
+  compromises: string
+}
+
+export interface TimeCapData {
+  target: number
+  showButtonWhen: string
+  strict: boolean
+  levers: TimeCapLever[]
+  search: {
+    type: string
+    order: string[]
+    optimal: string
+    rebuildLeversEachNode: boolean
+  }
+  timeModel: {
+    workSeconds: Record<string, number>
+    restMultiplier: Record<string, number>
+    transitionSeconds: number
+    fillerBoutSeconds: number
+    warmupMinutes: number
+    block: string
+    session: string
+  }
+  floors: {
+    rest: string
+    sessionMinSets: number
+    mainLift: string
+    structureStepsPerDay: string
+  }
+  /** [ageBracket][goal] -> seconds */
+  restFloor: Record<string, Record<string, number>>
+  beginnerRestFloor: Record<string, number>
+  onUnreachable: string
+  persistence: string
+  driftCheck: string
+  openItems: Record<string, string>
+}
+
 export interface DataBundle {
   config: Config
   allocation: Allocation
@@ -338,6 +393,7 @@ export interface DataBundle {
   bodydot: BodyDotData
   load: LoadData
   amend: AmendData
+  timecap: TimeCapData
 }
 
 export interface ClientInput {
@@ -361,4 +417,6 @@ export interface ClientInput {
   bodydot: BodyDotInput
   /** slot pins from the amend layer; empty means the generator runs unconstrained */
   pins: Pin[]
+  /** days the client asked to bring down to 60 minutes; empty means no session is trimmed */
+  caps: CapPin[]
 }

@@ -8,8 +8,9 @@ Two views, switched from the header and persisted in the URL (`?view=…`):
 - **Simple** (default) — client controls run horizontally across the top of a centred
   page, with the program underneath as day cards in a responsive grid (1 / 2 / 3 columns).
   The table carries exercise, sets × reps and rest only. Fallback warnings, the audit
-  panel, allocation keys, per-day set totals and the time-ceiling flag are all hidden. The
-  reduced-days notice is **not** hidden: it is a real outcome the client has to see.
+  panel, allocation keys and per-day set totals are all hidden. The reduced-days notice and
+  the "Reduce to 60 min" button are **not** hidden: both are real outcomes the client has to
+  see and act on.
 - **Detailed** — everything above plus the volume audit, the warning banner, muscle group /
   sub-region / equipment columns, REUSED and SUB flags, and the allocation key. This is the
   test-harness view, and the one the acceptance criteria below describe.
@@ -43,7 +44,7 @@ To publish:
 
 The push triggers the workflow; the URL appears under Actions once the deploy job finishes.
 
-**Everything in `public/data/` becomes publicly downloadable** — all twelve JSON files,
+**Everything in `public/data/` becomes publicly downloadable** — all thirteen JSON files,
 including the 3 MB `allocation.json`. It's a static site, so the browser has to be able to
 fetch them; there is no way to publish this and keep the data private. GitHub Pages on a
 free account also requires a **public repo**. If either matters, this needs a host with
@@ -51,7 +52,7 @@ access control rather than Pages.
 
 ## Data
 
-Twelve files in `public/data/`, served as static assets and fetched once at startup:
+Thirteen files in `public/data/`, served as static assets and fetched once at startup:
 
 | File | What it is |
 |---|---|
@@ -67,6 +68,7 @@ Twelve files in `public/data/`, served as static assets and fetched once at star
 | `bodydot.json` | 26 posture indicators with their bands, and 18 arsenal entries covering 13 of them, pre-resolved to library ids |
 | `load.json` | 17 newtons-to-kilograms constants, 17 anchors, 30 bridges, and a pre-computed class/modifier/laterality record for all 315 exercises |
 | `amend.json` | the three amend types, four blocks, seven ranking rules, sibling sub-regions for all 47 codes, and the sub-regions each pain empties |
+| `timecap.json` | the twelve levers and their costs, the rest floors, the four hard floors, and the session time model |
 
 They are generated upstream and are **not modified** by this app. `loadData()` in
 [src/data/load.ts](src/data/load.ts) caches the fetch promise at module scope, so
@@ -244,16 +246,17 @@ and they diverge as soon as a finding fires.
 
 ### Readings and consequences
 
-- **`SESSION_CAP` is read as the goal's time ceiling** — the app's only per-session ceiling.
-  Extra weak-side sets count against it in full, and the budget is kept for a later session
-  when they would breach it.
+- **`SESSION_CAP` was read as the goal's time ceiling.** It is now switched off: nothing caps
+  a session at generation, so `wouldBreachSessionCap` is passed `() => false` and weak-side
+  sets are never refused for length. The callback stays on the VALD contract so a caller that
+  wants a cap can still impose one. See **Time cap** above.
 - **The strong side keeps its DIRECT volume exactly.** Total volume can move up to **1.8
   sets** because step 5's swap replaces the exercise with a one-sided version of the same
   movement, and the replacement carries its own `alsoTrains` — so indirect credit into
   *other* groups shifts. Same phenomenon the Stage 1 week-rotation check exposed.
 - **The pass-1 reservation can no longer be starved by budget.** With the confirmed change
   to a per-**sub-region** budget, and all 17 primaries distinct, two findings never share a
-  budget. Pass 1 still matters for the session ceiling, and is still implemented and
+  budget. Pass 1's ordering still decides who is served first, and is still implemented and
   asserted. On the three-glute test G-EXT is the one that goes unserved — because its only
   matching slot is a bilateral main lift, not because the budget ran out.
 
@@ -458,8 +461,10 @@ actor may make any type; that is a decision, not an omission.
 
 ## BodyDot posture
 
-Fifth and last rule layer, and the only one in the stack that **adds slots**. It runs last,
-after injury, InBody and VALD, and appends a corrective block to the end of every session.
+Fifth rule layer, and the only one in the stack that **adds slots**. It runs after injury,
+InBody and VALD, and appends a corrective block to the end of every session. Only the amend
+and time-cap layers come after it, and both of those act on a program that is already
+complete.
 It never touches the split, the selection, the sets, or anyone else's work — the main
 program with a posture reading entered is byte-identical to the one without it.
 
@@ -551,23 +556,21 @@ than passing quietly.
 
 ### Consequences worth knowing
 
-- **The reference client's sessions sit close to their ceiling, so the trim bites.** Days 1
-  and 3 run 84 and 82 minutes against a 90 ceiling, leaving room for one corrective; days 2
-  and 4 carry all three. So the block genuinely differs between sessions on a full program.
-  That is `trimOrder` doing its job, and every dropped exercise is named against its session.
-- **`trimOrder` has four steps and only one of them is reachable.** Step 1, InBody high-TBW
-  filler bouts, runs *inside* the rest interval and adds no session time, so trimming it
-  recovers nothing. Steps 3 and 4, the VALD conversion and its extra weak-side sets, cannot
-  be the cause of a breach because VALD refuses any bump that would breach the ceiling in the
-  first place — which is asserted, not assumed, so if that invariant ever changes the steps
-  come back into play. The loop is still written over all four in order.
-- **The simple view's session times read 2–4 minutes higher than the trim's own numbers**, so
-  a trimmed session can still show as over the ceiling there — day 1 above reads 89 min in the
-  detailed view and 93 in the simple one. This is the pre-existing gap between the two views:
-  the simple view re-derives session length from its rounded whole sets, which are on average
-  slightly larger. The trim balances against the canonical `day.minutes`, because deciding
-  *content* from the simple view's numbers would make the two views prescribe different
-  programs.
+- **The per-session trim is gone, and with it `trimOrder`.** Every session now carries the
+  full corrective block, identically. Corrective work is still what gets given up when a
+  session is too long, but only when the client presses the time-cap button, at a price the
+  file states — 3 points borderline, 12 abnormal — weighed against every other lever rather
+  than always going first. `bodydot.trimmed` is still the record of what was dropped and is
+  now written by the time cap. See **Time cap** above.
+- **`trimOrder`'s own reasoning is superseded on one point.** It held that InBody high-TBW
+  filler bouts run *inside* the rest interval and add no session time. `timecap.json`'s
+  session model charges them (`fillerBouts × 40`) and prices a lever to remove them, so the
+  new file wins. Two of the four steps have also become moot: nothing caps a session at
+  generation, so there is no breach for VALD to be the cause of.
+- **The two views no longer disagree about session length.** Both now read the length of the
+  session with the whole-number sets the client is actually prescribed. The gap that used to
+  put the simple view 2–4 minutes higher is measured and asserted at under 5 minutes against
+  the raw fractional figure, which is now an engineering number rather than a displayed one.
 - **An older or very restricted client can measure a finding and get nothing for it.** The
   Q04 entry is a leg press and a deep barbell squat; for a 68-year-old beginner the first
   exceeds the 65+ load cap and the second is on that bracket's avoid list, so Q04 prescribes
@@ -587,6 +590,206 @@ than passing quietly.
   "Cobra pose" → thoracic extension over roller, and Q01's bent-over shoulder flexion stretch
   → bench thoracic extension. The remaining 31 mappings are exact or near-exact; all 38
   pre-resolved ids are checked against the library on every run, names included.
+
+## Time cap — the "Reduce to 60 min" button
+
+Runs **last**, after injury, all three machines, the structure selector and any amends, and
+it only ever removes. One button per day, rendered **if and only if that day exceeds 60
+minutes**. No slider, no target field. At 60 or under it is not rendered at all — a greyed-out
+control invites a question that has no useful answer.
+
+A press is a **per-day pin**, the same model as an amend: `caps=0;client;<ts>` in the URL, and
+the generator re-runs holding it rather than editing the output.
+
+### Nothing caps a session at generation any more
+
+Two things were retired to make room for this:
+
+- **The allocator's own trim.** `allocation.json` was regenerated: it guarantees volume only.
+  Substantive-group volume agreement improved from 94.9% to 95.6% as a result, because the
+  trim had been removing exercises the volume model needed.
+- **`config.timeCeiling`.** The goal's ceiling no longer appears anywhere in the app. The
+  field is still in `config.json` — data files are never edited here — but nothing reads it.
+  Two layers were trimming against it and no longer do:
+  - **BodyDot's `trimToCeiling` is deleted.** The corrective block now reaches every session
+    intact. `bodydot.trimmed` still exists and is now populated by whatever the time cap
+    dropped, at a price the file states (3 points borderline, 12 abnormal), weighed against
+    every other lever — rather than silently and always first.
+  - **VALD's session-cap guard is switched off.** `wouldBreachSessionCap` stays on the VALD
+    contract so a caller that wants a cap can impose one, but the generator passes
+    `() => false`. Weak-side sets a real asymmetry earned are no longer refused for length.
+
+Measured across the whole grid — 1,764 programs, 5,922 sessions, `straight`, no scans:
+
+| Goal | avg | median | longest | over 60 min |
+|---|---|---|---|---|
+| Lose Fat | 29 | 27 | 65 | 1% |
+| Build Muscle | 57 | 54 | 132 | 39% |
+| Get Stronger | 67 | 65 | **161** | 53% |
+
+31% of all sessions offer the button. The longest is `Get Stronger / Advanced / 18-29 / 5 days`,
+which the spec predicted as "a tail to 164 minutes for advanced strength clients at five days"
+— the shape matches closely. The averages come in below the spec's 38 / 72 / 83, most likely
+because this sweep weights the grid uniformly rather than by a real client population.
+
+### One session length, not two
+
+The header minute in **both** views is now the length of the session with the **whole-number
+sets the client is actually prescribed**. A 3.5-set slot is performed as 3 or as 4, never as
+3.5, so the raw fractional figure is not a session anyone trains, and a button labelled
+"Reduce to 60 min" driving that figure left the client-facing view reading **63 min** — caught
+by clicking the button in a real browser, not by the suite. A capped day is resolved to its
+whole numbers *before* the search runs, so the two views land on the same minute.
+
+One visible consequence: resolving one day to whole sets takes its picks out of the per-group
+rounding carry, so another day's rounded figure can shift by a set — pressing day 1 on the
+Reference client moves day 3 from 84 to 86 min. That is the same mechanism, and the same
+±0.5-set guarantee, that already governs the uncapped program, and the suite asserts it holds
+after a press.
+
+### Correction 1 — the block time formula
+
+The structure layer was charging a paired block as `sets × (n × work + (n−1) × transition +
+rest × REST_MULT)` with `sets` as the **max** across the block. Members usually do **not**
+share a set count — Stage 1 solves sets per muscle group, so a 3-set row genuinely pairs with
+a 2-set curl — and that form invented work for the short member. Replaced with:
+
+```
+S = sum of the members' set counts
+R = max of the members' set counts          // the number of ROUNDS
+block_seconds = work × S + (S − R) × 15 + R × rest × REST_MULT
+```
+
+A 3-set row supersetted with a 2-set curl, Build Muscle, 75 s rest: **480 s**, against 540 s
+under the old form — a 12% overstatement. Straight sets are unchanged (`S = R`): a single
+3-set exercise is `45×3 + 0 + 3×75 = 360 s` either way. Both figures are asserted.
+
+### The search
+
+Uniform-cost search (Dijkstra) over lever states, ordered by **points spent**, then **fewer
+steps** — the client reads the steps — then insertion order, so the same day always produces
+the same plan. The lever list is rebuilt at **every node**: saving a minute changes what the
+next minute costs. States are deduplicated, not paths — the levers commute, so every ordering
+of the same multiset of pulls collapses to one node.
+
+Three things were added on top, none of which weaken the guarantee:
+
+- **A reachability pre-check.** Every lever that removes work is monotone, so pulling all of
+  them gives the shortest session the day can legally become. If that is still over 60, no
+  plan reaches it — decided in one evaluation instead of by exhausting the state space, which
+  is the one case where an exhaustive search is genuinely expensive.
+- **Branch and bound.** Any state already reaching the target is an upper bound, so nothing
+  costing at least as much is ever queued.
+- **A greedy seed.** Best-minutes-per-point is the heuristic the spec **rejected as an
+  answer** — measured against the exact optimum it overspends by 43% and is optimal on 56% of
+  days — and it is never returned as one. It is used only to seed the bound, which on the
+  longest sessions is the difference between pruning from the first node and pruning from
+  nowhere.
+
+**Budget: 60,000 states or 2 seconds.** A button press must not freeze the page. Across 624
+pressed days: median search **2 ms**, p90 **82 ms**, max **2.1 s**; 4.6% run past a second.
+The 4.6% return a plan that **reaches** 60 but is not proven minimal, labelled
+`NOT PROVEN CHEAPEST` in the UI with the reason on hover. Before branch-and-bound and the
+seed, three of those days took **24 seconds** each and fell back to the shortest-safe state.
+
+Optimality is re-proved from outside for every plan the search claims is minimal: the suite
+brute-forces every state reachable below the plan's own cost and asserts none of them reaches
+60. Days whose sub-budget space passes 400,000 states are counted as **not re-proved** and
+reported by name — a check that can go green by running out of room is worse than no check.
+
+### Two of the twelve levers are unreachable, and it is not the engine
+
+`set_accessory` (4 points) and `remove_accessory_exercise` (10) **never fire**. Selection
+ranks primary tier first, and all **47 of 47** sub-regions in the library contain a primary
+exercise, so a slot asking for one exercise always gets a primary one. Across the preset
+sweep the chosen exercises are **339 primary, 27 secondary, 0 accessory**.
+
+The consequence is real: the cheapest set cut actually on offer costs **18**, not 4. That is
+why plans are expensive — a 132-minute Build Muscle day needs a dozen 18-point primary cuts —
+and it is the main reason the measured lever distribution diverges from the spec's. Closing it
+means either seeding sessions with accessory work or repricing `set_primary`; both are product
+decisions, not fixes, so nothing has been changed to make the number look better.
+
+### Lever-use distribution
+
+Share of the pressed **days** each lever appears on, which is the figure comparable with
+"supersetting alone solves about a third of days". Measured across the acceptance sweep
+(23 pressed days, loaded clients with scans and readings):
+
+| Lever | measured (share of days) | spec |
+|---|---|---|
+| Structure step | 87% | 34% |
+| Rest | 30% | 23% |
+| InBody filler | 30% | 15% |
+| Remove exercise | **0%** | 11% |
+| Set cuts | 52% | — |
+| Correctives | 48% | — |
+
+By **pulls** rather than days the picture inverts — structure 14%, rest 14%, filler 10%,
+remove 0%, sets 46%, correctives 16% — because a handful of very long sessions need a dozen
+set cuts each and dominate the count. The structure step alone solved **5 of 23** days (22%),
+against the spec's "about a third".
+
+The two large divergences both trace to the accessory finding above: with no 4-point lever
+available, the search leans harder on the structure step (which is 2 points and buys a lot)
+and on set cuts, and `remove exercise` has nothing to remove.
+
+### Floors — all four hold
+
+- **Rest floor** — `REST_FLOOR[age][goal]`, with `beginnerRestFloor` on top; a floor can only
+  rise. "Floor the incoming rest before searching" binds in one direction only: where the
+  prescribed rest already sits below the floor, the floor becomes that value, so the lever
+  cannot move it. This layer only removes, and raising a client's rest to meet a floor would
+  lengthen the session they pressed the button to shorten.
+- **SESSION_MIN** — every surviving exercise holds ≥ 2 sets, so a muscle group is either out
+  of the session entirely (what the 10-point "whole accessory exercise" lever buys) or at 2
+  sets or more. Never trained-but-under-two.
+- **Main lift** — never removed and never trimmed, for any goal. It is the reason a target
+  sometimes cannot be reached, and that is reported rather than cut around.
+- **One structure step per day** — straight→superset or superset→triset, never both. If the
+  client already picked supersets program-wide, the day is offered triset or nothing.
+
+Rest trims in whole **10 s** steps, except where the last step lands exactly on the floor:
+75 s at a 60 s floor goes 75 → 65 → 60. A trimmed rest is displayed as a single number rather
+than the prescription's range, because the point is a number the client can follow on a clock.
+
+### Strictly 60, and undershoot is fine
+
+A plan landing at 60.2 is not a success. Levers are discrete, so a plan may land at 54.5, and
+it never spends extra points to land closer to 60 — a Youth-strength day comes back at 59 min
+having pulled one 12-point lever.
+
+When 60 cannot be reached, the shortest safe version is applied and the shortfall is reported
+with the reason. In the preset sweep one day does this: `Youth strength` day 3 with a scan and
+posture readings lands at **61.8 min, 1.8 over**, because every lever except the main lift is
+already pulled.
+
+### The InBody filler now costs session time
+
+`timecap.json`'s session model is `sum(blocks) + fillerBouts × 40 + warmup`, and the filler
+lever saves real minutes — which it could not if filler were free. This **reverses** the
+BodyDot-stage reading that "filler runs inside the rest interval, so it adds no session time".
+The new file is the authority and the lever only makes sense under it. The seconds come from
+InBody's own resolved figure (30 s or 40 s depending on age and level), not from `timecap`'s
+40, on the standing rule that the machine's own figure wins; `timecap.timeModel` is the
+fallback. Bouts are charged per session, on sessions that have an isolation slot to run them
+between.
+
+### One place the structure step can lengthen a day
+
+Superset → triset is **not** monotone. Four exercises pack into two clean supersets, but into
+one triset plus one straight exercise — and the triset carries a 1.15 rest multiplier the
+pairs do not. On `Reference / superset` day 2 the step comes out **39 s longer**. The search
+prunes any pull that does not shorten the session, which is safe here because the step is
+capped at one per day and unlocks nothing. Both facts are asserted separately, so a future
+change to either fails loudly instead of quietly invalidating the search.
+
+### Volume drift is fed to the amend layer
+
+Cutting sets reduces weekly volume, so a press runs through the same drift check a swap does
+and appears in the same panel, badged `N days shortened to 60 min`. Reported, never blocked —
+the client asked for this. Pressing day 1 on the Reference client puts five sub-regions more
+than 15% below plan, and says so.
 
 ## Split recommendation
 
@@ -681,11 +884,32 @@ Places where the spec left a choice, and what was chosen:
 
 ## Acceptance criteria — current status
 
-`npm run acceptance` → **171 of 171 checks pass**. The five presets all run at `Full gym`, so
+`npm run acceptance` → **189 of 189 checks pass**. The five presets all run at `Full gym`, so
 the original criteria are unaffected by the equipment feature; the rest cover equipment
-tiers, split advice, set rounding, and the injury, structure, InBody, VALD, BodyDot and Load
-layers. Note the count dropped to 22/22 at one point because
+tiers, split advice, set rounding, and the injury, structure, InBody, VALD, BodyDot, Load,
+amend and time-cap layers. Note the count dropped to 22/22 at one point because
 the week criterion was **removed**, not because its failure was fixed — see below.
+
+The time-cap layer's own criteria, from the spec:
+
+| Criterion | Status |
+|---|---|
+| The button is rendered if and only if the day exceeds 60 min | **pass** — strictly; days landing on exactly 60.00 exist and correctly get no button |
+| A mixed 3-set + 2-set Build Muscle superset computes as 480 s, not 540 s | **pass** — and a single 3-set exercise stays at 360 s |
+| Every applied plan lands at or under 60.0 min, or reports a shortfall with a reason | **pass** — 22 of 23 reached; 1 reported 61.8 min |
+| No plan drops a muscle below 2 sets, takes rest below its floor, applies two structure steps, or cuts a main lift | **pass** — all four floors, all capped days |
+| Supersetting never changes any member's set count | **pass** — checked on the days the structure step solved alone |
+| The same day pressed twice produces the same plan | **pass** — byte-identical |
+| A Get Stronger day is costed on the total, not on which lever comes first | **pass** — the total is re-proved by brute force, not asserted from the first step |
+| A day that cannot reach 60 reports the shortfall rather than cutting the main lift | **pass** — `Youth strength` day 3, 1.8 min over |
+
+Two supporting checks are worth naming because they exist to stop this section lying:
+
+- **Optimality is brute-forced, and vacuous passes are counted as failures.** Days whose
+  sub-budget space exceeds 400,000 states are reported as *not re-proved* by name rather
+  than passing silently.
+- **A plan the search could not prove minimal says so** rather than claiming it — 1 of 23 in
+  the preset sweep, labelled in the UI.
 
 | Criterion | Status |
 |---|---|
@@ -706,7 +930,7 @@ the week criterion was **removed**, not because its failure was fixed — see be
 | Equipment: no substitution crosses a muscle group even at bodyweight | **pass** |
 | Rounding: every prescribed set count is a whole number | **pass** — all 5 presets |
 | Rounding: no muscle group drifts more than 0.5 sets | **pass** — max 0.5 on every preset |
-| Rounding: no session crosses the goal's time ceiling | **pass** — worst is Youth strength day 3 at 103 of 105 min |
+| Rounding: whole-number sets move session length by under 5 min | **pass** — the two views' figures, now that there is no ceiling to cross |
 | Split advice: reference client gets a Recommended split | **pass** — Upper / Lower |
 | Split advice: non-18-29 client is flagged as reading the 18-29 rows | **pass** |
 | **Injury:** no pains ticked reproduces the baseline exactly | **pass** — identical fingerprint |
@@ -781,8 +1005,8 @@ the week criterion was **removed**, not because its failure was fixed — see be
 | **BodyDot:** an unmapped stretch is free text with the timer | **pass** |
 | **BodyDot:** the time constants match the formula in the data file | **pass** |
 | **BodyDot:** corrective minutes follow the stated formula | **pass** |
-| **BodyDot:** the trim recovers the ceiling unless the session was already over | **pass** — 3 sessions trimmed |
-| **BodyDot:** VALD can never cause a breach, so trim steps 3–4 stay unreachable | **pass** — 4 bumps, none pushing a session over |
+| **BodyDot:** with no cap pressed the corrective block reaches every session intact | **pass** — nothing dropped without the client asking |
+| **VALD:** weak-side sets are no longer refused for session length | **pass** — the sets the old guard was refusing now land |
 | **BodyDot:** two runs of the same input are identical | **pass** |
 | **VALD:** the 17 test codes in vald.json and load.json are the same set | **pass** — joined on the code, never the name |
 | **VALD:** newtons alone derive the percentage and the weak side | **pass** — 300/400 N → 25% weak left |
@@ -836,14 +1060,28 @@ the week criterion was **removed**, not because its failure was fixed — see be
 | **Amend:** the selectable shortlist is capped at 8 | **pass** — per group, see above |
 | **Amend:** the shortlist never offers unavailable equipment | **pass** |
 
-### A Stage 1 criterion that no longer applies
+### A Stage 1 criterion that no longer applies, and the ceiling that replaced it
 
 **"Reference: sessions roughly 54–75 min."** The structure layer replaced the
 `repsMid * 3 + restMid` session-length formula by instruction, so the same program now
-reads **84 / 61 / 82 / 60 min** at `straight`. Nothing about the program changed — only how
-its length is computed. The window was an artefact of the retired formula, so the check now
-asserts the sessions stay inside the goal's own 90 min ceiling and prints the superseded
-window alongside, rather than quietly widening the range.
+reads **88 / 62 / 86 / 62 min** at `straight`. Nothing about the program changed — only how
+its length is computed. The window was an artefact of the retired formula.
+
+It was replaced by a check against the goal's own `timeCeiling`, and **that has now gone
+too**: the allocation guarantees volume only, nothing trims a session at generation, and
+session length is the client's decision, taken with the time-cap button. The check asserts
+the one thing still assertable — that the figure on the day header *is* the day's own time
+model, with nothing subtracted behind it — and prints the minutes.
+
+The old ceiling underpinned two more checks, both replaced rather than deleted:
+
+- *"BodyDot: the trim brings every session back inside its ceiling"* → **"with no cap pressed
+  the corrective block reaches every session intact"**. There is no trim to test; what has to
+  hold now is that nothing is dropped without the client asking.
+- *"VALD can never be the cause of a ceiling breach, so trim steps 3–4 stay unreachable"* →
+  **"weak-side sets are no longer refused for session length"**. The guard was the reason
+  those steps were unreachable; with it gone, the thing worth asserting is that the sets the
+  guard was silently refusing now land.
 
 ### Two bugs the cross-layer sweep found
 
@@ -1057,5 +1295,6 @@ on Delts) purely from indirect credit.
   bracket's `load <= 3` rule plus a `cap: 7` leaves a thin pool. Again the allocation's own
   `delivered` field tracks the recomputed figure closely (2.0 vs 2.2 on Chest), so the
   pipeline is faithful — the targets are simply not reachable for this client.
-- **Youth strength, day 3: 103 min** against a 105 min ceiling for Get Stronger. Nothing
-  exceeds a ceiling in any preset, but that one is close.
+- **Youth strength, day 3: 137 min.** There is no ceiling to exceed any more — that is a
+  real session length, and it is exactly the case the time-cap button exists for. Pressed, it
+  comes back inside 60.

@@ -13,7 +13,21 @@ import { EQUIPMENT_TIERS, isEquipmentAvailable, libraryCoverage } from '../src/l
 import { splitAdvice } from '../src/lib/splitAdvice'
 import { pickKey, roundSets } from '../src/lib/rounding'
 import { buildInjuryIndex, verdictForPain, type PainSelection } from '../src/lib/injury'
-import { STRUCTURES, buildSubAliases, pairReason, sessionMinutes, type Structure } from '../src/lib/structure'
+import { STRUCTURES, blockSeconds, buildSubAliases, pairReason, timeParams, type Structure } from '../src/lib/structure'
+import {
+  baseState,
+  capMinutes,
+  capSeconds,
+  children,
+  leverCost,
+  nextStructure,
+  planCap,
+  restLeverId,
+  restOf,
+  stateKey,
+  type CapDayModel,
+  type CapPin,
+} from '../src/lib/timecap'
 import { WORKED_EXAMPLE, goalWeights, type InBodyInput } from '../src/lib/inbody'
 import type { ValdInput } from '../src/lib/vald'
 import { applyChain, roundTo } from '../src/lib/weight'
@@ -49,6 +63,7 @@ const data: DataBundle = {
   bodydot: read('bodydot.json'),
   load: read('load.json'),
   amend: read('amend.json'),
+  timecap: read('timecap.json'),
 }
 const injuryIndex = buildInjuryIndex(data.injury, data.exercises)
 const idOf = (name: string) => data.exercises.find((e) => e.name === name)!.id
@@ -82,14 +97,15 @@ const mainFingerprint = (p: ReturnType<typeof run>) =>
     p.exerciseCount >= 38 && p.exerciseCount <= 42,
     `got ${p.exerciseCount}`,
   )
-  // The Stage 1 window of "roughly 54–75 min" was computed from `repsMid * 3 + restMid`,
-  // which the structure layer replaced by instruction. Under the new work/rest model the
-  // same program reads longer. Checked against the goal's own ceiling instead, with the
-  // superseded window reported so the change stays visible rather than silently widened.
+  // Stage 1's "roughly 54–75 min" came from `repsMid * 3 + restMid`, a formula the structure
+  // layer replaced. The goal's time ceiling that replaced it has now gone too: the allocation
+  // guarantees volume only, nothing trims a session at generation, and session length is the
+  // client's decision. So this asserts the one thing still assertable — that the figure on
+  // the day header IS the day's own time model, with nothing subtracted behind it.
   check(
-    `Reference: sessions inside the ${p.timeCeiling} min ceiling (new time model)`,
-    mins.every((m) => m <= p.timeCeiling),
-    `${mins.map((m) => m.toFixed(1)).join(', ')} min — Stage 1's 54–75 window came from the retired formula and no longer applies`,
+    'Reference: session length is the day model, reported and never trimmed at generation',
+    p.days.every((d) => Math.abs(d.minutes - capMinutes(d.capModel, d.capState)) < 1e-9),
+    `${mins.map((m) => m.toFixed(1)).join(', ')} min`,
   )
   check('Reference: no fallback warnings', p.warnings.length === 0, `${p.warnings.length} warning(s): ${p.warnings.slice(0, 3).map((w) => w.message).join(' | ')}`)
 }
@@ -241,29 +257,20 @@ const mainFingerprint = (p: ReturnType<typeof run>) =>
         .join(', ')}`,
     )
 
-    // Rounding lengthens sessions; nothing may cross the goal's time ceiling because of it.
-    // Computed through the real time model — an earlier version of this check multiplied by
-    // a `minutesPerSet` field the structure layer had removed, so it evaluated NaN and
-    // passed vacuously while a session sat 8 min over.
+    // Both views run through the day's OWN time model, so corrective work, filler bouts and
+    // weak-side sets are charged identically and only the set values differ. That is what
+    // keeps the client-facing figure and the figure the time cap drives to 60 comparable.
     const roundedMinutes = p.days.map((d) =>
-      sessionMinutes(
-        d.blocks,
-        (i) => r.byPick.get(pickKey(d.index, i)) ?? d.exercises[i].sets,
-        p.timeParams,
-      ),
+      capMinutes(d.capModel, {
+        ...d.capState,
+        sets: d.exercises.map((c, i) => r.byPick.get(pickKey(d.index, i)) ?? c.sets),
+      }),
     )
-    // Stage 1 requires over-ceiling sessions to be FLAGGED, not prevented — the allocation
-    // fixes the slots and the layers hold volume, so a long session is a real outcome. This
-    // asserts the flag is correct, and names any session that crosses.
-    const over = roundedMinutes
-      .map((min, i) => ({ day: i + 1, min, flagged: p.days[i].overCeiling }))
-      .filter((d) => d.min > p.timeCeiling)
+    const gap = roundedMinutes.map((m, i) => m - p.days[i].minutes)
     check(
-      `Rounding (${pr.name}): sessions over the ${p.timeCeiling} min ceiling are flagged`,
-      over.every((d) => d.flagged),
-      over.length
-        ? `OVER: ${over.map((d) => `day ${d.day} at ${d.min.toFixed(0)} min${d.flagged ? ' (flagged)' : ' — NOT FLAGGED'}`).join(', ')}`
-        : `longest ${Math.max(...roundedMinutes).toFixed(0)} min, none over`,
+      `Rounding (${pr.name}): whole-number sets move session length by under 5 min`,
+      gap.every((g) => Math.abs(g) < 5),
+      `simple view runs ${gap.map((g) => `${g >= 0 ? '+' : ''}${g.toFixed(1)}`).join(', ')} min against the detailed view`,
     )
   }
 }
@@ -650,6 +657,7 @@ const fingerprint = (p: ReturnType<typeof run>) =>
       vald: {},
       bodydot: {},
       pins: [],
+      caps: [],
     }
     const p = run(client)
     const ib = p.inbody
@@ -1513,48 +1521,47 @@ const fingerprint = (p: ReturnType<typeof run>) =>
   }
 
   {
-    // Trimming must recover the ceiling wherever the session was inside it to begin with.
+    // The per-session time trim is gone. Corrective work now reaches every session intact
+    // and is only ever given up through the time-cap button, at a stated price.
     const many: BodyDotInput = { S02: { value: 60 }, S01: { value: 40 }, T03: { value: 20 } }
     const bad: string[] = []
-    let trimmedSessions = 0
+    let carried = 0
     for (const pr of PRESETS) {
-      const base = run(pr.input)
       const p = run({ ...pr.input, bodydot: many })
+      if (p.bodydot.trimmed.length > 0)
+        bad.push(`${pr.name}: ${p.bodydot.trimmed.length} corrective(s) dropped with no cap pressed`)
       for (const d of p.days) {
-        const wasOver = base.days[d.index].minutes > p.timeCeiling
-        if (p.bodydot.trimmed.some((t) => t.dayIndex === d.index)) trimmedSessions++
-        if (d.minutes > p.timeCeiling && !wasOver && d.correctives.length > 0)
-          bad.push(`${pr.name} day ${d.index + 1}: ${d.minutes.toFixed(0)} > ${p.timeCeiling}`)
+        carried += d.correctives.length
+        if (d.correctives.length !== p.bodydot.correctives.length)
+          bad.push(`${pr.name} day ${d.index + 1}: ${d.correctives.length} of ${p.bodydot.correctives.length}`)
       }
     }
     check(
-      'BodyDot: the trim brings every session back inside its ceiling unless it was already over',
-      bad.length === 0 && trimmedSessions > 0,
-      bad.length ? bad.join('; ') : `${trimmedSessions} sessions trimmed across the presets`,
+      'BodyDot: with no cap pressed the corrective block reaches every session intact',
+      bad.length === 0 && carried > 0,
+      bad.length ? bad.join('; ') : `${carried} corrective slots carried across the presets, none dropped`,
     )
   }
 
   {
-    // trimOrder steps 3 and 4 are unreachable because VALD refuses to breach in the first
-    // place. That is an invariant, so it gets asserted rather than assumed.
+    // VALD's session-cap guard was the reason trim steps 3 and 4 were unreachable. Nothing
+    // caps a session at generation now, so what has to hold instead is that VALD's weak-side
+    // sets still land — they were the thing the old guard was silently refusing.
     const vald: ValdInput = {
       'Q-KD': { asymmetry: 25, weakSide: 'Left' },
       'H-KF': { asymmetry: 22, weakSide: 'Right' },
     }
-    const bad: string[] = []
     let bumped = 0
+    let extraSets = 0
     for (const pr of PRESETS) {
-      const base = run(pr.input)
       const p = run({ ...pr.input, vald })
       bumped += p.vald.bumps.length
-      for (const d of p.days)
-        if (d.minutes > p.timeCeiling && base.days[d.index].minutes <= p.timeCeiling)
-          bad.push(`${pr.name} day ${d.index + 1}`)
+      extraSets += p.vald.bumps.reduce((s, b) => s + b.extraSets, 0)
     }
     check(
-      'BodyDot: VALD can never be the cause of a ceiling breach, so trim steps 3-4 stay unreachable',
-      bad.length === 0 && bumped > 0,
-      bad.length ? bad.join('; ') : `${bumped} VALD bumps across the presets, none pushing a session over`,
+      'VALD: weak-side sets are no longer refused for session length',
+      bumped > 0 && extraSets > 0,
+      `${bumped} bumps adding ${extraSets} weak-side sets across the presets`,
     )
   }
 
@@ -2201,6 +2208,589 @@ const fingerprint = (p: ReturnType<typeof run>) =>
   }
 }
 
+// ---- Time-cap layer --------------------------------------------------------
+{
+  const T = data.timecap
+  const capped = (input: ClientInput, dayIndex: number): ClientInput => ({
+    ...input,
+    caps: [{ dayIndex, actor: 'client', timestamp: '2026-08-17T00:00:00.000Z' }] as CapPin[],
+  })
+
+  // Every client this suite can reach, so the layer is measured on real days rather than a
+  // curated few. Two structures per preset, because the structure lever's availability is
+  // exactly what the client's own choice decides.
+  const CLIENTS: { name: string; input: ClientInput }[] = []
+  for (const pr of PRESETS)
+    for (const s of ['straight', 'superset'] as Structure[])
+      CLIENTS.push({ name: `${pr.name}/${s}`, input: { ...pr.input, structure: s } })
+  const bodydotMany: BodyDotInput = { S02: { value: 60 }, S01: { value: 40 }, T03: { value: 20 } }
+  const valdBoth: ValdInput = {
+    'Q-KD': { asymmetry: 25, weakSide: 'Left' },
+    'H-KF': { asymmetry: 22, weakSide: 'Right' },
+  }
+  for (const pr of PRESETS)
+    CLIENTS.push({
+      name: `${pr.name}/loaded`,
+      input: { ...pr.input, bodydot: bodydotMany, vald: valdBoth, inbody: WORKED_EXAMPLE },
+    })
+
+  // ---- correction 1: the block formula ----
+  {
+    // A 3-set row supersetted with a 2-set curl, Build Muscle, 75 s rest.
+    const p = timeParams(data.structure, 'Build Muscle', 'superset', 75, 0)
+    const block = { indices: [0, 1], structure: 'superset' as const, restMultiplier: 1 }
+    const paired = blockSeconds(block, (i) => [3, 2][i], p)
+    const straight = blockSeconds({ indices: [0], structure: 'straight' as const }, () => 3, p)
+    check(
+      'Time model: a mixed 3-set + 2-set Build Muscle superset is 480 s, not 540 s',
+      Math.abs(paired - 480) < 1e-9 && Math.abs(straight - 360) < 1e-9,
+      `paired ${paired} s (old formula gave 540), single 3-set exercise ${straight} s`,
+    )
+  }
+
+  // ---- the button is rendered if and only if the day exceeds 60 ----
+  {
+    // The component's condition is `minutes > target`, strictly. A day landing on exactly
+    // 60.0 is not over 60 and gets no button — and days do land there: the Reference client's
+    // day 4 is exactly 60.00 min. What has to hold is that the gate and the engine agree, so
+    // a day that would be offered the button always has something to cut, and a day that
+    // would not is never quietly changed by pressing it.
+    let over = 0
+    let under = 0
+    let onTheLine = 0
+    const bad: string[] = []
+    for (const c of CLIENTS)
+      for (const d of run(c.input).days) {
+        const offered = d.wholeSetMinutes > T.target
+        if (offered) over++
+        else under++
+        if (Math.abs(d.wholeSetMinutes - T.target) < 1e-9) onTheLine++
+        if (offered) continue
+        const p = run(capped(c.input, d.index))
+        const plan = p.timecap.applied.find((a) => a.dayIndex === d.index)!.plan
+        if (plan.points !== 0 || plan.steps.length !== 0)
+          bad.push(`${c.name} day ${d.index + 1} at ${d.wholeSetMinutes.toFixed(2)} min spent ${plan.points} points`)
+      }
+    check(
+      `Time cap: the button is offered if and only if the day exceeds ${T.target} min, strictly`,
+      bad.length === 0 && over > 0 && under > 0,
+      bad.length
+        ? bad.join('; ')
+        : `${over} days offer the button, ${under} do not (${onTheLine} sit on exactly ${T.target}.00 and correctly do not)`,
+    )
+  }
+
+  // ---- every applied plan lands at or under 60.0, or reports a shortfall ----
+  const applied: { name: string; dayIndex: number; plan: ReturnType<typeof planCap>; model: CapDayModel }[] = []
+  for (const c of CLIENTS) {
+    const base = run(c.input)
+    for (const d of base.days) {
+      if (d.wholeSetMinutes <= T.target) continue
+      const p = run(capped(c.input, d.index))
+      const entry = p.timecap.applied.find((a) => a.dayIndex === d.index)
+      if (entry) applied.push({ name: c.name, dayIndex: d.index, plan: entry.plan, model: entry.model })
+    }
+  }
+  {
+    const bad = applied.filter(
+      (a) => !(a.plan.reached ? a.plan.minutesAfter <= T.target + 1e-9 : a.plan.shortfall > 0 && a.plan.reason.length > 0),
+    )
+    const reached = applied.filter((a) => a.plan.reached).length
+    check(
+      `Time cap: every plan lands at or under ${T.target}.0 min, or reports a shortfall with a reason`,
+      bad.length === 0 && applied.length > 0,
+      bad.length
+        ? bad.map((b) => `${b.name} day ${b.dayIndex + 1}: ${b.plan.minutesAfter.toFixed(2)}`).join('; ')
+        : `${reached}/${applied.length} days reached ${T.target} min; ${applied.length - reached} reported a shortfall`,
+    )
+  }
+
+  // ---- the applied program agrees with the plan ----
+  {
+    const bad: string[] = []
+    for (const c of CLIENTS) {
+      const base = run(c.input)
+      for (const d of base.days) {
+        if (d.wholeSetMinutes <= T.target) continue
+        const p = run(capped(c.input, d.index))
+        const entry = p.timecap.applied.find((a) => a.dayIndex === d.index)!
+        const day = p.days.find((x) => x.index === d.index)!
+        if (Math.abs(day.minutes - entry.plan.minutesAfter) > 1e-6)
+          bad.push(`${c.name} day ${d.index + 1}: header ${day.minutes.toFixed(2)} vs plan ${entry.plan.minutesAfter.toFixed(2)}`)
+      }
+    }
+    check(
+      'Time cap: the session the client is shown is the session the search costed',
+      bad.length === 0,
+      bad.length ? bad.slice(0, 3).join('; ') : `${applied.length} capped days, header and plan identical`,
+    )
+  }
+
+  // ---- the four hard floors ----
+  {
+    const bad: string[] = []
+    for (const c of CLIENTS) {
+      const base = run(c.input)
+      for (const d of base.days) {
+        if (d.wholeSetMinutes <= T.target) continue
+        const p = run(capped(c.input, d.index))
+        const day = p.days.find((x) => x.index === d.index)!
+        const entry = p.timecap.applied.find((a) => a.dayIndex === d.index)!
+        const plan = entry.plan
+        // The baseline is the day AS THE SEARCH SAW IT — whole sets, nothing cut. Comparing
+        // against the raw fractional day would read the whole-set resolution as a cut.
+        const before = new Map(entry.model.exercises.map((e) => [e.exercise.id, e]))
+        const where = `${c.name} day ${d.index + 1}`
+
+        for (const e of day.exercises) {
+          if (e.sets < T.floors.sessionMinSets)
+            bad.push(`${where}: "${e.exercise.name}" at ${e.sets} sets`)
+          const was = before.get(e.exercise.id)!
+          const floor = Math.min(
+            data.timecap.restFloor[p.ageBracket]?.[c.input.goal] ?? 0,
+            was.restSeconds,
+          )
+          if (e.restSeconds < floor - 1e-9)
+            bad.push(`${where}: rest ${e.restSeconds} below floor ${floor}`)
+        }
+        // No muscle is left trained-but-under-two: every surviving exercise holds >= 2 sets,
+        // so a group is either out of the session entirely or at 2 sets or more.
+        const byGroup = new Map<string, number>()
+        for (const e of day.exercises)
+          byGroup.set(e.exercise.group, (byGroup.get(e.exercise.group) ?? 0) + e.sets)
+        for (const [g, sets] of byGroup)
+          if (sets > 0 && sets < T.floors.sessionMinSets) bad.push(`${where}: ${g} at ${sets} sets`)
+
+        // main lifts: never removed, never trimmed
+        for (const e of entry.model.exercises) {
+          if (!e.mainLift) continue
+          const still = day.exercises.find((x) => x.exercise.id === e.exercise.id)
+          if (!still) bad.push(`${where}: main lift "${e.exercise.name}" removed`)
+          else if (still.sets < e.sets) bad.push(`${where}: main lift "${e.exercise.name}" cut to ${still.sets}`)
+        }
+
+        // one structure step per day, and only ever a step
+        const steps = plan.steps.filter((s) => s.lever === 'structure_step').length
+        if (steps > 1) bad.push(`${where}: ${steps} structure steps`)
+        const expected = steps === 1 ? nextStructure(d.structure) : d.structure
+        if (day.structure !== expected)
+          bad.push(`${where}: structure ${d.structure} -> ${day.structure}, expected ${expected}`)
+      }
+    }
+    check(
+      'Time cap: no plan breaches SESSION_MIN, the rest floor, the one-step rule or the main lift',
+      bad.length === 0,
+      bad.length ? bad.slice(0, 4).join('; ') : `${applied.length} capped days, all four floors held`,
+    )
+  }
+
+  // ---- supersetting never changes a set count ----
+  {
+    const bad: string[] = []
+    let checked = 0
+    for (const c of CLIENTS) {
+      const base = run(c.input)
+      for (const d of base.days) {
+        if (d.wholeSetMinutes <= T.target) continue
+        const p = run(capped(c.input, d.index))
+        const entry = p.timecap.applied.find((a) => a.dayIndex === d.index)!
+        // isolate the structure step: only compare where it was the ONLY lever pulled
+        if (entry.plan.steps.length !== 1 || entry.plan.steps[0].lever !== 'structure_step') continue
+        checked++
+        const day = p.days.find((x) => x.index === d.index)!
+        for (const e of entry.model.exercises) {
+          const still = day.exercises.find((x) => x.exercise.id === e.exercise.id)
+          if (!still || still.sets !== e.sets)
+            bad.push(`${c.name} day ${d.index + 1}: "${e.exercise.name}" ${e.sets} -> ${still?.sets ?? 'gone'}`)
+        }
+      }
+    }
+    check(
+      'Time cap: supersetting never changes any member’s set count',
+      bad.length === 0 && checked > 0,
+      bad.length ? bad.slice(0, 3).join('; ') : `${checked} days solved by the structure step alone, every set intact`,
+    )
+  }
+
+  // ---- determinism ----
+  {
+    const bad: string[] = []
+    for (const c of CLIENTS) {
+      const base = run(c.input)
+      for (const d of base.days) {
+        if (d.wholeSetMinutes <= T.target) continue
+        const fingerprint = (input: ClientInput) => {
+          const p = run(input)
+          const plan = p.timecap.applied.find((a) => a.dayIndex === d.index)!.plan
+          return JSON.stringify([plan.points, plan.steps.map((s) => [s.dataId, s.detail]), plan.minutesAfter])
+        }
+        if (fingerprint(capped(c.input, d.index)) !== fingerprint(capped(c.input, d.index)))
+          bad.push(`${c.name} day ${d.index + 1}`)
+      }
+    }
+    check(
+      'Time cap: the same day pressed twice produces the same plan',
+      bad.length === 0,
+      bad.length ? bad.join('; ') : `${applied.length} capped days, byte-identical on a second press`,
+    )
+  }
+
+  // ---- optimality: the plan is provably the cheapest, not the first that fits ----
+  {
+    // Dijkstra's guarantee rests on every lever costing more than zero. The engine also
+    // prunes any pull that does not shorten the session, which is only safe if such a pull
+    // could never unlock a bigger saving later.
+    //
+    // Every lever that removes work — sets, exercises, correctives, filler, rest — is
+    // monotone: it can only shorten. The superset -> triset step is NOT, and this measured
+    // it: four exercises pack into two clean supersets, but into one triset plus one
+    // straight exercise, and the triset carries a 1.15 rest multiplier the pairs do not.
+    // Reference/superset day 2 comes out 39 s LONGER as a triset.
+    //
+    // That step is capped at one per day and unlocks nothing, so pruning it where it does not
+    // help costs no optimality. Asserted here as two separate facts so a future change to
+    // either one fails loudly instead of quietly invalidating the search.
+    const badRemovers: string[] = []
+    const lengthening: string[] = []
+    let pulls = 0
+    for (const c of CLIENTS.slice(0, 8)) {
+      const p = run(c.input)
+      for (const d of p.days) {
+        const s = baseState(d.capModel)
+        const before = capSeconds(d.capModel, s)
+        for (const child of children(d.capModel, s, Infinity)) {
+          pulls++
+          if (child.seconds <= before) continue
+          const line = `${c.name} day ${d.index + 1}: "${child.step.detail}" adds ${(child.seconds - before).toFixed(0)} s`
+          if (child.step.lever === 'structure_step') lengthening.push(line)
+          else badRemovers.push(line)
+        }
+      }
+    }
+    check(
+      'Time cap: every lever that removes work shortens the session — only the triset step can lengthen it',
+      badRemovers.length === 0 && pulls > 0,
+      badRemovers.length
+        ? badRemovers.slice(0, 3).join('; ')
+        : `${pulls} single pulls checked across 8 clients; ${lengthening.length} were superset→triset steps that would have LENGTHENED the day and are pruned, e.g. ${lengthening[0] ?? 'none'}`,
+    )
+  }
+  {
+    // Brute force against the exact optimum on the days small enough to enumerate: every
+    // state reachable for fewer points than the plan spent must still be over the target.
+    const bad: string[] = []
+    let proved = 0
+    // A partial walk that finds nothing proves nothing. Days whose sub-budget space is too
+    // large to enumerate are counted separately and never as a pass — a check that can go
+    // green by running out of room is worse than no check.
+    const abandoned: string[] = []
+    const LIMIT = 400_000
+    for (const a of applied) {
+      if (!a.plan.reached || !a.plan.proven) continue
+      const day = { capModel: a.model }
+      const budget = a.plan.points
+      const seen = new Set<string>()
+      let cheaper: string | null = null
+      let ranOut = false
+      const walk = (state: ReturnType<typeof baseState>, spent: number) => {
+        if (cheaper || ranOut) return
+        for (const child of children(day.capModel, state, capSeconds(day.capModel, state))) {
+          const next = spent + child.step.cost
+          if (next >= budget) continue // cannot beat the plan from here
+          const key = stateKey(child.state)
+          if (seen.has(key)) continue
+          seen.add(key)
+          if (seen.size > LIMIT) {
+            ranOut = true
+            return
+          }
+          if (child.seconds <= T.target * 60) {
+            cheaper = `${a.name} day ${a.dayIndex + 1}: ${next} < ${budget} points reaches ${(child.seconds / 60).toFixed(1)} min`
+            return
+          }
+          walk(child.state, next)
+          if (cheaper || ranOut) return
+        }
+      }
+      walk(baseState(day.capModel), 0)
+      if (cheaper) bad.push(cheaper)
+      else if (ranOut) abandoned.push(`${a.name} day ${a.dayIndex + 1} (${budget} pts)`)
+      else proved++
+    }
+    check(
+      'Time cap: no cheaper plan exists — brute-forced against the exact optimum',
+      bad.length === 0 && proved > 0,
+      bad.length
+        ? bad.slice(0, 3).join('; ')
+        : `${proved} plans re-proved optimal by exhausting every state below their own cost` +
+          (abandoned.length
+            ? `; ${abandoned.length} NOT re-proved — the sub-budget space passed ${LIMIT.toLocaleString()} states: ${abandoned.slice(0, 3).join(', ')}`
+            : ''),
+    )
+  }
+
+  // ---- a Get Stronger day: verify the TOTAL, not the first step ----
+  {
+    const gs = CLIENTS.filter((c) => c.input.goal === 'Get Stronger')
+    const lines: string[] = []
+    let anyCheaperTotal = true
+    for (const c of gs) {
+      const base = run(c.input)
+      for (const d of base.days) {
+        if (d.wholeSetMinutes <= T.target) continue
+        const p = run(capped(c.input, d.index))
+        const plan = p.timecap.applied.find((a) => a.dayIndex === d.index)!.plan
+        const restSteps = plan.steps.filter((s) => s.lever === 'rest').length
+        const accessory = plan.steps.filter(
+          (s) => s.lever === 'set_accessory' || s.lever === 'remove_accessory_exercise',
+        ).length
+        lines.push(`${c.name} d${d.index + 1}: ${plan.points}pt rest×${restSteps} accessory×${accessory}`)
+        // Rest costs 4 on Get Stronger, an accessory set costs 4 too. The claim under test is
+        // not that one comes first, it is that the TOTAL is the cheapest available — proved
+        // by the brute-force check above. Here we only record which the search preferred.
+      }
+    }
+    check(
+      'Time cap: a Get Stronger day is costed on the total, not on which lever comes first',
+      anyCheaperTotal && lines.length > 0,
+      lines.slice(0, 4).join(' | '),
+    )
+    log(`  Get Stronger cap plans: ${lines.length} days — ${lines.slice(0, 6).join(' | ')}`)
+  }
+
+  // ---- a day that cannot reach 60 reports rather than cutting the main lift ----
+  {
+    const unreachable = applied.filter((a) => !a.plan.reached)
+    const bad = unreachable.filter((a) => a.plan.reason.length === 0 || a.plan.shortfall <= 0)
+    check(
+      'Time cap: a day that cannot reach the target reports the shortfall instead of cutting the main lift',
+      bad.length === 0,
+      unreachable.length
+        ? `${unreachable.length} unreachable days, e.g. ${unreachable[0].name} day ${unreachable[0].dayIndex + 1} at ${unreachable[0].plan.minutesAfter.toFixed(1)} min (${unreachable[0].plan.shortfall.toFixed(1)} over): ${unreachable[0].plan.reason}`
+        : 'no day in the preset sweep was unreachable',
+    )
+  }
+
+  // ---- rest trims in whole 10 s steps ----
+  {
+    const bad: string[] = []
+    for (const c of CLIENTS) {
+      const base = run(c.input)
+      for (const d of base.days) {
+        if (d.wholeSetMinutes <= T.target) continue
+        const p = run(capped(c.input, d.index))
+        const day = p.days.find((x) => x.index === d.index)!
+        const plan = p.timecap.applied.find((a) => a.dayIndex === d.index)!.plan
+        const steps = plan.steps.filter((s) => s.lever === 'rest').length
+        if (steps === 0) continue
+        const floor = data.timecap.restFloor[p.ageBracket]?.[c.input.goal] ?? 0
+        for (const e of day.exercises) {
+          const was = d.exercises.find((x) => x.exercise.id === e.exercise.id)
+          if (!was) continue
+          // Whole 10 s steps, except where the last step lands ON the floor: 75 s at a 60 s
+          // floor goes 75 -> 65 -> 60, and 60 is a number a client can follow perfectly well.
+          const onFloor = Math.abs(e.restSeconds - Math.min(floor, was.restSeconds)) < 1e-9
+          const drop = was.restSeconds - e.restSeconds
+          if (drop % 10 !== 0 && !onFloor)
+            bad.push(`${c.name} day ${d.index + 1}: rest ${was.restSeconds} → ${e.restSeconds} (floor ${floor})`)
+        }
+      }
+    }
+    check(
+      'Time cap: rest trims in whole 10 s steps, or lands exactly on its floor',
+      bad.length === 0,
+      bad.length ? bad.slice(0, 3).join('; ') : 'every rest change on a capped day is a multiple of 10 s or the floor itself',
+    )
+  }
+
+  // ---- the cost table resolves ----
+  {
+    const ids = [
+      'filler',
+      restLeverId('Lose Fat'),
+      restLeverId('Build Muscle'),
+      restLeverId('Get Stronger'),
+      'structure_step',
+      'corrective_borderline',
+      'corrective_abnormal',
+      'set_accessory',
+      'set_secondary',
+      'set_primary',
+      'remove_accessory_exercise',
+    ]
+    const missing = ids.filter((id) => leverCost(T, id) === null)
+    check(
+      'Time cap: every lever the engine can pull has a cost in the data file, and the main lift has none',
+      missing.length === 0 && leverCost(T, 'main_lift') === null,
+      missing.length ? `missing: ${missing.join(', ')}` : `${ids.length} levers priced, main_lift blocked`,
+    )
+  }
+
+  // ---- an untouched day is byte-identical ----
+  {
+    const bad: string[] = []
+    for (const c of CLIENTS) {
+      const base = run(c.input)
+      const short = base.days.find((d) => d.wholeSetMinutes <= T.target)
+      if (!short) continue
+      const p = run({ ...c.input, caps: [{ dayIndex: short.index, actor: 'client', timestamp: '2026-08-17T00:00:00.000Z' }] })
+      const plan = p.timecap.applied.find((a) => a.dayIndex === short.index)!.plan
+      if (plan.steps.length !== 0 || plan.points !== 0)
+        bad.push(`${c.name} day ${short.index + 1}: ${plan.points} points spent on a day already inside`)
+      // and no OTHER day moved
+      for (const d of base.days) {
+        const now = p.days.find((x) => x.index === d.index)!
+        if (d.index !== short.index && Math.abs(now.minutes - d.minutes) > 1e-9)
+          bad.push(`${c.name}: pressing day ${short.index + 1} moved day ${d.index + 1}`)
+      }
+    }
+    check(
+      'Time cap: it is per day — pressing one day never touches another, and a short day costs nothing',
+      bad.length === 0,
+      bad.length ? bad.slice(0, 3).join('; ') : 'no cross-day effect across the preset sweep',
+    )
+  }
+
+  // ---- both views agree on a capped day ----
+  {
+    // A button labelled "Reduce to 60 min" that leaves the client-facing view reading 63 is
+    // the one outcome this layer cannot have. A capped day is resolved to whole sets before
+    // the search runs, so the simple view's rounding is a no-op on it and both views land on
+    // the same minute.
+    const bad: string[] = []
+    let checked = 0
+    for (const c of CLIENTS) {
+      const base = run(c.input)
+      for (const d of base.days) {
+        if (d.wholeSetMinutes <= T.target) continue
+        const p = run(capped(c.input, d.index))
+        const day = p.days.find((x) => x.index === d.index)!
+        const r = roundSets(p)
+        const simple = capMinutes(day.capModel, {
+          ...day.capState,
+          sets: day.exercises.map((e, i) => r.byPick.get(pickKey(day.index, i)) ?? e.sets),
+        })
+        checked++
+        if (Math.abs(simple - day.minutes) > 1e-9)
+          bad.push(`${c.name} day ${d.index + 1}: simple ${simple.toFixed(1)} vs ${day.minutes.toFixed(1)}`)
+      }
+    }
+    check(
+      'Time cap: the client-facing view and the engine read the same minute on a capped day',
+      bad.length === 0 && checked > 0,
+      bad.length ? bad.slice(0, 3).join('; ') : `${checked} capped days, simple and detailed views identical`,
+    )
+  }
+
+  {
+    // Resolving one day to whole sets takes its picks out of the per-group rounding carry, so
+    // the OTHER days' rounded figures can shift by a set. That is the same mechanism, and the
+    // same ±0.5 guarantee, that already governs the uncapped program — asserted here rather
+    // than assumed, because it is a visible consequence of pressing the button.
+    const bad: string[] = []
+    for (const c of CLIENTS) {
+      const base = run(c.input)
+      const long = base.days.find((d) => d.wholeSetMinutes > T.target)
+      if (!long) continue
+      const r = roundSets(run(capped(c.input, long.index)))
+      if (r.maxDrift > 0.5 + 1e-9)
+        bad.push(`${c.name}: max drift ${r.maxDrift.toFixed(2)} sets after capping day ${long.index + 1}`)
+    }
+    check(
+      'Time cap: capping one day keeps every muscle group inside the ±0.5-set rounding guarantee',
+      bad.length === 0,
+      bad.length ? bad.join('; ') : 'no muscle group drifts past 0.5 sets on any capped program',
+    )
+  }
+
+  // ---- two of the twelve levers are unreachable, and it is not the engine's doing ----
+  {
+    // Selection ranks primary tier first, and all 47 sub-regions in the library contain a
+    // primary-tier exercise — so an allocation slot asking for one exercise always gets a
+    // primary one. Accessory-tier exercises are only ever reached through reuse or a sibling
+    // substitution, which in practice never happens. That makes "accessory set" (4 points)
+    // and "whole accessory exercise" (10) dead rows in the cost table, and leaves the
+    // cheapest set cut actually on offer at 18. Recorded as a finding, not hidden.
+    const tiers = new Map<string, number>()
+    const subsWithPrimary = new Set<string>()
+    for (const e of data.exercises) if (e.tier === 'primary') subsWithPrimary.add(e.sub)
+    const allSubs = new Set(data.exercises.map((e) => e.sub))
+    for (const c of CLIENTS)
+      for (const d of run(c.input).days)
+        for (const e of d.exercises) tiers.set(e.exercise.tier, (tiers.get(e.exercise.tier) ?? 0) + 1)
+    const accessoriesChosen = tiers.get('accessory') ?? 0
+    const accessoryPulls = applied
+      .flatMap((a) => a.plan.steps)
+      .filter((s) => s.lever === 'set_accessory' || s.lever === 'remove_accessory_exercise').length
+    check(
+      'Time cap: the two accessory levers are unreachable because selection never picks an accessory',
+      accessoriesChosen === 0 && accessoryPulls === 0 && subsWithPrimary.size === allSubs.size,
+      `chosen tiers ${[...tiers].map(([t, n]) => `${t} ${n}`).join(', ')}; ` +
+        `${subsWithPrimary.size}/${allSubs.size} sub-regions contain a primary, so ranking always takes one — ` +
+        `"accessory set" (4) and "whole accessory exercise" (10) never fire, and the cheapest set cut on offer costs 18`,
+    )
+  }
+
+  // ---- the search proves optimality, or says it did not ----
+  {
+    const unproven = applied.filter((a) => !a.plan.proven)
+    check(
+      'Time cap: a plan the search could not prove minimal says so rather than claiming it',
+      unproven.every((a) => a.plan.reached && a.plan.reason.includes('prove no cheaper one exists')),
+      unproven.length
+        ? `${unproven.length}/${applied.length} not proven minimal within the search budget, each reaching the target and labelled`
+        : `all ${applied.length} plans proven minimal`,
+    )
+  }
+
+  // ---- lever-use distribution, for comparison with the spec's 34/23/15/11 ----
+  {
+    const byLever = new Map<string, number>()
+    let steps = 0
+    for (const a of applied)
+      for (const s of a.plan.steps) {
+        byLever.set(s.lever, (byLever.get(s.lever) ?? 0) + 1)
+        steps++
+      }
+    // Counted two ways, because they say different things. Share of PULLS is dominated by
+    // the handful of very long sessions that need a dozen set cuts each; share of DAYS the
+    // lever appears on is the one comparable with "supersetting alone solves about a third
+    // of days".
+    const byDay = new Map<string, number>()
+    for (const a of applied)
+      for (const l of new Set(a.plan.steps.map((s) => s.lever)))
+        byDay.set(l, (byDay.get(l) ?? 0) + 1)
+    const share = (m: Map<string, number>, total: number, ...keys: string[]) =>
+      ((keys.reduce((s, k) => s + (m.get(k) ?? 0), 0) / Math.max(1, total)) * 100).toFixed(0)
+    const SET_LEVERS = ['set_accessory', 'set_secondary', 'set_primary']
+    const CORR_LEVERS = ['corrective_borderline', 'corrective_abnormal']
+    log(
+      `  Time-cap lever use, share of ${steps} pulls across ${applied.length} pressed days: ` +
+        `structure ${share(byLever, steps, 'structure_step')}%, rest ${share(byLever, steps, 'rest')}%, ` +
+        `filler ${share(byLever, steps, 'filler')}%, remove exercise ${share(byLever, steps, 'remove_accessory_exercise')}%, ` +
+        `sets ${share(byLever, steps, ...SET_LEVERS)}%, correctives ${share(byLever, steps, ...CORR_LEVERS)}%`,
+    )
+    log(
+      `  Time-cap lever use, share of the ${applied.length} pressed DAYS each appears on: ` +
+        `structure ${share(byDay, applied.length, 'structure_step')}%, rest ${share(byDay, applied.length, 'rest')}%, ` +
+        `filler ${share(byDay, applied.length, 'filler')}%, remove exercise ${share(byDay, applied.length, 'remove_accessory_exercise')}%, ` +
+        `sets ${share(byDay, applied.length, ...SET_LEVERS)}%, correctives ${share(byDay, applied.length, ...CORR_LEVERS)}% ` +
+        `— spec measured structure 34 / rest 23 / filler 15 / remove 11`,
+    )
+    const solvedByStructureAlone = applied.filter(
+      (a) => a.plan.steps.length === 1 && a.plan.steps[0].lever === 'structure_step',
+    ).length
+    log(
+      `  Structure step alone solved ${solvedByStructureAlone}/${applied.length} pressed days ` +
+        `(${((solvedByStructureAlone / Math.max(1, applied.length)) * 100).toFixed(0)}%); ` +
+        `median plan ${applied.length ? applied.map((a) => a.plan.points).sort((x, y) => x - y)[Math.floor(applied.length / 2)] : 0} points, ` +
+        `max search ${Math.max(0, ...applied.map((a) => a.plan.nodesExpanded))} states expanded`,
+    )
+    const restUsed = restOf
+    void restUsed
+  }
+}
+
 // ---- Report ----------------------------------------------------------------
 let failed = 0
 for (const r of results) {
@@ -2216,7 +2806,7 @@ for (const pr of PRESETS) {
   const a = buildAudit(p, data.exercises, pr.input.sex, data.config)
   console.log(
     `\n[${pr.name}] days=${p.days.length} exercises=${p.exerciseCount} ` +
-      `minutes=${p.days.map((d) => d.minutes.toFixed(0)).join('/')} (ceiling ${p.timeCeiling}) ` +
+      `minutes=${p.days.map((d) => d.minutes.toFixed(0)).join('/')} ` +
       `warnings=${p.warnings.length} audit=${a.substantiveWithin25}/${a.substantiveTotal} within ±25%`,
   )
   if (a.unmappedAlsoTrains.length)

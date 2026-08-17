@@ -34,12 +34,23 @@ import {
 import {
   correctiveSeconds,
   evaluateBodyDot,
-  trimToCeiling,
   type BodyDotResult,
   type CorrectiveSlot,
   type CorrectiveStretch,
 } from './bodydot'
+import {
+  baseState,
+  capMinutes,
+  planCap,
+  restOf,
+  structureOf,
+  type CapDayModel,
+  type CapPin,
+  type CapState,
+  type TimeCapResult,
+} from './timecap'
 import { evaluateLoad, type LoadResult } from './weight'
+import { pickKey, roundSets } from './rounding'
 import {
   INERT_AMEND,
   amendType,
@@ -52,7 +63,6 @@ import {
   type RetiredPin,
 } from './amend'
 import {
-  blockSeconds,
   buildSubAliases,
   formBlocks,
   timeParams,
@@ -82,6 +92,8 @@ export interface ChosenExercise {
   sets: number
   reps: string
   rest: string
+  /** what the time model charges, as a single number — `rest` above may be a range */
+  restSeconds: number
   /** why this pick is not a clean first-choice, if applicable */
   flag?: 'reused' | 'substituted'
   /** injury-layer verdict for this exercise against the ticked pains */
@@ -104,12 +116,31 @@ export interface GeneratedDay {
   blocks: Block[]
   /** sum of sets across the day — corrective slots are additive and stay out of it */
   totalSets: number
+  /** session length from the RAW allocation sets, fractions and all */
   minutes: number
-  overCeiling: boolean
+  /**
+   * Session length from the whole-number sets the client is actually prescribed. This is the
+   * figure both views show and the figure the time cap drives to 60 — a 3.5-set slot is
+   * performed as 3 or 4, never as 3.5, so it is the only honest reading of "how long is this
+   * session". Filled once the whole program is known, since the rounding carries per muscle
+   * group across days.
+   */
+  wholeSetMinutes: number
   /** BodyDot corrective work, appended after the main work; same block in every session */
   correctives: CorrectiveSlot[]
   correctiveStretches: CorrectiveStretch[]
   correctiveMinutes: number
+  /** InBody high-TBW filler bouts performed this session; each one costs session time */
+  fillerBouts: number
+  /** how this session is performed, after any time-cap structure step */
+  structure: Structure
+  /**
+   * Everything the time-cap button needs, and the single implementation of session length —
+   * `minutes` above is `capMinutes(capModel, capState)`, so the figure the client reads and
+   * the figure the search drives to 60 cannot diverge.
+   */
+  capModel: CapDayModel
+  capState: CapState
 }
 
 export type WarningKind = 'reuse' | 'substitute' | 'dropped' | 'pain-dropped'
@@ -137,8 +168,7 @@ export interface Program {
   prescription: PrescriptionEntry
   prescriptionKey: string
   exerciseCount: number
-  timeCeiling: number
-  /** exposed so the simple view can recompute session length from its whole-number sets */
+  /** the program-level work/rest/transition figures, for anything that needs to re-time it */
   timeParams: TimeParams
   structure: Structure
   /** how much lighter this structure runs, as a fraction (triset -0.08) */
@@ -154,6 +184,8 @@ export interface Program {
   load: LoadResult
   /** pins applied, held back or retired, plus the volume drift they caused */
   amend: AmendResult
+  /** per-day "Reduce to 60 min" plans; inert until a day is pressed */
+  timecap: TimeCapResult
   /** verdict per exercise id across the whole library, for the audit and the UI */
   verdicts: Map<number, ExerciseVerdict>
   /** everything the injury layer took out of the pool, for the removals panel */
@@ -415,6 +447,7 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
             sets: setsPerExercise,
             reps: rx.reps,
             rest: rx.rest,
+            restSeconds: config.restMid[input.goal],
             verdict: verdicts.get(pinned.id) ?? { verdict: 'OK', byPain: [] },
             pinned: { equipment: pin.equipment, actor: pin.actor },
           })
@@ -505,6 +538,7 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
           sets: setsPerExercise,
           reps: rx.reps,
           rest: rx.rest,
+          restSeconds: config.restMid[input.goal],
           flag,
           verdict: verdicts.get(pick.id) ?? { verdict: 'OK', byPain: [] },
         })
@@ -531,9 +565,6 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
   // Runs after selection because it solves sets against the exercises actually chosen. It
   // never changes the split, the frequency, the slot count or the selection — only the
   // values in those slots, plus a forced structure on high-fat regions.
-  /** seconds already committed to a day by VALD, so the ceiling guard stays honest */
-  const pendingSeconds = new Map<number, number>()
-
   const allChosen = selected.flatMap((d) => d.chosen)
   const inbody = evaluateInBody(input.inbody, data.inbody, {
     statedGoal: input.goal,
@@ -592,28 +623,17 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
       })),
     }))
 
-    const work = data.structure.workSeconds[input.goal] ?? 40
-    const restSec = inbody.active ? inbody.rest : config.restMid[input.goal]
-    const ceilingSeconds = (config.timeCeiling[input.goal] - config.warmupMinutes) * 60
-
     const { bumps, unfilled, conflicts } = allocate(valdFindings, allocDays, {
       data: data.vald,
       library: exercises,
       injuryUnilateral,
       // A swapped-in exercise has to clear exactly what a selected one cleared.
       canSwapIn: (ex) => !isRemoved(ex) && isEligible(ex, input.level, ageBr, input.equipment),
-      // Extra weak-side sets are real local fatigue and count in full against the session
-      // ceiling. The app's only per-session ceiling is the goal's time ceiling.
-      wouldBreachSessionCap: (dayIndex, extraSets, newUnilateralSlots) => {
-        const day = selected[dayIndex]
-        if (!day) return true
-        const base = day.chosen.reduce((s, c) => s + c.sets * (work + restSec), 0)
-        const spent = pendingSeconds.get(dayIndex) ?? 0
-        const addition = extraSets * (work + restSec) + newUnilateralSlots * work
-        const ok = base + spent + addition <= ceilingSeconds
-        if (ok) pendingSeconds.set(dayIndex, spent + addition)
-        return !ok
-      },
+      // No session-length cap is imposed at generation any more. Session length is the
+      // client's decision, taken with the time-cap button, and the weak-side sets a real
+      // asymmetry earns are not the place to make it silently for them. The callback stays
+      // on the VALD contract so a caller that does want a cap can still impose one.
+      wouldBreachSessionCap: () => false,
     })
 
     // Apply the swaps back onto the chosen slots, then record the bumps.
@@ -640,113 +660,32 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
     }
   }
 
-  const days: GeneratedDay[] = selected.map(({ index: dayIndex, label, chosen }) => {
-    // InBody replaces the goal-keyed values on each slot. Sets come from the resolved
-    // per-group figure; reps and rest from the blended, floored numbers.
-    if (inbody.active) {
+  // InBody replaces the goal-keyed values on each slot. Sets come from the resolved
+  // per-group figure; reps and rest from the blended, floored numbers. Applied before
+  // BodyDot, which reads the set counts the rest of the program has actually settled on.
+  if (inbody.active) {
+    for (const { chosen } of selected) {
       for (const c of chosen) {
         const resolved = inbody.sets[c.exercise.group]
         if (resolved !== undefined) c.sets = resolved
-        c.reps = onRule4(c) ? String(inbody.reps[1]) : `${inbody.reps[0]}-${inbody.reps[1]}`
-        c.rest = String(onRule4(c) ? rule4Rest : inbody.rest)
         c.rule4 = onRule4(c)
+        c.reps = c.rule4 ? String(inbody.reps[1]) : `${inbody.reps[0]}-${inbody.reps[1]}`
+        c.restSeconds = c.rule4 ? rule4Rest : inbody.rest
+        c.rest = String(c.restSeconds)
       }
     }
-
-    const pairable = chosen.map((c) => ({
-      exercise: c.exercise,
-      sets: c.sets,
-      corrective: correctiveIds.has(c.exercise.id),
-    }))
-
-    // The structure is now per region: rule-4 slots are supersetted while the rest keep the
-    // client's own choice, so blocks are formed within each pool and merged.
-    let blocks: Block[]
-    if (inbody.active && rule4Groups.size > 0) {
-      const rule4Idx = chosen.map((c, i) => (onRule4(c) ? i : -1)).filter((i) => i >= 0)
-      const otherIdx = chosen.map((_, i) => i).filter((i) => !rule4Idx.includes(i))
-      const remap = (subset: number[], b: Block): Block => ({
-        ...b,
-        indices: b.indices.map((i) => subset[i]),
-      })
-      blocks = [
-        ...formBlocks(
-          rule4Idx.map((i) => pairable[i]),
-          { ...structureCtx, structure: data.inbody.rule4.structure as Structure },
-        ).map((b) => remap(rule4Idx, b)),
-        ...formBlocks(
-          otherIdx.map((i) => pairable[i]),
-          structureCtx,
-        ).map((b) => remap(otherIdx, b)),
-      ].sort((a, b) => a.indices[0] - b.indices[0])
-    } else {
-      blocks = formBlocks(pairable, structureCtx)
-    }
-
-    // Step 8 — load is per slot, not per program: two slots in one session can carry
-    // different adjustments because their structures differ.
-    for (const b of blocks) {
-      const blockLoad = b.indices.length > 1 ? (data.structure.loadAdjustment[b.structure] ?? 0) : 0
-      // Resolve the block's own figures once, here, so the time model and the table can
-      // never disagree about what structure a given block is being charged as.
-      b.loadAdjustment = blockLoad
-      b.restMultiplier =
-        b.indices.length > 1 ? (data.structure.restMultiplier[b.structure] ?? 1) : 1
-      for (const i of b.indices) {
-        // A rule-4 slot carries the fat-burning structure by instruction, so it takes that
-        // load adjustment whether or not a legal partner happened to be found for it.
-        const structureLoad = chosen[i].rule4 ? data.inbody.rule4.loadAdjustment : blockLoad
-        chosen[i].loadAdjustment = inbody.active
-          ? slotLoad(data.inbody, inbody, structureLoad)
-          : structureLoad
-      }
-    }
-
-    const totalSets = chosen.reduce((s, c) => s + c.sets, 0)
-    // Per-block timing, since one region can be supersetted while another is straight.
-    const minutes =
-      blocks.reduce((sum, b) => {
-        const isRule4 = onRule4(chosen[b.indices[0]])
-        // blockSeconds now takes the multiplier off the block itself, so only the InBody
-        // rest override has to be threaded through here.
-        const params = inbody.active
-          ? { ...tp, restSeconds: isRule4 ? rule4Rest : inbody.rest }
-          : tp
-        return sum + blockSeconds(b, (i) => chosen[i].sets, params)
-      }, 0) /
-        60 +
-      config.warmupMinutes +
-      // Step 6 — a unilateral set works both sides before the rest interval, so it costs
-      // 2 x work + 1 x rest, not 2 x (work + rest). Extra weak-side sets cost work + rest.
-      chosen.reduce((sum, c) => {
-        if (!c.unilateral) return sum
-        const work = data.structure.workSeconds[input.goal] ?? 40
-        const restSec = inbody.active ? inbody.rest : config.restMid[input.goal]
-        return sum + (c.sets * work + c.unilateral.extraSets * (work + restSec)) / 60
-      }, 0)
-
-    return {
-      index: dayIndex,
-      label,
-      exercises: chosen,
-      blocks,
-      totalSets,
-      minutes,
-      overCeiling: minutes > config.timeCeiling[input.goal],
-      correctives: [] as CorrectiveSlot[],
-      correctiveStretches: [] as CorrectiveStretch[],
-      correctiveMinutes: 0,
-    }
-  })
+  }
 
   // ---- BodyDot ------------------------------------------------------------
-  // Runs last, after every other layer, and is the only machine here that ADDS slots.
-  // Everything above is already fixed: it appends corrective work to the end of each
-  // session and never touches the split, the selection, or anyone else's sets.
+  // The only machine here that ADDS slots. Everything above it is already fixed: it appends
+  // corrective work to the end of each session and never touches the split, the selection,
+  // or anyone else's sets. It no longer trims that work to a time ceiling — nothing caps a
+  // session at generation now, and dropping a corrective is a lever the client pulls
+  // knowingly with the time-cap button, at a price the file states.
   const bodydot = evaluateBodyDot(input.bodydot, data.bodydot, {
     library: exercises,
     // What the rest of the program is doing, as one decisive whole number.
-    standardSets: modalSets(days.flatMap((d) => d.exercises.map((c) => c.sets))),
+    standardSets: modalSets(selected.flatMap((d) => d.chosen.map((c) => c.sets))),
     reps: inbody.active ? `${inbody.reps[0]}-${inbody.reps[1]}` : rx.reps,
     // Precedence: injury outranks a corrective, so a removed exercise is never added back.
     removed: isRemoved,
@@ -756,25 +695,185 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
       !ex.avoidAges.includes(ageBr) && isEquipmentAvailable(ex, input.equipment),
   })
 
-  if (bodydot.active) {
-    const ceilingSeconds = config.timeCeiling[input.goal] * 60
-    for (const day of days) {
-      const { correctives, stretches, dropped } = trimToCeiling(
-        bodydot.correctives,
-        bodydot.stretches,
-        data.bodydot,
-        day.minutes * 60,
-        ceilingSeconds,
-      )
-      day.correctives = correctives
-      day.correctiveStretches = stretches
-      day.correctiveMinutes =
-        correctiveSeconds(correctives, stretches, data.bodydot.stretchSeconds) / 60
-      day.minutes += day.correctiveMinutes
-      day.overCeiling = day.minutes > config.timeCeiling[input.goal]
-      for (const what of dropped) bodydot.trimmed.push({ dayIndex: day.index, what })
+  // ---- day construction ---------------------------------------------------
+  // Blocks are re-formed rather than patched whenever the day changes, because the time-cap
+  // layer can both remove an exercise and step the structure — either one changes which
+  // exercises pair with which, and a patched block list would be quietly wrong.
+
+  /** blocks over `list`, with indices into `list` */
+  const buildBlocks = (list: ChosenExercise[], structure: Structure): Block[] => {
+    const pairable = list.map((c) => ({
+      exercise: c.exercise,
+      sets: c.sets,
+      corrective: correctiveIds.has(c.exercise.id),
+    }))
+    // The structure is per region: rule-4 slots are supersetted while the rest keep the
+    // client's own choice, so blocks are formed within each pool and merged. A time-cap
+    // structure step moves the client's pool only — InBody outranks it and has already
+    // fixed the rule-4 pool at supersets.
+    if (inbody.active && rule4Groups.size > 0) {
+      const rule4Idx = list.map((c, i) => (onRule4(c) ? i : -1)).filter((i) => i >= 0)
+      const otherIdx = list.map((_, i) => i).filter((i) => !rule4Idx.includes(i))
+      const remap = (subset: number[], b: Block): Block => ({
+        ...b,
+        indices: b.indices.map((i) => subset[i]),
+      })
+      return [
+        ...formBlocks(
+          rule4Idx.map((i) => pairable[i]),
+          { ...structureCtx, structure: data.inbody.rule4.structure as Structure },
+        ).map((b) => remap(rule4Idx, b)),
+        ...formBlocks(
+          otherIdx.map((i) => pairable[i]),
+          { ...structureCtx, structure },
+        ).map((b) => remap(otherIdx, b)),
+      ].sort((a, b) => a.indices[0] - b.indices[0])
+    }
+    return formBlocks(pairable, { ...structureCtx, structure })
+  }
+
+  /**
+   * Step 8 — load is per slot, not per program: two slots in one session can carry different
+   * adjustments because their structures differ. Resolved onto the block once, here, so the
+   * time model and the table can never disagree about what structure a block is charged as.
+   */
+  const applyBlockFigures = (list: ChosenExercise[], blocks: Block[]) => {
+    for (const b of blocks) {
+      const blockLoad = b.indices.length > 1 ? (data.structure.loadAdjustment[b.structure] ?? 0) : 0
+      b.loadAdjustment = blockLoad
+      b.restMultiplier =
+        b.indices.length > 1 ? (data.structure.restMultiplier[b.structure] ?? 1) : 1
+      for (const i of b.indices) {
+        // A rule-4 slot carries the fat-burning structure by instruction, so it takes that
+        // load adjustment whether or not a legal partner happened to be found for it.
+        const structureLoad = list[i].rule4 ? data.inbody.rule4.loadAdjustment : blockLoad
+        list[i].loadAdjustment = inbody.active
+          ? slotLoad(data.inbody, inbody, structureLoad)
+          : structureLoad
+      }
     }
   }
+
+  /** REST_FLOOR[age][goal], with the beginner floor on top — a floor can only rise. */
+  const capRestFloor = Math.max(
+    data.timecap.restFloor[ageBr]?.[input.goal] ?? 0,
+    input.level === 'Beginner' ? (data.timecap.beginnerRestFloor[input.goal] ?? 0) : 0,
+  )
+
+  /** which lever pays for dropping a corrective — its own finding's tier */
+  const correctiveTier = (slot: CorrectiveSlot): 'borderline' | 'abnormal' =>
+    bodydot.findings.find((f) => slot.codes.includes(f.code))?.tier === 'borderline'
+      ? 'borderline'
+      : 'abnormal'
+
+  const buildCapModel = (
+    list: ChosenExercise[],
+    structure: Structure,
+    correctives: CorrectiveSlot[],
+    stretches: CorrectiveStretch[],
+    fillerBouts: number,
+  ): CapDayModel => {
+    const blockCache = new Map<string, Block[]>()
+    return {
+      goal: input.goal,
+      workSeconds: data.structure.workSeconds[input.goal] ?? 40,
+      transitionSeconds: data.structure.transitionSeconds,
+      warmupMinutes: config.warmupMinutes,
+      restMultiplier: data.structure.restMultiplier,
+      baseStructure: structure,
+      restFloor: capRestFloor,
+      fillerBoutSeconds: inbody.filler?.seconds ?? data.timecap.timeModel.fillerBoutSeconds,
+      stretchSeconds: data.bodydot.stretchSeconds,
+      exercises: list.map((c) => ({
+        exercise: c.exercise,
+        tier: c.exercise.tier,
+        mainLift: c.exercise.mainLift,
+        sets: c.sets,
+        restSeconds: c.restSeconds,
+        unilateralExtraSets: c.unilateral?.extraSets ?? 0,
+      })),
+      correctives: correctives.map((c) => ({
+        tier: correctiveTier(c),
+        label: c.prescribedName,
+        sets: c.sets,
+        codes: c.codes,
+      })),
+      stretches: stretches.map((s) => ({ codes: s.codes })),
+      fillerBouts,
+      blocksFor: (s, alive) => {
+        const key = `${s}|${alive.map((a) => (a ? 1 : 0)).join('')}`
+        const hit = blockCache.get(key)
+        if (hit) return hit
+        const keep = list.map((_, i) => i).filter((i) => alive[i])
+        const blocks = buildBlocks(
+          keep.map((i) => list[i]),
+          s,
+        ).map((b) => ({ ...b, indices: b.indices.map((j) => keep[j]) }))
+        blockCache.set(key, blocks)
+        return blocks
+      },
+      data: data.timecap,
+      minSets: data.timecap.floors.sessionMinSets,
+    }
+  }
+
+  const buildDay = (
+    dayIndex: number,
+    label: string,
+    chosen: ChosenExercise[],
+    structure: Structure,
+    correctives: CorrectiveSlot[],
+    stretches: CorrectiveStretch[],
+    fillerOverride?: number,
+  ): GeneratedDay => {
+    const blocks = buildBlocks(chosen, structure)
+    applyBlockFigures(chosen, blocks)
+    // High-TBW filler is prescribed on isolation slots, so a session without one runs none.
+    const fillerBouts =
+      fillerOverride ??
+      (inbody.filler && chosen.some((c) => c.exercise.type === 'isolation')
+        ? inbody.filler.bouts
+        : 0)
+    const capModel = buildCapModel(chosen, structure, correctives, stretches, fillerBouts)
+    const capState = baseState(capModel)
+    return {
+      index: dayIndex,
+      label,
+      exercises: chosen,
+      blocks,
+      totalSets: chosen.reduce((s, c) => s + c.sets, 0),
+      minutes: capMinutes(capModel, capState),
+      wholeSetMinutes: 0, // filled by refreshWholeSetMinutes once every day exists
+      correctives,
+      correctiveStretches: stretches,
+      correctiveMinutes:
+        correctiveSeconds(correctives, stretches, data.bodydot.stretchSeconds) / 60,
+      fillerBouts,
+      structure,
+      capModel,
+      capState,
+    }
+  }
+
+  const days: GeneratedDay[] = selected.map(({ index, label, chosen }) =>
+    buildDay(index, label, chosen, input.structure, bodydot.correctives, bodydot.stretches),
+  )
+
+  /**
+   * The rounding carries an error per muscle group across the whole week, so every day's
+   * whole-set length depends on every other day's. Recomputed rather than patched whenever
+   * the program changes underneath it.
+   */
+  const refreshWholeSetMinutes = () => {
+    const r = roundSets({ days })
+    for (const d of days)
+      d.wholeSetMinutes = capMinutes(d.capModel, {
+        ...d.capState,
+        sets: d.exercises.map((c, i) => r.byPick.get(pickKey(d.index, i)) ?? c.sets),
+      })
+    return r
+  }
+  refreshWholeSetMinutes()
 
   // ---- Load ---------------------------------------------------------------
   // Purely an annotation layer: it reads the newton figures and attaches a weight range to
@@ -787,6 +886,92 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
     vald: data.vald,
   })
 
+  // ---- time cap ------------------------------------------------------------
+  // Runs last, after injury, all three machines, the structure selector and any amends, and
+  // it only ever removes. The plan is recomputed from the untouched day on every generation,
+  // so pressing the same day twice produces the same plan.
+  const capPins = input.caps ?? []
+  const capApplied: TimeCapResult['applied'] = []
+  const capRetired: { pin: CapPin; reason: string }[] = []
+
+  // A day the client asked to shorten is resolved to its whole-number sets before the search
+  // runs, so the search drives the number they actually read down to 60. Targeting the raw
+  // fractional figure instead left the day reading 63 min under a button labelled "Reduce to
+  // 60 min", which is the one outcome this layer cannot have.
+  const rounding = capPins.length > 0 ? roundSets({ days }) : null
+
+  for (const pin of capPins) {
+    const at = days.findIndex((d) => d.index === pin.dayIndex)
+    if (at < 0) {
+      capRetired.push({
+        pin,
+        reason: `day ${pin.dayIndex + 1} no longer exists in this program`,
+      })
+      continue
+    }
+    if (rounding) {
+      const d = days[at]
+      d.exercises.forEach((c, i) => {
+        c.sets = rounding.byPick.get(pickKey(d.index, i)) ?? c.sets
+      })
+      days[at] = buildDay(
+        d.index,
+        d.label,
+        d.exercises,
+        d.structure,
+        d.correctives,
+        d.correctiveStretches,
+        d.fillerBouts,
+      )
+    }
+    const day = days[at]
+    const model = day.capModel
+    const plan = planCap(model)
+    const { state } = plan
+
+    const keep = day.exercises.map((_, i) => i).filter((i) => state.alive[i])
+    const chosen = keep.map((i) => day.exercises[i])
+    keep.forEach((i, k) => {
+      chosen[k].sets = state.sets[i]
+      // A trimmed rest is a single number the client can follow on a clock, not a range.
+      if (state.restStep > 0) {
+        chosen[k].restSeconds = restOf(model, state, i)
+        chosen[k].rest = String(chosen[k].restSeconds)
+      }
+    })
+
+    const correctives = day.correctives.filter((_, i) => state.correctivesAlive[i])
+    const liveCodes = new Set(correctives.flatMap((c) => c.codes))
+    const stretches = day.correctiveStretches.filter((s) => s.codes.some((c) => liveCodes.has(c)))
+    for (const c of day.correctives.filter((_, i) => !state.correctivesAlive[i]))
+      bodydot.trimmed.push({
+        dayIndex: day.index,
+        what: `${c.prescribedName} (${c.indicators.join(', ')})`,
+      })
+
+    days[at] = buildDay(
+      day.index,
+      day.label,
+      chosen,
+      structureOf(model, state),
+      correctives,
+      stretches,
+      state.fillerBouts,
+    )
+    // `model` is the day as the search saw it — whole sets, nothing cut yet. Kept so the
+    // plan can be re-derived and re-proved from outside.
+    capApplied.push({ dayIndex: day.index, plan, model })
+  }
+
+  if (capApplied.length > 0) refreshWholeSetMinutes()
+
+  const timecap: TimeCapResult = {
+    active: capApplied.length + capRetired.length > 0,
+    target: data.timecap.target,
+    applied: capApplied,
+    retired: capRetired,
+  }
+
   // Pins whose slot no longer exists — the split or the frequency changed underneath them.
   for (const [sid, pin] of pinBySlot)
     if (!seenSlots.has(sid))
@@ -796,7 +981,8 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
       })
 
   const anyPin = appliedPins.length + pendingPins.length + retiredPins.length > 0
-  const amend: AmendResult = !anyPin
+  // A time cap that cut sets moved weekly volume too, so it is measured by the same check.
+  const amend: AmendResult = !anyPin && capApplied.length === 0
     ? INERT_AMEND
     : {
         active: true,
@@ -805,7 +991,7 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
         retired: retiredPins,
         // Reported, never blocked — the client asked for this. Unlimited type C amends let
         // someone rebuild the program into something the engine never validated.
-        drift: appliedPins.length
+        drift: appliedPins.length || capApplied.length
           ? driftRows(
               block,
               days.flatMap((d) =>
@@ -832,7 +1018,6 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
       prescription: rx,
       prescriptionKey: pKey,
       exerciseCount: days.reduce((s, d) => s + d.exercises.length, 0),
-      timeCeiling: config.timeCeiling[input.goal],
       timeParams: tp,
       structure: input.structure,
       loadAdjustment: data.structure.loadAdjustment[input.structure] ?? 0,
@@ -842,6 +1027,7 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
       bodydot,
       load,
       amend,
+      timecap,
       verdicts,
       removedByPain,
     },

@@ -1,0 +1,169 @@
+{
+ "target": 60,
+ "showButtonWhen": "day as generated exceeds 60 minutes; otherwise not rendered at all",
+ "strict": true,
+ "levers": [
+  {
+   "id": "filler",
+   "cost": 1,
+   "label": "InBody jump-rope filler",
+   "step": "one bout",
+   "compromises": "conditioning filler from the body-composition scan; transient by design"
+  },
+  {
+   "id": "rest_LF",
+   "cost": 1,
+   "goal": "Lose Fat",
+   "step": "10 s",
+   "floor": "REST_FLOOR",
+   "compromises": "short rest IS the Lose Fat method, so trimming it costs little"
+  },
+  {
+   "id": "rest_BM",
+   "cost": 2,
+   "goal": "Build Muscle",
+   "step": "10 s",
+   "floor": "REST_FLOOR",
+   "compromises": "some hypertrophy stimulus"
+  },
+  {
+   "id": "rest_GS",
+   "cost": 4,
+   "goal": "Get Stronger",
+   "step": "10 s",
+   "floor": "REST_FLOOR",
+   "compromises": "rest is the training variable on a strength program"
+  },
+  {
+   "id": "structure_step",
+   "cost": 2,
+   "step": "straight->superset or superset->triset",
+   "limit": "once per day",
+   "compromises": "how the session is paced, not what is in it - every set survives"
+  },
+  {
+   "id": "corrective_borderline",
+   "cost": 3,
+   "compromises": "stops addressing a borderline posture finding"
+  },
+  {
+   "id": "set_accessory",
+   "cost": 4,
+   "limit": "never below SESSION_MIN of 2",
+   "compromises": "weekly volume for that sub-region; comes off ONE exercise, not a whole block"
+  },
+  {
+   "id": "set_secondary",
+   "cost": 8,
+   "limit": "never below 2",
+   "compromises": "weekly volume, more substantive exercise"
+  },
+  {
+   "id": "remove_accessory_exercise",
+   "cost": 10,
+   "compromises": "removes that sub-region from the session"
+  },
+  {
+   "id": "corrective_abnormal",
+   "cost": 12,
+   "compromises": "stops addressing a real postural finding"
+  },
+  {
+   "id": "set_primary",
+   "cost": 18,
+   "limit": "never below 2",
+   "compromises": "serious volume"
+  },
+  {
+   "id": "main_lift",
+   "cost": 30,
+   "blocked": true,
+   "compromises": "NEVER cut automatically"
+  }
+ ],
+ "search": {
+  "type": "uniform-cost (Dijkstra)",
+  "order": [
+   "points spent",
+   "fewer steps",
+   "insertion order"
+  ],
+  "optimal": "every lever costs > 0, so the queue cannot pop a state cheaper than one already popped",
+  "rebuildLeversEachNode": true
+ },
+ "timeModel": {
+  "workSeconds": {
+   "Lose Fat": 35,
+   "Build Muscle": 45,
+   "Get Stronger": 30
+  },
+  "restMultiplier": {
+   "straight": 1.0,
+   "superset": 1.0,
+   "triset": 1.15
+  },
+  "transitionSeconds": 15,
+  "fillerBoutSeconds": 40,
+  "warmupMinutes": 8,
+  "block": "S = sum of members' sets; R = max of members' sets; block_seconds = work x S + (S - R) x 15 + R x rest x REST_MULT",
+  "session": "sum(blocks) + fillerBouts x 40 + warmup"
+ },
+ "floors": {
+  "rest": "REST_FLOOR[goal][age], plus REST_FLOOR_BEGINNER for a beginner; also floor the INCOMING rest before searching",
+  "sessionMinSets": 2,
+  "mainLift": "never cut automatically",
+  "structureStepsPerDay": 1
+ },
+ "restFloor": {
+  "6-12": {
+   "Lose Fat": 45,
+   "Build Muscle": 60,
+   "Get Stronger": 60
+  },
+  "13-17": {
+   "Lose Fat": 30,
+   "Build Muscle": 60,
+   "Get Stronger": 90
+  },
+  "18-29": {
+   "Lose Fat": 30,
+   "Build Muscle": 60,
+   "Get Stronger": 120
+  },
+  "30-39": {
+   "Lose Fat": 30,
+   "Build Muscle": 60,
+   "Get Stronger": 120
+  },
+  "40-49": {
+   "Lose Fat": 40,
+   "Build Muscle": 60,
+   "Get Stronger": 120
+  },
+  "50-64": {
+   "Lose Fat": 45,
+   "Build Muscle": 75,
+   "Get Stronger": 150
+  },
+  "65+": {
+   "Lose Fat": 60,
+   "Build Muscle": 90,
+   "Get Stronger": 150
+  }
+ },
+ "beginnerRestFloor": {
+  "Lose Fat": 45,
+  "Build Muscle": 60,
+  "Get Stronger": 120
+ },
+ "onUnreachable": "apply the shortest safe version, report the real number and the shortfall, and say why - never silently, never by cutting a protected lever",
+ "persistence": "per-day pin, same model as the amend layer",
+ "driftCheck": "cutting sets reduces weekly volume; feed to the amend layer's drift check",
+ "openItems": {
+  "costTable": "the twelve cost values are judgement, not evidence",
+  "target": "60 is hard-coded; a different target would be a second button, not a slider",
+  "repeats": "PROPOSED this week only, with a 'make this permanent' option",
+  "trainerVisibility": "PROPOSED yes - clearest early signal that a program does not fit a life",
+  "undoOneStep": "the plan is itemised, so 'keep my rest, take the set instead' is cheap"
+ }
+}

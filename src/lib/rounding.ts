@@ -35,7 +35,8 @@ export function pickKey(dayIndex: number, position: number) {
   return `${dayIndex}:${position}`
 }
 
-export function roundSets(program: Program): Rounding {
+/** Only `days` is read, so the time-cap layer can round a program that is still being built. */
+export function roundSets(program: Pick<Program, 'days'>): Rounding {
   const picks = program.days.flatMap((day, dayIndex) =>
     day.exercises.map((c, position) => ({ key: pickKey(dayIndex, position), dayIndex, c })),
   )

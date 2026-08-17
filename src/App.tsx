@@ -5,7 +5,7 @@ import { buildAudit } from './lib/audit'
 import { roundSets } from './lib/rounding'
 import { PRESETS } from './lib/presets'
 import { ClientPanel } from './components/ClientPanel'
-import { ProgramPanel } from './components/ProgramPanel'
+import { ProgramPanel, type CapWiring } from './components/ProgramPanel'
 import { MedicalDisclaimer, PainPanel } from './components/PainPanel'
 import { InBodyPanel } from './components/InBodyPanel'
 import { ValdPanel } from './components/ValdPanel'
@@ -16,6 +16,7 @@ import { BodyDotPanel } from './components/BodyDotPanel'
 import { LoadPanel } from './components/LoadPanel'
 import { PinsPanel, type AmendWiring } from './components/AmendPanel'
 import type { Pin } from './lib/amend'
+import type { CapPin } from './lib/timecap'
 import { AuditPanel } from './components/AuditPanel'
 import { EQUIPMENT_TIERS, type EquipmentTier } from './lib/equipment'
 import type { PainSelection, Side } from './lib/injury'
@@ -120,6 +121,23 @@ function pinsFromUrl(q: URLSearchParams): Pin[] | null {
     })
 }
 
+/** caps=0;client;1755300000000,2;client;1755300000000 — one pressed day per entry */
+function capsFromUrl(q: URLSearchParams): CapPin[] | null {
+  const raw = q.get('caps')
+  if (raw === null) return null
+  return raw
+    .split(',')
+    .filter(Boolean)
+    .map((entry) => {
+      const [dayIndex, actor, timestamp] = entry.split(';')
+      return {
+        dayIndex: Number(dayIndex),
+        actor: actor || 'client',
+        timestamp: new Date(Number(timestamp) || 0).toISOString(),
+      }
+    })
+}
+
 function inputFromUrl(): ClientInput {
   const q = new URLSearchParams(window.location.search)
   const presetName = q.get('preset')
@@ -134,6 +152,7 @@ function inputFromUrl(): ClientInput {
         vald: valdFromUrl(q) ?? p.input.vald,
         bodydot: bodydotFromUrl(q) ?? p.input.bodydot,
         pins: pinsFromUrl(q) ?? p.input.pins,
+        caps: capsFromUrl(q) ?? p.input.caps,
         structure: STRUCTURES.includes(q.get('structure') as Structure)
           ? (q.get('structure') as Structure)
           : p.input.structure,
@@ -155,6 +174,7 @@ function inputFromUrl(): ClientInput {
     vald: valdFromUrl(q) ?? base.vald,
     bodydot: bodydotFromUrl(q) ?? base.bodydot,
     pins: pinsFromUrl(q) ?? base.pins,
+    caps: capsFromUrl(q) ?? base.caps,
     structure: STRUCTURES.includes(q.get('structure') as Structure)
       ? (q.get('structure') as Structure)
       : base.structure,
@@ -178,7 +198,15 @@ export default function App() {
   useEffect(() => {
     const q = new URLSearchParams(
       Object.entries(input)
-        .filter(([k]) => k !== 'pains' && k !== 'inbody' && k !== 'vald' && k !== 'bodydot' && k !== 'pins')
+        .filter(
+          ([k]) =>
+            k !== 'pains' &&
+            k !== 'inbody' &&
+            k !== 'vald' &&
+            k !== 'bodydot' &&
+            k !== 'pins' &&
+            k !== 'caps',
+        )
         .map(([k, v]) => [k, String(v)]) as [string, string][],
     )
     const pains = Object.entries(input.pains)
@@ -225,6 +253,13 @@ export default function App() {
           )
           .join(','),
       )
+    if (input.caps.length)
+      q.set(
+        'caps',
+        input.caps
+          .map((c) => [c.dayIndex, c.actor, Date.parse(c.timestamp) || 0].join(';'))
+          .join(','),
+      )
     q.set('view', view)
     window.history.replaceState(null, '', `?${q.toString()}`)
   }, [input, view])
@@ -252,7 +287,10 @@ export default function App() {
       level: input.level,
     })
     const options = STRUCTURES.map((s) => {
-      const r = generate(data, { ...input, structure: s })
+      // Without `caps`, deliberately. Every capped day reads 60 min whatever the structure,
+      // so leaving them in would flatten the very comparison this preview exists to make —
+      // and it would re-run the time-cap search three more times on every keystroke.
+      const r = generate(data, { ...input, structure: s, caps: [] })
       const minutes = r.ok
         ? r.program.days.reduce((sum, d) => sum + d.minutes, 0) / r.program.days.length
         : 0
@@ -262,7 +300,7 @@ export default function App() {
   }, [data, input, bracket])
 
   // pains / inbody / vald are objects, so they need comparing by value, not identity.
-  const OBJECT_FIELDS: (keyof ClientInput)[] = ['pains', 'inbody', 'vald', 'bodydot', 'pins']
+  const OBJECT_FIELDS: (keyof ClientInput)[] = ['pains', 'inbody', 'vald', 'bodydot', 'pins', 'caps']
   const objectKey = (p: ClientInput) =>
     OBJECT_FIELDS.map((f) => JSON.stringify(Object.entries(p[f] ?? {}).sort())).join('|')
   const activePreset =
@@ -304,6 +342,14 @@ export default function App() {
       }
     : undefined
 
+  // A press is a per-day pin too: the generator re-runs holding it, so the cut survives a
+  // re-test or a new scan the same way an amend does.
+  const capWiring: CapWiring = {
+    caps: input.caps,
+    setCaps: (caps) => setInput({ ...input, caps }),
+    actor: 'client',
+  }
+
   const programOrError = result?.ok ? (
     <ProgramPanel
       program={result.program}
@@ -311,6 +357,7 @@ export default function App() {
       view={view}
       injury={data.injury}
       amend={amendWiring}
+      cap={capWiring}
     />
   ) : (
     <div className="rounded border-2 border-red-300 bg-red-50 px-4 py-3">

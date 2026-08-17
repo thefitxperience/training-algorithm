@@ -519,58 +519,14 @@ export function correctiveSeconds(
   return work + stretches.length * stretchSeconds
 }
 
-export interface TrimResult {
-  correctives: CorrectiveSlot[]
-  stretches: CorrectiveStretch[]
-  dropped: string[]
-}
-
 /**
- * Step 7. `trimOrder` in the data file names four things to give up, in order:
+ * Step 7's per-session trim is gone. `trimOrder` in the data file named four things to give
+ * up against a time ceiling, and there is no longer a ceiling at generation to give them up
+ * to: the allocation guarantees volume only, and session length is the client's decision,
+ * taken with the time-cap button.
  *
- *   1. InBody high-TBW filler bouts — filler runs inside the rest interval, so it adds no
- *      session time and trimming it would recover none. Nothing to give up here.
- *   2. BodyDot correctives, lowest rank first — the only actionable step, implemented below.
- *   3. VALD conversion, 4. VALD extra weak-side sets — VALD refuses any bump that would
- *      breach the ceiling, so it can never be the cause of a breach. The acceptance suite
- *      asserts that, which is what keeps steps 3 and 4 unreachable rather than forgotten.
- *
- * The loop is still ordered over all four so a future change to any of those invariants
- * puts the step back in play instead of quietly skipping it.
+ * Corrective work is still the thing given up when a session is too long — but at a stated
+ * price (3 points borderline, 12 abnormal), inside a search that weighs it against every
+ * other lever, rather than silently and always first. `bodydot.trimmed` is still populated,
+ * now by whatever the time cap dropped. See lib/timecap.ts.
  */
-export function trimToCeiling(
-  correctives: CorrectiveSlot[],
-  stretches: CorrectiveStretch[],
-  data: BodyDotData,
-  baseSeconds: number,
-  ceilingSeconds: number,
-): TrimResult {
-  let slots = [...correctives]
-  let held = [...stretches]
-  const dropped: string[] = []
-
-  const over = () =>
-    baseSeconds + correctiveSeconds(slots, held, data.stretchSeconds) > ceilingSeconds
-
-  for (const step of data.trimOrder) {
-    if (!over()) break
-    if (!step.startsWith('BodyDot correctives')) continue
-    while (over() && slots.length > 0) {
-      // Lowest rank first — the least urgent finding gives way. Every exercise inside one
-      // finding shares that finding's rank, so ties break on placement order: `>=` takes the
-      // LAST such slot, which is the one the allocation added last. Taking the first would
-      // strip an entry's primary exercise and keep its afterthought.
-      let worst = 0
-      for (let i = 1; i < slots.length; i++) if (slots[i].rank >= slots[worst].rank) worst = i
-      const gone = slots[worst]
-      slots = slots.filter((_, i) => i !== worst)
-      dropped.push(`${gone.prescribedName} (${gone.indicators.join(', ')})`)
-      // a stretch accompanies its block, so it goes when nothing of that block is left
-      held = held.filter((s) =>
-        s.codes.some((code) => slots.some((sl) => sl.codes.includes(code))),
-      )
-    }
-  }
-
-  return { correctives: slots, stretches: held, dropped }
-}

@@ -31,3 +31,6 @@ Test inbody*.JPG
 Test inbody*.jpg
 VALD export*.xlsx
 dynamo-test-export*.xlsx
+
+# Tesseract drops its language model beside the process that used it
+*.traineddata

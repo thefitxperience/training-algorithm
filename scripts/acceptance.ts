@@ -29,6 +29,8 @@ import {
   type CapPin,
 } from '../src/lib/timecap'
 import { WORKED_EXAMPLE, goalWeights, type InBodyInput } from '../src/lib/inbody'
+import { NOT_PRINTED, readInBodyTokens } from '../src/lib/inbodyScan'
+import { range, toRows } from '../src/lib/inbodyTokens'
 import { asymmetryFromNewtons, type ValdInput } from '../src/lib/vald'
 import {
   mergeSessions,
@@ -3272,6 +3274,231 @@ const fingerprint = (p: ReturnType<typeof run>) =>
       'a spreadsheet of something else does not import as zero tests',
     )
   }
+}
+
+// ---- InBody scan (result sheet upload) --------------------------------------
+// Offline: the reader is fed positioned words laid out like a real sheet. The real sample
+// sheets carry member IDs and health measurements and are not committed, so the layouts here
+// are rebuilt from them — the same block order, the same units, the same coordinates.
+{
+  type Tok = { x: number; y: number; text: string }
+  const line = (y: number, ...cells: [number, string][]): Tok[] =>
+    cells.map(([x, text]) => ({ x, y, text }))
+
+  /**
+   * A sheet in the shape both sample models print, with the pieces that differ between them
+   * — and the ways a photograph damages them — passed in.
+   */
+  const sheet = (o: {
+    model?: string
+    /** the Research Parameters muscle row, which the 270S has and the 270 does not */
+    smmResearch?: string
+    /** what the weight cell reads, so an illegible one can be tested */
+    weight?: string
+    /** print the lean panel on the right instead of the left */
+    swapPanels?: boolean
+    /** the segmental mass rows, which OCR mangles */
+    masses?: boolean
+    /** the "Segmental Lean / Fat Analysis" headings, which a PDF does not carry */
+    headings?: boolean
+    /** drop the Protein row, as a smudged digit does */
+    dropProtein?: boolean
+    /** the printed row descriptions, which OCR reads well and a PDF does not carry at all */
+    labels?: boolean
+  }): Tok[] => {
+    const t: Tok[] = [
+      ...line(800, [301, `[${o.model ?? 'InBody270'}]`]),
+      ...line(768, [18, '0537951117'], [122, '175cm'], [185, '26'], [267, '19.07.2023. 21:41']),
+      // Body Composition Analysis — litres first, then four kilogram rows.
+      ...line(715, [233, '(L)'], [267, '45.1'], [289, '('], [302, '37.9~46.3'], [349, ')']),
+      ...(o.dropProtein ? [] : line(697, [229, '(kg)'], [267, '12.4'], [302, '10.2~12.4'])),
+      ...line(678, [229, '(kg)'], [267, '4.14'], [302, '3.50~4.28']),
+      ...line(659, ...(o.labels ? ([[84, 'Body'], [110, 'Fat'], [130, 'Mass']] as [number, string][]) : []),
+        [229, '(kg)'], [267, '14.6'], [305, '8.1~16.2']),
+      ...line(640, ...(o.labels ? ([[84, 'Sum'], [100, 'of'], [112, 'the'], [130, 'above']] as [number, string][]) : []),
+        [229, '(kg)'], [267, o.weight ?? '76.2'], [302, '57.3~77.5']),
+      // Muscle-Fat and Obesity bars: a scale row, then the value under it.
+      ...line(571, ...([55, 70, 85, 100, 115, 130, 145, 160, 175, 190, 205].map(
+        (n, i) => [94 + i * 23, String(n)] as [number, string]))),
+      ...line(560, [193, '76.2']),
+      ...line(548, ...([70, 80, 90, 100, 110, 120, 130, 140, 150, 160, 170].map(
+        (n, i) => [94 + i * 23, String(n)] as [number, string]))),
+      ...line(536, [196, '35.2']),
+      ...line(524, ...([40, 60, 80, 100, 160, 220, 280, 340, 400, 460, 520].map(
+        (n, i) => [94 + i * 23, String(n)] as [number, string]))),
+      ...line(513, [190, '14.6']),
+      ...line(447, ...([10, 15, 18.5, 22, 25, 30, 35, 40, 45, 50, 55].map(
+        (n, i) => [92 + i * 23, n.toFixed(1)] as [number, string]))),
+      ...line(436, [197, '24.9']),
+      ...line(423, ...([0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50].map(
+        (n, i) => [94 + i * 23, n.toFixed(1)] as [number, string]))),
+      ...line(412, [194, '19.2']),
+      // Research Parameters.
+      ...(o.smmResearch ? line(444, [457, '35.2'], [479, 'kg'], [506, o.smmResearch]) : []),
+      ...line(440, ...(o.labels ? ([[380, 'Fat'], [400, 'Free'], [420, 'Mass']] as [number, string][]) : []),
+        [457, '61.6'], [479, 'kg'], [506, '51.5~63.0']),
+      ...line(427, [454, '1700'], [479, 'kcal'], [504, '1629~1909']),
+    ]
+    // Centred over each panel, as the sheet prints them.
+    if (o.headings)
+      t.push(...line(360, [40, 'Segmental'], [85, 'Lean'], [120, 'Analysis'],
+        [216, 'Segmental'], [260, 'Fat'], [300, 'Analysis']))
+    // Segmental panels: lean on the left, fat on the right, unless swapped.
+    const L = o.swapPanels ? [216, 298] : [39, 121]
+    const F = o.swapPanels ? [39, 121] : [216, 298]
+    const LT = o.swapPanels ? 261 : 80
+    const FT = o.swapPanels ? 80 : 261
+    if (o.masses !== false) {
+      t.push(...line(341, [L[0], '3.64kg'], [L[1], '3.67kg'], [F[0], '0.7kg'], [F[1], '0.7kg']))
+      t.push(...line(298, [LT, '28.4kg'], [FT, '8.1kg']))
+      t.push(...line(255, [L[0], '8.97kg'], [L[1], '9.19kg'], [F[0], '2.0kg'], [F[1], '2.0kg']))
+    }
+    t.push(...line(327, [L[0], '109.8%'], [L[1], '110.6%'], [F[0], '113.3%'], [F[1], '111.6%']))
+    t.push(...line(283, [LT, '107.2%'], [FT, '189.2%']))
+    t.push(...line(240, [L[0], '97.2%'], [L[1], '99.6%'], [F[0], '113.8%'], [F[1], '115.3%']))
+    return t
+  }
+
+  const SEGMENTAL = { fatLArm: 113.3, fatRArm: 111.6, fatTrunk: 189.2, fatLLeg: 113.8, fatRLeg: 115.3 }
+
+  {
+    const scan = readInBodyTokens(sheet({}))
+    check(
+      'InBody scan: a 270 sheet gives water, muscle, fat and all five segmental figures',
+      scan.readings.tbw === 45.1 &&
+        scan.readings.tbwLow === 37.9 &&
+        scan.readings.tbwHigh === 46.3 &&
+        scan.readings.smm === 35.2 &&
+        scan.readings.pbf === 19.2 &&
+        (Object.keys(SEGMENTAL) as (keyof typeof SEGMENTAL)[]).every(
+          (k) => scan.readings[k] === SEGMENTAL[k],
+        ),
+      `${Object.keys(scan.readings).length} of 14 read, weight ${scan.weightKg} kg, model ${scan.model}`,
+    )
+    check(
+      'InBody scan: the ranges a 270 does not print are left empty and named, never filled in',
+      scan.missing.join(',') === 'smmLow,smmHigh,pbfLow,pbfHigh' &&
+        scan.missing.every((f) => NOT_PRINTED[f]),
+      'a range is the whole of what decides Under / Normal / Over, so a guessed one would ' +
+        'produce a confident wrong verdict rather than a slightly wrong number',
+    )
+  }
+
+  {
+    const scan = readInBodyTokens(sheet({ model: 'InBody270S', smmResearch: '30.6~37.4' }))
+    check(
+      'InBody scan: a 270S adds the muscle range from Research Parameters',
+      scan.readings.smmLow === 30.6 &&
+        scan.readings.smmHigh === 37.4 &&
+        scan.missing.join(',') === 'pbfLow,pbfHigh',
+      'the row is found by its value matching the Muscle-Fat bar, since no label is printed',
+    )
+    check(
+      'InBody scan: Fat Free Mass is not mistaken for Skeletal Muscle Mass',
+      scan.fatFreeKg === 61.6,
+      'both print in kilograms with a range; the larger of the two is the fat free mass',
+    )
+  }
+
+  {
+    // The two panels are the same shape, so the masses have to settle which is which.
+    const normal = readInBodyTokens(sheet({}))
+    const swapped = readInBodyTokens(sheet({ swapPanels: true }))
+    check(
+      'InBody scan: the fat panel is found by its masses, not by which side it is printed on',
+      (Object.keys(SEGMENTAL) as (keyof typeof SEGMENTAL)[]).every(
+        (k) => swapped.readings[k] === SEGMENTAL[k] && normal.readings[k] === SEGMENTAL[k],
+      ),
+      'segmental fat sums to the whole-body Body Fat Mass; segmental lean lands 40 kg away',
+    )
+  }
+
+  {
+    // A photograph mangles "3.64kg" into ".3:64kg" often enough to be no use, but reads the
+    // panel headings cleanly — where a PDF carries no headings at all.
+    const scan = readInBodyTokens(sheet({ masses: false, headings: true }))
+    check(
+      'InBody scan: with the masses unreadable the panel headings tell the two apart',
+      (Object.keys(SEGMENTAL) as (keyof typeof SEGMENTAL)[]).every(
+        (k) => scan.readings[k] === SEGMENTAL[k],
+      ),
+      'the two input paths break differently, so each way of telling covers the other',
+    )
+    const blind = readInBodyTokens(sheet({ masses: false }))
+    check(
+      'InBody scan: with neither the masses nor the headings, the segmental panel is refused',
+      blind.readings.fatTrunk === undefined &&
+        blind.warnings.some((w) => /could not be told/.test(w)),
+      'reading the lean panel as fat would hand the layer the wrong figures entirely',
+    )
+  }
+
+  {
+    // The real photograph read 15.3 kg of fat and 55.8 kg of lean cleanly and turned the
+    // weight into "a.". The three masses are one identity, so it comes back exactly.
+    const scan = readInBodyTokens(sheet({ weight: 'a.', labels: true }))
+    check(
+      'InBody scan: an illegible weight is recovered from body fat plus fat free mass',
+      scan.weightKg === 76.2 &&
+        scan.readings.pbf !== undefined &&
+        scan.warnings.some((w) => /recovered as body fat/.test(w)),
+      `weight ${scan.weightKg} kg = 14.6 + 61.6, and it is said out loud rather than assumed`,
+    )
+  }
+
+  {
+    // Losing a row to a smudged digit must not shift the count and read fat as the weight.
+    const scan = readInBodyTokens(sheet({ dropProtein: true, weight: 'a.', labels: true }))
+    check(
+      'InBody scan: a composition table missing a row is not counted from the bottom',
+      scan.weightKg === 76.2,
+      `a photograph did exactly this — weight read as ${scan.weightKg} kg, not as the 14.6 kg of fat`,
+    )
+  }
+
+  check(
+    'InBody scan: a decimal point lost by OCR is repaired, and the clock is left alone',
+    (() => {
+      const t = [
+        { x: 0, y: 100, text: '15:3' },
+        { x: 0, y: 90, text: '16:04' },
+        { x: 0, y: 80, text: '29.9~365' },
+        { x: 0, y: 70, text: '1545~1806' },
+      ]
+      const scan = readInBodyTokens([
+        ...t,
+        ...line(60, [233, '(L)'], [267, '45.1'], [302, '37.9~46.3']),
+      ])
+      void scan
+      return (
+        range('29.9~365')?.[1] === 36.5 &&
+        range('1545~1806')?.[1] === 1806 &&
+        range('37.9~46.3')?.[1] === 46.3
+      )
+    })(),
+    'an InBody normal range is narrow, so an upper end more than three times the lower one ' +
+      'is a dropped decimal — but 1545~1806 kcal is a real range and passes through',
+  )
+
+  check(
+    'InBody scan: a line whose parts step down a point at a time stays one line',
+    (() => {
+      // A Research Parameters row sets its scale, unit and value on three baselines a point
+      // apart. Measured from the first token they span more than the tolerance and the row
+      // loses the figure its range belongs to.
+      const rows = toRows(
+        [
+          { x: 94, y: 373, text: '0.0' },
+          { x: 479, y: 371, text: 'kg' },
+          { x: 457, y: 369.6, text: '69.7' },
+          { x: 506, y: 369.6, text: '54.5~66.6' },
+        ],
+        3,
+      )
+      return rows.length === 1 && rows[0].length === 4
+    })(),
+    'the gap is measured against the token before it, not against the start of the row',
+  )
 }
 
 // ---- Report ----------------------------------------------------------------

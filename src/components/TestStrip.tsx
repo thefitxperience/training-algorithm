@@ -3,6 +3,8 @@ import type { ClientInput, DataBundle } from '../types'
 import type { Program } from '../lib/generate'
 import { hasAnyReading } from '../lib/vald'
 import { hasAnyInput } from '../lib/inbody'
+import { readInBodyFile } from '../lib/inbodyImport'
+import { NOT_PRINTED, type InBodyScan } from '../lib/inbodyScan'
 import { hasAnyBodyDot } from '../lib/bodydot'
 import {
   BATTERY_LABEL,
@@ -421,6 +423,12 @@ function InBodyCard({
   setInput: (i: ClientInput) => void
   program: Program
 }) {
+  const fileRef = useRef<HTMLInputElement>(null)
+  const [scan, setScan] = useState<InBodyScan | null>(null)
+  const [busy, setBusy] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [uploads, setUploads] = useState(0)
+
   const active = hasAnyInput(input.inbody)
   const r = program.inbody
   const summary = active
@@ -431,6 +439,29 @@ function InBodyCard({
       }`
     : undefined
 
+  const load = async (file: File) => {
+    setBusy('Opening the file')
+    setError(null)
+    setUploads((n) => n + 1)
+    try {
+      const result = await readInBodyFile(file, (stage, fraction) =>
+        setBusy(fraction === undefined ? stage : `${stage} — ${Math.round(fraction * 100)}%`),
+      )
+      setScan(result)
+      if (Object.keys(result.readings).length === 0)
+        setError(
+          'Nothing on that page looked like an InBody result sheet. If it is a photograph, a straight-on shot of the whole sheet reads best.',
+        )
+      // Whatever the sheet did carry goes in; whatever it did not is left for the fields below.
+      else setInput({ ...input, inbody: { ...input.inbody, ...result.readings } })
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+      setScan(null)
+    } finally {
+      setBusy(null)
+    }
+  }
+
   return (
     <Machine
       name="InBody scan"
@@ -438,23 +469,46 @@ function InBodyCard({
       blurb="Upload the printout as a PDF or a photo. Muscle, fat, hydration and segmental fat reset sets, reps and rest."
       active={active}
       summary={summary}
+      revealOn={uploads}
       action={
         <>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="application/pdf,image/*,.pdf,.jpg,.jpeg,.png,.heic"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0]
+              if (f) void load(f)
+              e.target.value = ''
+            }}
+          />
           <Button
+            variant="primary"
             size="sm"
-            onClick={() => setInput({ ...input, inbody: WORKED })}
-            title="Load the spec's worked example — useful for checking the layer end to end."
+            disabled={busy !== null}
+            onClick={() => fileRef.current?.click()}
           >
-            Load worked example
+            {busy ?? 'Upload scan'}
           </Button>
           {active && (
-            <Button size="sm" variant="danger" onClick={() => setInput({ ...input, inbody: {} })}>
+            <Button
+              size="sm"
+              variant="danger"
+              onClick={() => {
+                setScan(null)
+                setInput({ ...input, inbody: {} })
+              }}
+            >
               Clear
             </Button>
           )}
         </>
       }
     >
+      {error && <Note tone="flame" title="That scan could not be read">{error}</Note>}
+      {scan && <ScanSummary scan={scan} />}
+
       <InBodyPanel
         data={data.inbody}
         input={input.inbody}
@@ -463,6 +517,58 @@ function InBodyCard({
         compact
       />
     </Machine>
+  )
+}
+
+/**
+ * What the sheet gave up, and what it does not carry. The second half is the important one:
+ * an InBody sheet never writes down the percent body fat range, so a scan that looks complete
+ * still leaves a rule unable to run, and the only honest thing is to say which.
+ */
+function ScanSummary({ scan }: { scan: InBodyScan }) {
+  const read = Object.keys(scan.readings).length
+  const notPrinted = scan.missing.filter((f) => NOT_PRINTED[f])
+  const reasons = [...new Set(notPrinted.map((f) => NOT_PRINTED[f]!))]
+
+  return (
+    <div className="mb-4 space-y-1 text-[12px]">
+      <div className="font-bold">
+        {scan.model ?? 'InBody'} scan{scan.name ? ` · ${scan.name}` : ''}
+        {scan.testDate ? ` · ${scan.testDate}` : ''}
+      </div>
+      <div className="text-udra-ink-500">
+        {read} of 14 figures read{scan.ocr ? ' by reading the picture' : ' from the file'}
+        {scan.weightKg !== undefined && ` · ${scan.weightKg} kg`}
+        {scan.bodyFatKg !== undefined && ` · ${scan.bodyFatKg} kg fat`}.
+      </div>
+      {reasons.length > 0 && (
+        <div className="text-udra-ink-700">
+          Left blank because the sheet does not print{' '}
+          {notPrinted.includes('pbfLow') && notPrinted.includes('smmLow')
+            ? 'them'
+            : notPrinted.includes('pbfLow')
+              ? 'it'
+              : 'it'}
+          : {reasons.join('; ')}. Fill those in below to let the rules that need them run.
+        </div>
+      )}
+      {scan.warnings.map((w) => (
+        <div key={w} className="text-udra-flame">
+          {w}
+        </div>
+      ))}
+      <details>
+        <summary className="cursor-pointer text-udra-ink-500">Where each figure came from</summary>
+        <ul className="mt-1 space-y-0.5">
+          {Object.entries(scan.sources).map(([field, from]) => (
+            <li key={field} className="tnum text-udra-ink-500">
+              <span className="font-semibold">{field}</span>{' '}
+              {String(scan.readings[field as keyof typeof scan.readings])} — {from}
+            </li>
+          ))}
+        </ul>
+      </details>
+    </div>
   )
 }
 
@@ -600,23 +706,6 @@ function BodyDotCard({
       />
     </Machine>
   )
-}
-
-const WORKED = {
-  smm: 30.1,
-  smmLow: 31.6,
-  smmHigh: 38.6,
-  pbf: 26.4,
-  pbfLow: 10,
-  pbfHigh: 20,
-  tbw: 39.2,
-  tbwLow: 38.4,
-  tbwHigh: 46.9,
-  fatLArm: 128,
-  fatRArm: 131,
-  fatTrunk: 178,
-  fatLLeg: 96,
-  fatRLeg: 94,
 }
 
 export function TestStrip(props: {

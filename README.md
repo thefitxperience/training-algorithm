@@ -221,6 +221,81 @@ that it is overridable.
 4. **Split re-badging** uses the dominant blended goal, and the panel says so when it differs
    from the stated goal.
 
+## Reading an InBody sheet
+
+The printout goes in as it comes — the PDF export or a photograph of the paper — and the
+fourteen figures the layer takes come out of it. Verified against three real sheets: an
+InBody270 export, a 270S export, and a photograph of a 270S printout.
+
+| | figures read | what is missing |
+| --- | --- | --- |
+| InBody270 (PDF) | 10 of 14 | the muscle range, which that model does not print; the fat range, which none do |
+| InBody270S (PDF) | 12 of 14 | the fat range |
+| InBody270S (photo) | 12 of 14 | the fat range |
+
+### Why it reads coordinates and not labels
+
+An InBody sheet draws almost every label as vector artwork — "Total Body Water", "Skeletal
+Muscle Mass", "Segmental Fat Analysis", and the client's sex along with them. A PDF's text
+layer is very nearly a bare list of numbers, so anchoring on label text finds nothing.
+
+A photograph fails the other way round: OCR reads the labels perfectly well and mangles the
+numbers. On the sample photo it read the weight `71.1` as `TAN` at the picture's own size,
+`15.3` as `15:3`, and `36.5` as `365`.
+
+So every figure is looked for **twice** — once by its printed label, once by where it sits —
+and each path covers the other's blind spot. The segmental panels are the clearest case: a
+photograph tells the fat panel from the lean one by the headings, and a PDF, which has no
+headings, tells them apart by arithmetic (see below).
+
+### Everything is cross-checked against something read a different way
+
+- **Weight** from the composition table against the weight printed under the Muscle-Fat bar.
+  Nothing in that bar block names itself, so the whole identification is the reading order —
+  and it is only believed once its first value matches a figure obtained elsewhere.
+- **Percent body fat** against fat mass over weight. The machine's printed figure wins when
+  the bars have been vouched for, because InBody computes it from unrounded internals: 17.7
+  over 87.4 gives 20.3% where the sheet prints 20.2%. On a photograph, where the bars do not
+  survive, the division is the only route and it lands on the sheet's own figure.
+- **The segmental fat panel** against whole-body Body Fat Mass. Both panels print the same
+  three rows in the same shape, so shape alone cannot say which is which, and reading the
+  lean panel as fat would hand the layer entirely wrong figures. Segmental fat masses sum to
+  within about 1.2 kg of the printed Body Fat Mass; the lean masses land some 40 kg away.
+- **The three masses are one identity.** Fat free mass plus body fat mass is weight, exactly,
+  on all three sheets. That is what saves the photograph: OCR read 15.3 kg of fat and 55.8 kg
+  of lean cleanly and turned the weight into `a.`, and 71.1 comes straight back out of the
+  other two. It is stated in the panel rather than passed off as read.
+
+### What is not invented
+
+**No InBody model prints the percent body fat normal range as text.** It exists on the sheet
+only as the grey band across the bar — 10.0 to 20.0 on the male sheets here. The skeletal
+muscle range is printed in Research Parameters on the 270S and nowhere on the 270.
+
+Those fields are left **empty and named**, with the reason, and the fields below the card are
+there to type them into. A range is the whole of what decides Under / Normal / Over, so a
+guessed one does not produce a slightly wrong number — it produces a confident wrong verdict,
+and the goal rewrite that follows from it is indistinguishable from a measured one.
+
+### Two OCR repairs, and where they stop
+
+Only where the intended character is not in doubt: punctuation swept up at the end of a word,
+and a decimal point read as a colon. The colon repair is limited to a **single** digit after
+the separator, which is what keeps the clock out of it — a time is always `16:04`, never
+`16:4`. A dropped decimal inside a range is repaired only because an InBody normal range is
+narrow: no range on these sheets has an upper end even twice its lower one, so `29.9~365` is
+a lost decimal where `1545~1806` kcal passes through untouched.
+
+Everything else is left alone and reported. `readInBodyFile` has a companion
+`tokensFromFile` that returns what the page actually said, because "the parser is wrong" and
+"OCR turned 71.1 into TAN" are not worth guessing between.
+
+### Costs
+
+pdf.js and Tesseract are both imported at the moment they are needed, so the main bundle
+carries neither: a trainer who only ever uploads PDF exports never downloads the OCR engine.
+A PDF with a text layer is read in well under a second and needs no download at all.
+
 ## VALD DynaMo
 
 Fourth rule layer, and it does one thing: **it adds sets to the weak side.** It never
@@ -996,18 +1071,22 @@ Places where the spec left a choice, and what was chosen:
 
 ## Acceptance criteria — current status
 
-`npm run acceptance` → **219 of 219 checks pass**. The five presets all run at `Full gym`, so
+`npm run acceptance` → **230 of 230 checks pass**. The five presets all run at `Full gym`, so
 the original criteria are unaffected by the equipment feature; the rest cover equipment
 tiers, split advice, set rounding, the injury, structure, InBody, VALD, BodyDot, Load, amend
-and time-cap layers, and the two importers — the Bodydot session reader and the DynaMo
-export reader. Note the count dropped to 22/22 at one point because the week criterion was
-**removed**, not because its failure was fixed — see below.
+and time-cap layers, and the three importers — the Bodydot session reader, the DynaMo export
+reader and the InBody sheet reader. Note the count dropped to 22/22 at one point because the
+week criterion was **removed**, not because its failure was fixed — see below.
 
-The two import blocks are **offline**: the Bodydot one runs against a synthetic session
-shaped like a real one, the DynaMo one against grids built row by row in the export's own
-layout — newest-first, one row per attempt, the trunk as two one-sided bends. Neither
-exercises its transport (a live service, and a browser's `DecompressionStream`), so both were
-also driven end to end in a real browser against real data.
+All three import blocks are **offline**, built from fixtures shaped like the real thing: a
+synthetic Bodydot session, DynaMo grids written row by row in the export's own layout
+(newest-first, one row per attempt, the trunk as two one-sided bends), and InBody sheets as
+positioned words in the same block order and units as the printed page. The real files carry
+names, member IDs and health measurements and are not committed.
+
+None of the three exercises its transport — a live service, a browser's
+`DecompressionStream`, pdf.js and Tesseract — so all three were also driven end to end in a
+real browser against the real data.
 
 The time-cap layer's own criteria, from the spec:
 

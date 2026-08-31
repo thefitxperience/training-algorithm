@@ -6,12 +6,28 @@
  */
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { generate, isEligible } from '../src/lib/generate'
+import { ageBracket, generate, isEligible } from '../src/lib/generate'
 import { buildAudit } from '../src/lib/audit'
 import { FIXTURES } from './fixtures'
 import { REQUIRED_FIELDS, completeClient, defaultDraft, missingFrom } from '../src/lib/draft'
 import { EQUIPMENT_TIERS, isEquipmentAvailable, libraryCoverage } from '../src/lib/equipment'
 import { splitAdvice } from '../src/lib/splitAdvice'
+import {
+  bandFor,
+  conditioningMinutes,
+  maxConditioningMinutes,
+  maxRestFor,
+  modalitiesFor,
+} from '../src/lib/sessionlength'
+import {
+  ABS_GROUP,
+  DUPLICATE_MOVEMENTS,
+  duplicateMovements,
+  isAbs,
+  placeAbs,
+  type AbsPlacement,
+} from '../src/lib/abs'
+import { defaultRank, hasPlainName, onKnownEquipment } from '../src/lib/defaults'
 import { pickKey, roundSets } from '../src/lib/rounding'
 import { buildInjuryIndex, verdictForPain, type PainSelection } from '../src/lib/injury'
 import { STRUCTURES, blockSeconds, buildSubAliases, pairReason, timeParams, type Structure } from '../src/lib/structure'
@@ -63,7 +79,7 @@ import {
   readSession,
   scaleFor,
 } from '../src/lib/bodydotApi'
-import type { ClientInput, DataBundle } from '../src/types'
+import type { ClientInput, DataBundle, Exercise } from '../src/types'
 
 const dir = join(process.cwd(), 'public', 'data')
 const read = (f: string) => JSON.parse(readFileSync(join(dir, f), 'utf8'))
@@ -81,6 +97,7 @@ const data: DataBundle = {
   load: read('load.json'),
   amend: read('amend.json'),
   timecap: read('timecap.json'),
+  sessionlength: read('sessionlength.json'),
 }
 const injuryIndex = buildInjuryIndex(data.injury, data.exercises)
 const idOf = (name: string) => data.exercises.find((e) => e.name === name)!.id
@@ -150,8 +167,20 @@ const mainFingerprint = (p: ReturnType<typeof run>) =>
   )
   const chestSupported = names.some((n) => n.includes('chest-supported') || n.includes('chest supported'))
   check('Older adult: chest-supported row selected', chestSupported, names.filter((n) => n.includes('row')).join(', '))
-  const goblet = names.some((n) => n.includes('goblet'))
-  check('Older adult: goblet squat selected', goblet, names.filter((n) => n.includes('squat')).join(', '))
+  // The default ranking now leads this sub-region with a machine rather than the goblet
+  // squat, which for a 68-year-old beginner is the same expectation met better. What the
+  // check exists for is that a barbell squat never reaches this client, so that is what it
+  // asserts, rather than the name of one particular safe alternative.
+  const quad = p.days
+    .flatMap((d) => d.exercises)
+    .filter((e) => e.exercise.group === 'Quads, hams, adductors')
+    .map((e) => e.exercise)
+  const unsafe = quad.filter((e) => /back squat|front squat|deep/.test(e.name.toLowerCase()))
+  check(
+    'Older adult: the quad work is machine, cable or goblet — never a barbell squat',
+    unsafe.length === 0 && quad.length > 0,
+    unsafe.length ? unsafe.map((e) => e.name).join(', ') : quad.map((e) => `${e.name} (${e.equipment})`).join(', '),
+  )
 }
 
 // ---- Stress test -----------------------------------------------------------
@@ -668,6 +697,7 @@ const fingerprint = (p: ReturnType<typeof run>) =>
       days: 4,
       split: 'Upper / Lower',
       equipment: 'Full gym',
+      absPlacement: 'end',
       pains: {},
       structure: 'straight',
       inbody: WORKED_EXAMPLE,
@@ -2228,6 +2258,14 @@ const fingerprint = (p: ReturnType<typeof run>) =>
 // ---- Time-cap layer --------------------------------------------------------
 {
   const T = data.timecap
+  /**
+   * The target this client's button actually drives to. Since the session-length band, that
+   * is the band CEILING rather than timecap.json's own 60 — a session the band filled to the
+   * 55-minute floor is already where it should be, and 6-12, which has no band at all, keeps
+   * the file's figure.
+   */
+  const target = (input: ClientInput) =>
+    bandFor(data.sessionlength, ageBracket(input.age, data.config.ages))?.[1] ?? T.target
   const capped = (input: ClientInput, dayIndex: number): ClientInput => ({
     ...input,
     caps: [{ dayIndex, actor: 'client', timestamp: '2026-08-17T00:00:00.000Z' }] as CapPin[],
@@ -2278,10 +2316,10 @@ const fingerprint = (p: ReturnType<typeof run>) =>
     const bad: string[] = []
     for (const c of CLIENTS)
       for (const d of run(c.input).days) {
-        const offered = d.wholeSetMinutes > T.target
+        const offered = d.wholeSetMinutes > target(c.input)
         if (offered) over++
         else under++
-        if (Math.abs(d.wholeSetMinutes - T.target) < 1e-9) onTheLine++
+        if (Math.abs(d.wholeSetMinutes - target(c.input)) < 1e-9) onTheLine++
         if (offered) continue
         const p = run(capped(c.input, d.index))
         const plan = p.timecap.applied.find((a) => a.dayIndex === d.index)!.plan
@@ -2289,36 +2327,40 @@ const fingerprint = (p: ReturnType<typeof run>) =>
           bad.push(`${c.name} day ${d.index + 1} at ${d.wholeSetMinutes.toFixed(2)} min spent ${plan.points} points`)
       }
     check(
-      `Time cap: the button is offered if and only if the day exceeds ${T.target} min, strictly`,
+      'Time cap: the button is offered if and only if the day exceeds its own target, strictly',
       bad.length === 0 && over > 0 && under > 0,
       bad.length
         ? bad.join('; ')
-        : `${over} days offer the button, ${under} do not (${onTheLine} sit on exactly ${T.target}.00 and correctly do not)`,
+        : `${over} days offer the button, ${under} do not (${onTheLine} sit exactly on target and correctly do not)`,
     )
   }
 
   // ---- every applied plan lands at or under 60.0, or reports a shortfall ----
-  const applied: { name: string; dayIndex: number; plan: ReturnType<typeof planCap>; model: CapDayModel }[] = []
+  const applied: { name: string; input: ClientInput; dayIndex: number; plan: ReturnType<typeof planCap>; model: CapDayModel }[] = []
   for (const c of CLIENTS) {
     const base = run(c.input)
     for (const d of base.days) {
-      if (d.wholeSetMinutes <= T.target) continue
+      if (d.wholeSetMinutes <= target(c.input)) continue
       const p = run(capped(c.input, d.index))
       const entry = p.timecap.applied.find((a) => a.dayIndex === d.index)
-      if (entry) applied.push({ name: c.name, dayIndex: d.index, plan: entry.plan, model: entry.model })
+      if (entry)
+        applied.push({ name: c.name, input: c.input, dayIndex: d.index, plan: entry.plan, model: entry.model })
     }
   }
   {
     const bad = applied.filter(
-      (a) => !(a.plan.reached ? a.plan.minutesAfter <= T.target + 1e-9 : a.plan.shortfall > 0 && a.plan.reason.length > 0),
+      (a) =>
+        !(a.plan.reached
+          ? a.plan.minutesAfter <= target(a.input) + 1e-9
+          : a.plan.shortfall > 0 && a.plan.reason.length > 0),
     )
     const reached = applied.filter((a) => a.plan.reached).length
     check(
-      `Time cap: every plan lands at or under ${T.target}.0 min, or reports a shortfall with a reason`,
+      'Time cap: every plan lands at or under its own target, or reports a shortfall with a reason',
       bad.length === 0 && applied.length > 0,
       bad.length
         ? bad.map((b) => `${b.name} day ${b.dayIndex + 1}: ${b.plan.minutesAfter.toFixed(2)}`).join('; ')
-        : `${reached}/${applied.length} days reached ${T.target} min; ${applied.length - reached} reported a shortfall`,
+        : `${reached}/${applied.length} days reached their target; ${applied.length - reached} reported a shortfall`,
     )
   }
 
@@ -2328,7 +2370,7 @@ const fingerprint = (p: ReturnType<typeof run>) =>
     for (const c of CLIENTS) {
       const base = run(c.input)
       for (const d of base.days) {
-        if (d.wholeSetMinutes <= T.target) continue
+        if (d.wholeSetMinutes <= target(c.input)) continue
         const p = run(capped(c.input, d.index))
         const entry = p.timecap.applied.find((a) => a.dayIndex === d.index)!
         const day = p.days.find((x) => x.index === d.index)!
@@ -2349,7 +2391,7 @@ const fingerprint = (p: ReturnType<typeof run>) =>
     for (const c of CLIENTS) {
       const base = run(c.input)
       for (const d of base.days) {
-        if (d.wholeSetMinutes <= T.target) continue
+        if (d.wholeSetMinutes <= target(c.input)) continue
         const p = run(capped(c.input, d.index))
         const day = p.days.find((x) => x.index === d.index)!
         const entry = p.timecap.applied.find((a) => a.dayIndex === d.index)!
@@ -2408,7 +2450,7 @@ const fingerprint = (p: ReturnType<typeof run>) =>
     for (const c of CLIENTS) {
       const base = run(c.input)
       for (const d of base.days) {
-        if (d.wholeSetMinutes <= T.target) continue
+        if (d.wholeSetMinutes <= target(c.input)) continue
         const p = run(capped(c.input, d.index))
         const entry = p.timecap.applied.find((a) => a.dayIndex === d.index)!
         // isolate the structure step: only compare where it was the ONLY lever pulled
@@ -2435,7 +2477,7 @@ const fingerprint = (p: ReturnType<typeof run>) =>
     for (const c of CLIENTS) {
       const base = run(c.input)
       for (const d of base.days) {
-        if (d.wholeSetMinutes <= T.target) continue
+        if (d.wholeSetMinutes <= target(c.input)) continue
         const fingerprint = (input: ClientInput) => {
           const p = run(input)
           const plan = p.timecap.applied.find((a) => a.dayIndex === d.index)!.plan
@@ -2521,7 +2563,7 @@ const fingerprint = (p: ReturnType<typeof run>) =>
             ranOut = true
             return
           }
-          if (child.seconds <= T.target * 60) {
+          if (child.seconds <= target(a.input) * 60) {
             cheaper = `${a.name} day ${a.dayIndex + 1}: ${next} < ${budget} points reaches ${(child.seconds / 60).toFixed(1)} min`
             return
           }
@@ -2554,7 +2596,7 @@ const fingerprint = (p: ReturnType<typeof run>) =>
     for (const c of gs) {
       const base = run(c.input)
       for (const d of base.days) {
-        if (d.wholeSetMinutes <= T.target) continue
+        if (d.wholeSetMinutes <= target(c.input)) continue
         const p = run(capped(c.input, d.index))
         const plan = p.timecap.applied.find((a) => a.dayIndex === d.index)!.plan
         const restSteps = plan.steps.filter((s) => s.lever === 'rest').length
@@ -2594,7 +2636,7 @@ const fingerprint = (p: ReturnType<typeof run>) =>
     for (const c of CLIENTS) {
       const base = run(c.input)
       for (const d of base.days) {
-        if (d.wholeSetMinutes <= T.target) continue
+        if (d.wholeSetMinutes <= target(c.input)) continue
         const p = run(capped(c.input, d.index))
         const day = p.days.find((x) => x.index === d.index)!
         const plan = p.timecap.applied.find((a) => a.dayIndex === d.index)!.plan
@@ -2648,7 +2690,7 @@ const fingerprint = (p: ReturnType<typeof run>) =>
     const bad: string[] = []
     for (const c of CLIENTS) {
       const base = run(c.input)
-      const short = base.days.find((d) => d.wholeSetMinutes <= T.target)
+      const short = base.days.find((d) => d.wholeSetMinutes <= target(c.input))
       if (!short) continue
       const p = run({ ...c.input, caps: [{ dayIndex: short.index, actor: 'client', timestamp: '2026-08-17T00:00:00.000Z' }] })
       const plan = p.timecap.applied.find((a) => a.dayIndex === short.index)!.plan
@@ -2679,7 +2721,7 @@ const fingerprint = (p: ReturnType<typeof run>) =>
     for (const c of CLIENTS) {
       const base = run(c.input)
       for (const d of base.days) {
-        if (d.wholeSetMinutes <= T.target) continue
+        if (d.wholeSetMinutes <= target(c.input)) continue
         const p = run(capped(c.input, d.index))
         const day = p.days.find((x) => x.index === d.index)!
         const r = roundSets(p)
@@ -2707,7 +2749,7 @@ const fingerprint = (p: ReturnType<typeof run>) =>
     const bad: string[] = []
     for (const c of CLIENTS) {
       const base = run(c.input)
-      const long = base.days.find((d) => d.wholeSetMinutes > T.target)
+      const long = base.days.find((d) => d.wholeSetMinutes > target(c.input))
       if (!long) continue
       const r = roundSets(run(capped(c.input, long.index)))
       if (r.maxDrift > 0.5 + 1e-9)
@@ -2720,14 +2762,14 @@ const fingerprint = (p: ReturnType<typeof run>) =>
     )
   }
 
-  // ---- two of the twelve levers are unreachable, and it is not the engine's doing ----
+  // ---- the accessory levers, dead before the default ranking, are now live ----
   {
-    // Selection ranks primary tier first, and all 47 sub-regions in the library contain a
-    // primary-tier exercise — so an allocation slot asking for one exercise always gets a
-    // primary one. Accessory-tier exercises are only ever reached through reuse or a sibling
-    // substitution, which in practice never happens. That makes "accessory set" (4 points)
-    // and "whole accessory exercise" (10) dead rows in the cost table, and leaves the
-    // cheapest set cut actually on offer at 18. Recorded as a finding, not hidden.
+    // They used to be unreachable: selection ranked primary tier first and all 47 sub-regions
+    // hold a primary, so an accessory was only ever reached through a reuse or a sibling
+    // substitution that in practice never happened — which made "accessory set" (4 points)
+    // and "whole accessory exercise" (10) dead rows in the cost table and left the cheapest
+    // set cut on offer at 18. The default ranking sits above tier, so a plainly-named
+    // accessory on known equipment can now out-rank a primary, and both rows are live.
     const tiers = new Map<string, number>()
     const subsWithPrimary = new Set<string>()
     for (const e of data.exercises) if (e.tier === 'primary') subsWithPrimary.add(e.sub)
@@ -2740,11 +2782,11 @@ const fingerprint = (p: ReturnType<typeof run>) =>
       .flatMap((a) => a.plan.steps)
       .filter((s) => s.lever === 'set_accessory' || s.lever === 'remove_accessory_exercise').length
     check(
-      'Time cap: the two accessory levers are unreachable because selection never picks an accessory',
-      accessoriesChosen === 0 && accessoryPulls === 0 && subsWithPrimary.size === allSubs.size,
+      'Time cap: the accessory levers are reachable now the default ranking sits above tier',
+      accessoriesChosen > 0 && subsWithPrimary.size === allSubs.size,
       `chosen tiers ${[...tiers].map(([t, n]) => `${t} ${n}`).join(', ')}; ` +
-        `${subsWithPrimary.size}/${allSubs.size} sub-regions contain a primary, so ranking always takes one — ` +
-        `"accessory set" (4) and "whole accessory exercise" (10) never fire, and the cheapest set cut on offer costs 18`,
+        `${subsWithPrimary.size}/${allSubs.size} sub-regions hold a primary, and an accessory now out-ranks one where it is plainer — ` +
+        `${accessoryPulls} accessory lever pulls across the capped days`,
     )
   }
 
@@ -3655,6 +3697,476 @@ const fingerprint = (p: ReturnType<typeof run>) =>
       'Setup form: no named preset list reaches the shipped app',
       offenders.length === 0,
       offenders.length ? offenders.join(', ') : 'nothing under src imports the acceptance fixtures',
+    )
+  }
+}
+
+// ---- Session length: every workout in 55-75 minutes ------------------------
+{
+  const SL = data.sessionlength
+  const [FLOOR, CEILING] = SL.band.default
+  /** one age inside each bracket, so a sweep covers every band the file defines */
+  const AGE_MID: Record<string, number> = {
+    '6-12': 10,
+    '13-17': 16,
+    '18-29': 25,
+    '30-39': 34,
+    '40-49': 44,
+    '50-64': 57,
+    '65+': 70,
+  }
+  const clientFor = (key: string): ClientInput => {
+    const [split, goal, , level, days] = key.split('|')
+    const ageBr = key.split('|')[2]
+    return {
+      sex: 'Male',
+      age: AGE_MID[ageBr],
+      level,
+      goal,
+      days: Number(days),
+      split,
+      equipment: 'Full gym',
+      structure: 'straight',
+      absPlacement: 'end',
+      pains: {},
+      inbody: {},
+      vald: {},
+      bodydot: {},
+      pins: [],
+      caps: [],
+    }
+  }
+
+  // ---- the case this whole feature exists for ----
+  {
+    // A 25-year-old fat-loss beginner was being handed a 25-minute session, because the three
+    // volume tables are each calibrated at a different implied frequency: Build Muscle needs
+    // 32 sets for a 55-minute session and gets 32, while Lose Fat needs 46 and gets 23.
+    const input: ClientInput = { ...clientFor('Full Body|Lose Fat|18-29|Beginner|4'), sex: 'Female' }
+    const p = run(input)
+    const short = p.days.filter((d) => d.wholeSetMinutes < FLOOR - 1e-9)
+    const withConditioning = p.days.filter((d) => d.conditioning !== null)
+    check(
+      'Session length: a Lose Fat beginner at 25, 4 days lands in the band with a conditioning block',
+      short.length === 0 && withConditioning.length === p.days.length,
+      p.days
+        .map(
+          (d) =>
+            `d${d.index + 1} ${d.wholeSetMinutes.toFixed(0)} min (rest +${d.restBoost}s, ${d.conditioning?.minutes ?? 0} min ${d.conditioning?.modality.id ?? 'none'})`,
+        )
+        .join(', '),
+    )
+  }
+
+  // ---- the sweep: every block the allocation holds, every age with a band ----
+  const swept: { key: string; goal: string; day: number; minutes: number; conditioning: number; boost: number }[] = []
+  for (const key of Object.keys(data.allocation)) {
+    const ageBr = key.split('|')[2]
+    if (!bandFor(SL, ageBr)) continue
+    const r = generate(data, clientFor(key))
+    if (!r.ok) continue
+    for (const d of r.program.days)
+      swept.push({
+        key,
+        goal: key.split('|')[1],
+        day: d.index,
+        minutes: d.wholeSetMinutes,
+        conditioning: d.conditioning?.minutes ?? 0,
+        boost: d.restBoost,
+      })
+  }
+  const inBand = swept.filter((s) => s.minutes >= FLOOR - 1e-9 && s.minutes <= CEILING + 1e-9)
+  const over = swept.filter((s) => s.minutes > CEILING + 1e-9)
+  const under = swept.filter((s) => s.minutes < FLOOR - 1e-9)
+  const share = (n: number) => `${((n / swept.length) * 100).toFixed(1)}%`
+  log(
+    `Session length, ${swept.length} sessions across ${new Set(swept.map((s) => s.key)).size} blocks (ages 13+): ` +
+      `in band ${share(inBand.length)}, over the ceiling ${share(over.length)}, short of the floor ${share(under.length)} — ` +
+      `upstream measured 78.3 / 21.7 / 0.0`,
+  )
+  check(
+    'Session length: the great majority of sessions land inside the band',
+    inBand.length / swept.length > 0.75,
+    `${inBand.length}/${swept.length} in band (${share(inBand.length)}); ${over.length} over, handed to the time-cap engine`,
+  )
+
+  {
+    // The residual is named rather than smoothed away: these are the sessions where BOTH
+    // levers are already at the ceilings the file sets, so reaching the floor would mean
+    // overriding a stated limit — a fat-loss client resting past 75 s is no longer doing
+    // fat-loss training, and 35 minutes is all the conditioning the file allows.
+    const notExhausted = under.filter(
+      (u) => u.conditioning < maxConditioningMinutes(SL) || u.boost < maxRestFor(SL, u.goal) - 60,
+    )
+    check(
+      'Session length: a session left short has both levers already at their stated ceilings',
+      notExhausted.length === 0,
+      under.length === 0
+        ? 'no session is short'
+        : `${under.length}/${swept.length} short (${share(under.length)}), every one at rest ceiling and ${maxConditioningMinutes(SL)} min conditioning — ` +
+          `thinnest is ${Math.min(...under.map((u) => u.minutes)).toFixed(1)} min`,
+    )
+  }
+
+  {
+    const worst = swept.filter((s) => s.goal === 'Lose Fat' && s.boost > 0)
+    const p = run(clientFor('Full Body|Lose Fat|18-29|Beginner|3'))
+    const rests = p.days.flatMap((d) => d.exercises.map((c) => c.restSeconds))
+    const ceiling = maxRestFor(SL, 'Lose Fat')
+    check(
+      `Session length: Lose Fat rest never passes ${ceiling}s through the rest lever`,
+      rests.every((r) => r <= ceiling + 1e-9),
+      `${worst.length} fat-loss sessions had rest raised; highest prescribed rest ${Math.max(...rests)}s against a ${ceiling}s ceiling`,
+    )
+  }
+
+  {
+    // Rounding to the NEAREST five leaves a session a minute or two under the floor and it
+    // reaches the band never. Rounding UP is what makes the floor reachable at all.
+    const to = SL.conditioning.roundToMinutes
+    const cases = [0.1, 1.4, 4.9, 5.0, 5.1, 22.1]
+    const bad = cases.filter((gap) => {
+      const got = conditioningMinutes(SL, FLOOR, FLOOR - gap)
+      return got % to !== 0 || got < gap
+    })
+    check(
+      'Session length: the shortfall is rounded UP to five minutes, never to the nearest',
+      bad.length === 0 && conditioningMinutes(SL, FLOOR, FLOOR - 1.4) === 5,
+      bad.length ? `rounded below the shortfall at ${bad.join(', ')} min` : 'a 1.4-minute gap buys 5 minutes, not 0',
+    )
+  }
+
+  // ---- ages 6-12 are excluded from all of it ----
+  {
+    const bad: string[] = []
+    for (const key of Object.keys(data.allocation)) {
+      if (key.split('|')[2] !== '6-12') continue
+      const r = generate(data, clientFor(key))
+      if (!r.ok) continue
+      for (const d of r.program.days)
+        if (d.conditioning !== null || d.restBoost > 0)
+          bad.push(`${key} d${d.index + 1}: ${d.conditioning?.minutes ?? 0} min conditioning, rest +${d.restBoost}s`)
+    }
+    check(
+      'Session length: no client aged 6-12 receives conditioning or a rest extension',
+      bad.length === 0,
+      bad.length ? bad.slice(0, 3).join('; ') : 'a ten-year-old should not be given an hour, and is not',
+    )
+  }
+
+  // ---- conditioning is time, never volume ----
+  {
+    const input = clientFor('Full Body|Lose Fat|18-29|Beginner|4')
+    const p = run(input)
+    const a = buildAudit(p, data.exercises, input.sex, data.config)
+    const conditioningMins = p.days.reduce((s, d) => s + (d.conditioning?.minutes ?? 0), 0)
+    // The audit reads the exercise list; conditioning is deliberately not in it.
+    const inExercises = p.days.some((d) => d.exercises.some((c) => /conditioning/i.test(c.exercise.name)))
+    const bare = run({ ...input, goal: input.goal })
+    const sameDelivered = a.rows.every(
+      (row) =>
+        Math.abs(
+          row.delivered -
+            buildAudit(bare, data.exercises, input.sex, data.config).rows.find((x) => x.group === row.group)!
+              .delivered,
+        ) < 1e-9,
+    )
+    check(
+      'Session length: conditioning never appears in the volume audit and satisfies no muscle-group target',
+      !inExercises && conditioningMins > 0 && sameDelivered,
+      `${conditioningMins} min of conditioning across the week, and every audit row is unchanged by it`,
+    )
+  }
+
+  // ---- impact is dropped on the pains that cannot take it ----
+  {
+    const bad: string[] = []
+    for (const pain of SL.conditioning.nonImpactPains) {
+      const allowed = modalitiesFor(SL, [pain])
+      if (allowed.some((m) => m.impact)) bad.push(`${pain} still offered ${allowed.filter((m) => m.impact).map((m) => m.id).join(', ')}`)
+      if (allowed.length === 0) bad.push(`${pain} left with no modality at all`)
+    }
+    const ankle = run({ ...clientFor('Full Body|Lose Fat|18-29|Beginner|4'), pains: { ANKLE: 'Both' } })
+    const prescribed = ankle.days.map((d) => d.conditioning?.modality.id).filter(Boolean)
+    check(
+      'Session length: a client with ankle, knee, Achilles or foot pain never gets the skipping modality',
+      bad.length === 0 && prescribed.every((id) => id !== 'skipping'),
+      bad.length
+        ? bad.join('; ')
+        : `impact withheld for all ${SL.conditioning.nonImpactPains.length} pains; an ankle-pain client is prescribed ${[...new Set(prescribed)].join(', ') || 'nothing'}`,
+    )
+  }
+
+  // ---- the button removes conditioning first ----
+  {
+    // A conditioning block is 5-35 minutes for one point, so it dominates every other lever
+    // on minutes-per-point AND is the cheapest thing in the table. The engine is asked
+    // directly rather than through the UI, because a session the band filled to the floor
+    // sits under the ceiling and never shows the button — which is the point of the band.
+    const p = run(clientFor('Full Body|Lose Fat|18-29|Beginner|4'))
+    const day = p.days.find((d) => (d.conditioning?.minutes ?? 0) > 0)!
+    const plan = planCap(day.capModel, { target: 40 })
+    const first = plan.steps[0]
+    const offered = children(day.capModel, baseState(day.capModel), capSeconds(day.capModel, baseState(day.capModel)))
+    const cheapest = Math.min(...offered.map((c) => c.step.cost))
+    check(
+      'Session length: pressing reduce on a session with conditioning removes the conditioning first',
+      first?.lever === 'conditioning' && offered[0].step.lever === 'conditioning' && cheapest === offered[0].step.cost,
+      first
+        ? `first step "${first.detail}" at ${first.cost} point, against a cheapest alternative of ${cheapest}`
+        : 'the plan pulled no levers at all',
+    )
+  }
+}
+
+// ---- Exercise defaults: known movements, plain names -----------------------
+{
+  const eligibleFor = (sub: string) =>
+    data.exercises.filter((e) => e.sub === sub && isEligible(e, 'Intermediate', '18-29', 'Full gym'))
+  const leaderOf = (sub: string) => [...eligibleFor(sub)].sort(defaultRank)[0]
+
+  {
+    const want: [string, string][] = [
+      ['Mid (flat)', 'Chest press'],
+      ['Short head (peak)', 'Barbell / EZ-bar curl'],
+      ['Side', 'Lateral raise'],
+    ]
+    const bad = want.filter(([sub, name]) => leaderOf(sub)?.name !== name)
+    check(
+      'Exercise defaults: chest opens on Chest press, biceps on Barbell / EZ-bar curl, side delts on Lateral raise',
+      bad.length === 0,
+      bad.length
+        ? bad.map(([sub, name]) => `${sub}: wanted ${name}, got ${leaderOf(sub)?.name}`).join('; ')
+        : want.map(([sub, name]) => `${sub} → ${name}`).join(', '),
+    )
+  }
+
+  {
+    // A ranking, never a filter. Hard-filtering on known equipment empties two sub-regions
+    // outright, which is exactly why bodyweight and bands rank below rather than out.
+    const subs = [...new Set(data.exercises.map((e) => e.sub))]
+    const empty = subs.filter((sub) => eligibleFor(sub).length > 0 && !leaderOf(sub))
+    const known = data.exercises.filter(onKnownEquipment).length
+    const plain = data.exercises.filter(hasPlainName).length
+    const jargonLed = subs.filter((sub) => leaderOf(sub) && !hasPlainName(leaderOf(sub)))
+    check(
+      'Exercise defaults: no sub-region is left empty by the ranking',
+      empty.length === 0,
+      `${known}/${data.exercises.length} exercises on known equipment, ${plain} plainly named; ` +
+        `${jargonLed.length} sub-region(s) still lead with a jargon name because there is no alternative` +
+        (jargonLed.length ? ` (${jargonLed.map((s) => leaderOf(s).code).join(', ')})` : ''),
+    )
+  }
+
+  {
+    // Below every eligibility filter: injury, age and equipment still decide who is even a
+    // candidate, and the ranking only orders the survivors.
+    const beginnerOldest = data.exercises.filter((e) =>
+      isEligible(e, 'Beginner', '65+', 'Bodyweight only'),
+    )
+    const bad = beginnerOldest.filter((e) => e.avoidAges.includes('65+') || e.skill > 2)
+    const p = run({ ...fixture('Older adult').input, equipment: 'Bodyweight only' })
+    const unsafe = p.days.flatMap((d) => d.exercises).filter((c) => c.exercise.avoidAges.includes('65+'))
+    check(
+      'Exercise defaults: the ranking sits below every eligibility filter, never beside one',
+      bad.length === 0 && unsafe.length === 0,
+      unsafe.length
+        ? unsafe.map((c) => c.exercise.name).join(', ')
+        : `${beginnerOldest.length} candidates survive the 65+ bodyweight filters, and the ranking only orders those`,
+    )
+  }
+}
+
+// ---- Abs: more exercises, and a placement toggle ---------------------------
+{
+  const abs = data.exercises.filter(isAbs)
+  const loadablePlain = abs.filter((e) => onKnownEquipment(e) && hasPlainName(e))
+
+  check(
+    'Abs: the library carries 47 abs exercises, 24 of them loadable and plainly named',
+    abs.length === 47 && loadablePlain.length === 24 && data.exercises.length === 327,
+    `${abs.length} in "${ABS_GROUP}" of ${data.exercises.length} total, ${loadablePlain.length} loadable and plain`,
+  )
+
+  {
+    // Variants of the same movement, so they must not become a way around the restriction
+    // the ab wheel carries.
+    const wheel = data.exercises.find((e) => e.name === 'Ab wheel rollout')!
+    const variants = ['Barbell rollout', 'Cable rollout'].map(
+      (n) => data.exercises.find((e) => e.name === n)!,
+    )
+    const same = variants.every(
+      (v) => JSON.stringify([...v.avoidAges].sort()) === JSON.stringify([...wheel.avoidAges].sort()),
+    )
+    const reachable = variants.filter((v) => isEligible(v, 'Advanced', '65+', 'Full gym'))
+    check(
+      'Abs: the rollout variants carry the ab wheel’s own age restriction, and cannot route round it',
+      same && reachable.length === 0,
+      `Ab wheel ${wheel.avoidAges.join('/')}; ${variants.map((v) => `${v.name} ${v.avoidAges.join('/')}`).join(', ')}`,
+    )
+  }
+
+  {
+    // Farmer's walk against Farmer's carry, and the two overhead carries against Waiter's
+    // walk: separate library entries with their own ids and their own primary sub-region.
+    const bad: string[] = []
+    for (const [a, b] of DUPLICATE_MOVEMENTS) {
+      const x = data.exercises.find((e) => e.name === a)
+      const y = data.exercises.find((e) => e.name === b)
+      // A rename upstream must fail here rather than quietly unlink the pair.
+      if (!x || !y) { bad.push(`${a} / ${b}: no such exercise`); continue }
+      if (x.id === y.id) bad.push(`${a} and ${b} share an id`)
+      if (x.sub === y.sub) bad.push(`${a} and ${b} share a primary sub-region`)
+    }
+    const links = duplicateMovements(data.exercises)
+    if (links.size !== new Set(DUPLICATE_MOVEMENTS.flat()).size)
+      bad.push(`${links.size} linked ids for ${new Set(DUPLICATE_MOVEMENTS.flat()).size} named exercises`)
+
+    // The double count itself: a program holding both filings of one carry must not credit
+    // the movement twice. Measured on a program built to contain both.
+    const walk = data.exercises.find((e) => e.name === "Farmer's walk")!
+    const carry = data.exercises.find((e) => e.name === "Farmer's carry")!
+    const base = run(fixture('Reference').input)
+    const both = {
+      ...base,
+      days: [{ ...base.days[0], exercises: [walk, carry].map((exercise, i) => ({ ...base.days[0].exercises[0], exercise, sets: 3, slotId: `x${i}` })) }],
+    }
+    const one = { ...both, days: [{ ...both.days[0], exercises: [both.days[0].exercises[0]] }] }
+    const creditOf = (p: typeof base, group: string) =>
+      buildAudit(p, data.exercises, 'Male', data.config).rows.find((r) => r.group === group)!.delivered
+    // Traps earns the carry's 3 direct sets and nothing extra from the walk beside it.
+    const trapsBoth = creditOf(both as typeof base, 'Traps')
+    const trapsAlone = creditOf(one as typeof base, 'Traps')
+    if (trapsBoth !== 3) bad.push(`Traps credited ${trapsBoth} with both filings present, not 3`)
+    if (trapsAlone <= 0) bad.push(`the walk alone credits Traps ${trapsAlone} — the synergist link should survive on its own`)
+    check(
+      'Abs: the three overlapping carries stay separate entries, and are never counted twice',
+      bad.length === 0,
+      bad.length
+        ? bad.join('; ')
+        : `${DUPLICATE_MOVEMENTS.length} pairs linked; with both filings present Traps takes ${trapsBoth} direct sets, with the walk alone ${trapsAlone.toFixed(2)}`,
+    )
+  }
+
+  {
+    // A fatigued trunk under a heavy squat or deadlift is a real risk, not a preference.
+    // Read in the order the session is actually performed, which is the BLOCK order — the
+    // exercise list stays in its canonical order and is not what anybody follows.
+    const sessionOrder = (d: { blocks: { indices: number[] }[]; exercises: { exercise: Exercise }[] }) =>
+      d.blocks.flatMap((b) => b.indices.map((i) => d.exercises[i].exercise))
+    const bad: string[] = []
+    let daysWithMain = 0
+    for (const pr of FIXTURES)
+      for (const structure of ['straight', 'superset', 'triset'] as Structure[]) {
+        const p = run({ ...pr.input, structure, absPlacement: 'integrated' })
+        for (const d of p.days) {
+          const order = sessionOrder(d)
+          const lastMain = order.map((e) => e.mainLift).lastIndexOf(true)
+          if (lastMain < 0) continue
+          daysWithMain++
+          const early = order.slice(0, lastMain).filter(isAbs)
+          if (early.length)
+            bad.push(`${pr.name}/${structure} d${d.index + 1}: ${early.map((e) => e.name).join(', ')} before the main lift`)
+        }
+      }
+    check(
+      'Abs: integrated placement never puts an abs exercise before the session’s main lift',
+      bad.length === 0 && daysWithMain > 0,
+      bad.length ? bad.slice(0, 3).join('; ') : `${daysWithMain} days holding a main lift, across every fixture and structure`,
+    )
+  }
+
+  {
+    // And the toggle is not a no-op: if it moved nothing, "changes no total time" would pass
+    // for the wrong reason.
+    const moved: string[] = []
+    for (const pr of FIXTURES)
+      for (const structure of ['straight', 'superset', 'triset'] as Structure[]) {
+        const order = (placement: AbsPlacement) =>
+          run({ ...pr.input, structure, absPlacement: placement })
+            .days.map((d) => d.blocks.flatMap((b) => b.indices).join(','))
+            .join('|')
+        if (order('end') !== order('integrated')) moved.push(`${pr.name}/${structure}`)
+      }
+    check(
+      'Abs: the placement toggle actually moves the session order',
+      moved.length > 0,
+      `${moved.length} of ${FIXTURES.length * 3} fixture/structure combinations read in a different order`,
+    )
+  }
+
+  {
+    // Same exercises, same sets, same total time either way — only the order changes.
+    const bad: string[] = []
+    for (const pr of FIXTURES)
+      for (const structure of ['straight', 'superset', 'triset'] as Structure[]) {
+        const end = run({ ...pr.input, structure, absPlacement: 'end' })
+        const mid = run({ ...pr.input, structure, absPlacement: 'integrated' })
+        const bag = (p: typeof end) =>
+          JSON.stringify(
+            p.days.map((d) =>
+              [...d.exercises.map((c) => `${c.exercise.id}:${c.sets}`)].sort(),
+            ),
+          )
+        if (bag(end) !== bag(mid)) bad.push(`${pr.name}/${structure}: the picks or the sets moved`)
+        const eachDay = end.days.map((d, i) => [d.wholeSetMinutes, mid.days[i].wholeSetMinutes] as const)
+        const drift = Math.max(...eachDay.map(([a, b]) => Math.abs(a - b)))
+        if (drift > 1e-9)
+          bad.push(`${pr.name}/${structure}: session length moved by up to ${drift.toFixed(2)} min`)
+      }
+    check(
+      'Abs: switching placement changes no exercise, no set and no total time',
+      bad.length === 0,
+      bad.length ? bad.slice(0, 4).join('; ') : `${FIXTURES.length} fixtures × 3 structures, identical either way`,
+    )
+  }
+
+  {
+    // The volume tables are unchanged, and none of the three features can move volume: the
+    // allocation decides the sets per sub-region, selection only decides which exercise fills
+    // the slot, and placement only decides the order. Measured as direct sets per muscle
+    // group against what the allocation itself asks for.
+    const bad: string[] = []
+    for (const pr of FIXTURES)
+      for (const placement of ['end', 'integrated'] as AbsPlacement[]) {
+        const p = run({ ...pr.input, absPlacement: placement })
+        const asked: Record<string, number> = {}
+        const subToGroup = new Map(data.exercises.map((e) => [e.sub, e.group]))
+        for (const day of p.block.days)
+          for (const [sub, count, sets] of day.slots) {
+            const g = subToGroup.get(sub)
+            if (g) asked[g] = (asked[g] ?? 0) + count * sets
+          }
+        const got: Record<string, number> = {}
+        for (const d of p.days)
+          for (const c of d.exercises) got[c.exercise.group] = (got[c.exercise.group] ?? 0) + c.sets
+        for (const g of new Set([...Object.keys(asked), ...Object.keys(got)]))
+          if (Math.abs((asked[g] ?? 0) - (got[g] ?? 0)) > 1e-9)
+            bad.push(`${pr.name}/${placement} ${g}: allocation asks ${asked[g] ?? 0}, program delivers ${got[g] ?? 0}`)
+      }
+    check(
+      'Abs: weekly direct volume per muscle group is exactly what the allocation asks for, under either placement',
+      bad.length === 0,
+      bad.length ? bad.slice(0, 4).join('; ') : 'selection and placement cannot move volume; only the allocation sets it',
+    )
+  }
+
+  {
+    // The reorder itself, in isolation.
+    const items = [
+      { ex: { group: 'Chest', mainLift: true, name: 'a' } },
+      { ex: { group: ABS_GROUP, mainLift: false, name: 'x' } },
+      { ex: { group: 'Lats', mainLift: false, name: 'b' } },
+      { ex: { group: ABS_GROUP, mainLift: false, name: 'y' } },
+      { ex: { group: 'Delts', mainLift: false, name: 'c' } },
+    ]
+    const nameOf = (list: typeof items) => list.map((i) => i.ex.name).join('')
+    const at = placeAbs(items, 'end', (i) => i.ex as never)
+    const mid = placeAbs(items, 'integrated', (i) => i.ex as never)
+    check(
+      'Abs: the end block gathers them, the integrated one deals them out after the main lift',
+      nameOf(at) === 'abcxy' && mid[0].ex.name === 'a' && nameOf(mid).indexOf('x') > 0,
+      `end → ${nameOf(at)}, integrated → ${nameOf(mid)}`,
     )
   }
 }

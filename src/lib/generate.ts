@@ -62,6 +62,18 @@ import {
   type Pin,
   type RetiredPin,
 } from './amend'
+import { absLastOrder, isAbs, orderAbsBlocks, placeAbs } from './abs'
+import { defaultRank } from './defaults'
+import {
+  bandFor,
+  boostedRest,
+  conditioningMinutes,
+  maxRestFor,
+  prescribeConditioning,
+  restStep,
+  solveRestBoost,
+  type Conditioning,
+} from './sessionlength'
 import {
   buildSubAliases,
   formBlocks,
@@ -132,6 +144,14 @@ export interface GeneratedDay {
   correctiveMinutes: number
   /** InBody high-TBW filler bouts performed this session; each one costs session time */
   fillerBouts: number
+  /**
+   * The session-length conditioning block, or null. It sits at the very end of the session,
+   * after the corrective work, costs session time and satisfies no muscle-group target — it
+   * is never in `exercises`, so the volume audit cannot see it.
+   */
+  conditioning: Conditioning | null
+  /** seconds added to every exercise's rest to reach the band floor; 0 when none was needed */
+  restBoost: number
   /** how this session is performed, after any time-cap structure step */
   structure: Structure
   /**
@@ -268,7 +288,13 @@ export function modalSets(values: number[]): number {
   return [...counts.entries()].sort((a, b) => b[1] - a[1] || b[0] - a[0])[0][0]
 }
 
-/** Spec ranking: main lift (Get Stronger only) -> tier -> load desc -> id asc. */
+/**
+ * Main lift (Get Stronger only) -> the default ranking -> tier -> load desc -> id asc.
+ *
+ * The default ranking sits above tier and below every eligibility filter, so what a
+ * sub-region leads with is a known, plainly-named movement wherever one exists — see
+ * lib/defaults.ts. Injury PRIORITY still outranks all of it.
+ */
 const TIER_ORDER: Record<string, number> = { primary: 0, secondary: 1, accessory: 2 }
 
 export function rankCandidates(
@@ -285,6 +311,8 @@ export function rankCandidates(
       const m = Number(b.mainLift) - Number(a.mainLift)
       if (m !== 0) return m
     }
+    const d = defaultRank(a, b)
+    if (d !== 0) return d
     const t = (TIER_ORDER[a.tier] ?? 9) - (TIER_ORDER[b.tier] ?? 9)
     if (t !== 0) return t
     if (b.load !== a.load) return b.load - a.load
@@ -558,7 +586,13 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
       return 0
     })
 
-    selected.push({ index: dayIndex, label: allocDay.label, chosen })
+    // Where the abs work sits. A reorder and nothing else: same exercises, same sets. On the
+    // integrated side no abs exercise is ever placed before the session's main lift.
+    selected.push({
+      index: dayIndex,
+      label: allocDay.label,
+      chosen: placeAbs(chosen, input.absPlacement, (c) => c.exercise),
+    })
   })
 
   // ---- InBody -------------------------------------------------------------
@@ -700,8 +734,24 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
   // layer can both remove an exercise and step the structure — either one changes which
   // exercises pair with which, and a patched block list would be quietly wrong.
 
-  /** blocks over `list`, with indices into `list` */
+  /**
+   * Blocks over `list`, with indices into `list`.
+   *
+   * Formed from ONE canonical order — abs last — whatever order `list` is actually in. Block
+   * formation is greedy, so running it on the placed order would make the two abs placements
+   * produce different pairings and therefore different session lengths. Canonicalising here
+   * is what makes "same exercises, same sets, same total time either way" exactly true.
+   */
   const buildBlocks = (list: ChosenExercise[], structure: Structure): Block[] => {
+    const order = absLastOrder(list.length, (i) => isAbs(list[i].exercise))
+    const canonical = order.map((i) => list[i])
+    return blocksOver(canonical, structure)
+      .map((b) => ({ ...b, indices: b.indices.map((j) => order[j]).sort((x, y) => x - y) }))
+      .sort((a, b) => a.indices[0] - b.indices[0])
+  }
+
+  /** the greedy pass itself, over whatever order it is handed */
+  const blocksOver = (list: ChosenExercise[], structure: Structure): Block[] => {
     const pairable = list.map((c) => ({
       exercise: c.exercise,
       sets: c.sets,
@@ -772,6 +822,7 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
     correctives: CorrectiveSlot[],
     stretches: CorrectiveStretch[],
     fillerBouts: number,
+    conditioningMinutes: number,
   ): CapDayModel => {
     const blockCache = new Map<string, Block[]>()
     return {
@@ -784,6 +835,7 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
       restFloor: capRestFloor,
       fillerBoutSeconds: inbody.filler?.seconds ?? data.timecap.timeModel.fillerBoutSeconds,
       stretchSeconds: data.bodydot.stretchSeconds,
+      conditioningMinutes,
       exercises: list.map((c) => ({
         exercise: c.exercise,
         tier: c.exercise.tier,
@@ -817,6 +869,7 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
     }
   }
 
+  const absPlacement = input.absPlacement
   const buildDay = (
     dayIndex: number,
     label: string,
@@ -825,8 +878,21 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
     correctives: CorrectiveSlot[],
     stretches: CorrectiveStretch[],
     fillerOverride?: number,
+    conditioning: Conditioning | null = null,
+    restBoost = 0,
   ): GeneratedDay => {
-    const blocks = buildBlocks(chosen, structure)
+    // Placement acts on the finished BLOCKS, never on the picks they are formed from, and
+    // never on the exercise list itself. The partition is identical either way — same
+    // members, same sets, same rest — so the only thing that changes is the order the
+    // session is read in. That is what makes "same total time either way" exactly true
+    // rather than nearly true.
+    const formed = buildBlocks(chosen, structure)
+    const blocks = orderAbsBlocks(
+      formed,
+      (i) => isAbs(chosen[i].exercise),
+      (i) => chosen[i].exercise.mainLift,
+      absPlacement,
+    ).map((bi) => formed[bi])
     applyBlockFigures(chosen, blocks)
     // High-TBW filler is prescribed on isolation slots, so a session without one runs none.
     const fillerBouts =
@@ -834,7 +900,14 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
       (inbody.filler && chosen.some((c) => c.exercise.type === 'isolation')
         ? inbody.filler.bouts
         : 0)
-    const capModel = buildCapModel(chosen, structure, correctives, stretches, fillerBouts)
+    const capModel = buildCapModel(
+      chosen,
+      structure,
+      correctives,
+      stretches,
+      fillerBouts,
+      conditioning?.minutes ?? 0,
+    )
     const capState = baseState(capModel)
     return {
       index: dayIndex,
@@ -849,6 +922,8 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
       correctiveMinutes:
         correctiveSeconds(correctives, stretches, data.bodydot.stretchSeconds) / 60,
       fillerBouts,
+      conditioning,
+      restBoost,
       structure,
       capModel,
       capState,
@@ -875,6 +950,90 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
   }
   refreshWholeSetMinutes()
 
+
+  // ---- session length -----------------------------------------------------
+  // Every workout in 55-75 minutes, without touching a single volume table. Two levers, in
+  // order: raise rest to the goal's ceiling, then fill whatever is still missing with
+  // conditioning. Neither adds a set, so weekly volume cannot move through this.
+  //
+  // Ages 6-12 have no band at all and neither lever is applied to them — a ten-year-old
+  // should not be given an hour, and their session is whatever their volume produces.
+  const sl = data.sessionlength
+  const band = bandFor(sl, ageBr)
+  if (band) {
+    const [floor] = band
+    const maxRest = maxRestFor(sl, input.goal)
+    const step = restStep(sl)
+    const painIds = Object.keys(input.pains)
+    const rounded = refreshWholeSetMinutes()
+
+    days.forEach((day, at) => {
+      const sets = day.exercises.map(
+        (c, i) => rounded.byPick.get(pickKey(day.index, i)) ?? c.sets,
+      )
+      /** the day as it would read at this rest boost and this much conditioning */
+      const probe = (boost: number, conditioning: number): number => {
+        const list =
+          boost === 0
+            ? day.exercises
+            : day.exercises.map((c) => ({
+                ...c,
+                restSeconds: boostedRest(c.restSeconds, boost, maxRest, step),
+              }))
+        const model = buildCapModel(
+          list,
+          day.structure,
+          day.correctives,
+          day.correctiveStretches,
+          day.fillerBouts,
+          conditioning,
+        )
+        return capMinutes(model, { ...baseState(model), sets })
+      }
+
+      // Lever 1 — rest. Free: no work is added or removed, only the interval between sets.
+      // The Lose Fat ceiling is deliberately low, because short rest IS the fat-loss method;
+      // a client resting three minutes is no longer doing fat-loss training.
+      const boost = solveRestBoost(
+        floor,
+        day.exercises.map((c) => c.restSeconds),
+        sl,
+        input.goal,
+        (b) => probe(b, 0),
+      )
+      if (boost > 0) {
+        for (const c of day.exercises) {
+          c.restSeconds = boostedRest(c.restSeconds, boost, maxRest, step)
+          // A raised rest is a single number, not the prescription's range — the client has
+          // to be able to follow it on a clock.
+          c.rest = String(c.restSeconds)
+        }
+      }
+
+      // Lever 2 — conditioning, rounded UP to five minutes. Rounding to the NEAREST five
+      // leaves a session a minute or two under the floor, which reaches the band never.
+      const conditioning = prescribeConditioning(
+        sl,
+        conditioningMinutes(sl, floor, probe(0, 0)),
+        painIds,
+      )
+
+      days[at] = buildDay(
+        day.index,
+        day.label,
+        day.exercises,
+        day.structure,
+        day.correctives,
+        day.correctiveStretches,
+        day.fillerBouts,
+        conditioning,
+        boost,
+      )
+    })
+
+    refreshWholeSetMinutes()
+  }
+
   // ---- Load ---------------------------------------------------------------
   // Purely an annotation layer: it reads the newton figures and attaches a weight range to
   // exercises that already exist. It never changes selection, sets, reps, rest or timing.
@@ -890,6 +1049,11 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
   // Runs last, after injury, all three machines, the structure selector and any amends, and
   // it only ever removes. The plan is recomputed from the untouched day on every generation,
   // so pressing the same day twice produces the same plan.
+  // Lever 3 — trim. Anything over the band CEILING is handed to the time-cap engine, which
+  // is what that engine exists for. So the button drives to the ceiling rather than to
+  // timecap.json's own 60: a session the band filled to 55-60 is already where it should be,
+  // and shrinking it further is the client's call, not the program's.
+  const capTarget = band ? band[1] : data.timecap.target
   const capPins = input.caps ?? []
   const capApplied: TimeCapResult['applied'] = []
   const capRetired: { pin: CapPin; reason: string }[] = []
@@ -922,11 +1086,13 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
         d.correctives,
         d.correctiveStretches,
         d.fillerBouts,
+        d.conditioning,
+        d.restBoost,
       )
     }
     const day = days[at]
     const model = day.capModel
-    const plan = planCap(model)
+    const plan = planCap(model, { target: capTarget })
     const { state } = plan
 
     const keep = day.exercises.map((_, i) => i).filter((i) => state.alive[i])
@@ -957,6 +1123,9 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
       correctives,
       stretches,
       state.fillerBouts,
+      // Conditioning is the cheapest lever, so it is the first thing a press removes.
+      state.conditioningAlive ? day.conditioning : null,
+      day.restBoost,
     )
     // `model` is the day as the search saw it — whole sets, nothing cut yet. Kept so the
     // plan can be re-derived and re-proved from outside.
@@ -967,7 +1136,7 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
 
   const timecap: TimeCapResult = {
     active: capApplied.length + capRetired.length > 0,
-    target: data.timecap.target,
+    target: capTarget,
     applied: capApplied,
     retired: capRetired,
   }

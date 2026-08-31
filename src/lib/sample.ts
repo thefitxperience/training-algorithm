@@ -1,6 +1,7 @@
 import type { ClientInput, DataBundle, Sex } from '../types'
 import { EQUIPMENT_TIERS, type EquipmentTier } from './equipment'
 import { STRUCTURES, type Structure } from './structure'
+import { ABS_PLACEMENTS, type AbsPlacement } from './abs'
 import { parseRange, realBands, type BodyDotInput } from './bodydot'
 import type { ValdInput, WeakSide } from './vald'
 import type { InBodyInput } from './inbody'
@@ -204,6 +205,7 @@ export function sampleClient(
       split,
       equipment: pick(rng, EQUIPMENT_TIERS as readonly EquipmentTier[]),
       structure: pick(rng, STRUCTURES as readonly Structure[]),
+      absPlacement: pick(rng, ABS_PLACEMENTS as readonly AbsPlacement[]),
       pains: options.pain ? samplePains(data, rng) : {},
       inbody: options.inbody ? sampleInBody(rng, sex) : {},
       vald: options.vald ? sampleVald(data, rng) : {},
@@ -228,6 +230,7 @@ const FALLBACK: ClientInput = {
   split: 'Upper / Lower',
   equipment: 'Full gym',
   structure: 'straight',
+  absPlacement: 'end',
   pains: {},
   inbody: {},
   vald: {},

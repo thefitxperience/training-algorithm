@@ -1,6 +1,7 @@
 import type { EquipmentTier } from './lib/equipment'
 import type { PainSelection } from './lib/injury'
 import type { Structure } from './lib/structure'
+import type { AbsPlacement } from './lib/abs'
 import type { InBodyInput } from './lib/inbody'
 import type { ValdInput } from './lib/vald'
 import type { BodyDotInput } from './lib/bodydot'
@@ -380,6 +381,56 @@ export interface TimeCapData {
   openItems: Record<string, string>
 }
 
+/** One of the four ways the conditioning block can be performed. */
+export interface ConditioningModality {
+  id: string
+  label: string
+  /** true where the modality lands through the foot — dropped on ankle/knee/Achilles/foot pain */
+  impact: boolean
+  default?: boolean
+}
+
+export interface SessionLengthData {
+  band: {
+    default: [number, number]
+    /** null for a bracket with no band at all — 6-12 has none */
+    byAge: Record<string, [number, number] | null>
+    note: string
+  }
+  workSeconds: Record<string, number>
+  warmupMinutes: number
+  defaultStructure: Record<string, string>
+  levers: {
+    order: number
+    id: string
+    appliesTo: string
+    /** rest lever: the ceiling rest may be raised to, per goal */
+    maxRest?: Record<string, number>
+    /** rest lever: seconds per step */
+    step?: number
+    /** conditioning lever: the most conditioning that may be prescribed */
+    maxMinutes?: number
+    why: string
+  }[]
+  conditioning: {
+    blockName: string
+    placement: string
+    roundToMinutes: number
+    rounding: string
+    modalities: ConditioningModality[]
+    /** pain ids that rule out an impact modality */
+    nonImpactPains: string[]
+    excludeAges: string[]
+    countsTowardVolume: boolean
+    note: string
+  }
+  interactionWithTimeCap: { rule: string; buttonLeverOrder: string }
+  volumeTablesUnchanged: boolean
+  rejected: Record<string, string>
+  /** the upstream measurement this app's own figure is compared against */
+  validated: { inBand: number; over: number; short: number; note: string }
+}
+
 export interface DataBundle {
   config: Config
   allocation: Allocation
@@ -394,6 +445,7 @@ export interface DataBundle {
   load: LoadData
   amend: AmendData
   timecap: TimeCapData
+  sessionlength: SessionLengthData
 }
 
 export interface ClientInput {
@@ -409,6 +461,8 @@ export interface ClientInput {
   pains: PainSelection
   /** how the work is performed; never changes what the work is */
   structure: Structure
+  /** where the abs work sits in the session; never changes what the work is */
+  absPlacement: AbsPlacement
   /** body-composition scan; empty means the InBody layer is inert */
   inbody: InBodyInput
   /** asymmetry readings per test code; empty means the VALD layer is inert */

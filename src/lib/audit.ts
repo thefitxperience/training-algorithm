@@ -1,4 +1,5 @@
 import type { Config, Exercise } from '../types'
+import { duplicateMovements } from './abs'
 import type { Program } from './generate'
 
 export interface AuditRow {
@@ -70,6 +71,16 @@ export function buildAudit(
   const subToGroup = new Map<string, string>()
   for (const ex of exercises) subToGroup.set(ex.sub, ex.group)
 
+  // Where a program holds both filings of one movement — a farmer's walk and a farmer's
+  // carry are the same walk — the synergist credit each gives the other is dropped. The
+  // direct sets both earn are real; counting the movement a second time as indirect credit
+  // is not. See DUPLICATE_MOVEMENTS in lib/abs.ts.
+  const duplicates = duplicateMovements(exercises)
+  const present = new Set(program.days.flatMap((d) => d.exercises.map((c) => c.exercise.id)))
+  const byId = new Map(exercises.map((e) => [e.id, e]))
+  const doubleCounted = (ex: Exercise, also: string) =>
+    (duplicates.get(ex.id) ?? []).some((id) => present.has(id) && byId.get(id)?.sub === also)
+
   const delivered: Record<string, number> = {}
   const direct: Record<string, number> = {}
   for (const g of config.groups) {
@@ -91,6 +102,7 @@ export function buildAudit(
           unmapped.add(also)
           continue
         }
+        if (doubleCounted(ex, also)) continue
         delivered[g] = (delivered[g] ?? 0) + config.indirectCredit * chosen.sets
       }
     }

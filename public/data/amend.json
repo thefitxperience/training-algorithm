@@ -2,7 +2,6 @@
  "types": {
   "A": {
    "name": "EQUIPMENT",
-   "detect": "the chosen token is already in that exercise's Equipment field",
    "requiresAcceptance": false,
    "recomputes": [
     "load",
@@ -39,15 +38,15 @@
   }
  },
  "badges": {
-  "RECOMMENDED": "same sub-region AND same movement type; on a MAIN slot also carries the main lift flag",
-  "AVAILABLE": "same sub-region, different movement type - legal, load will change",
-  "ADAPTED": "different sub-region - this is a type C and carries the warning"
+  "RECOMMENDED": "same sub-region AND same movement type; on a MAIN slot also main-lift flagged",
+  "AVAILABLE": "same sub-region, different movement type",
+  "ADAPTED": "different sub-region - type C"
  },
  "blocks": {
-  "injury": "the pain rules return REMOVE or SIDE ONLY - the only hard refusal",
-  "age": "the library's Avoid ages column names the client's bracket",
-  "mainSlot": "a MAIN slot must hold a Compound movement type",
-  "corrective": "BodyDot corrective slots are prescribed by the screening, not chosen"
+  "injury": "REMOVE or SIDE ONLY - the only hard refusal",
+  "age": "avoidAges names the client's bracket",
+  "mainSlot": "a MAIN slot must hold a movement of type compound",
+  "corrective": "BodyDot corrective slots are not amendable"
  },
  "precedence": [
   "injury",
@@ -57,19 +56,23 @@
  ],
  "ranking": [
   "not blocked",
-  "same primary sub-region (type B before type C)",
-  "on a MAIN slot, main-lift-flagged first",
+  "same primary sub-region",
+  "on a MAIN slot main-lift first",
   "same movement type",
-  "shares an equipment token with the current exercise",
-  "closest Load (1-5) rating",
+  "shares an equipment token",
+  "closest load rating",
   "library order"
  ],
  "shortlistMax": 8,
- "mainSlotClassField": "movementType",
+ "mainSlotClassField": "type",
  "mainSlotAllowed": [
-  "Compound"
+  "compound"
  ],
  "siblingSubRegions": {
+  "C-UP": [
+   "C-LOW",
+   "C-MID"
+  ],
   "C-LOW": [
    "C-MID",
    "C-UP"
@@ -77,14 +80,6 @@
   "C-MID": [
    "C-LOW",
    "C-UP"
-  ],
-  "C-UP": [
-   "C-LOW",
-   "C-MID"
-  ],
-  "L-STR": [
-   "L-HOR",
-   "L-VERT"
   ],
   "L-VERT": [
    "L-HOR",
@@ -94,29 +89,33 @@
    "L-STR",
    "L-VERT"
   ],
+  "L-STR": [
+   "L-HOR",
+   "L-VERT"
+  ],
   "UB-RET": [
    "UB-LT",
+   "UB-SER"
+  ],
+  "UB-LT": [
+   "UB-RET",
    "UB-SER"
   ],
   "UB-SER": [
    "UB-LT",
    "UB-RET"
   ],
-  "UB-LT": [
-   "UB-RET",
-   "UB-SER"
-  ],
   "T-UP": [],
   "D-SIDE": [
    "D-FR",
    "D-REAR"
   ],
-  "D-FR": [
-   "D-REAR",
-   "D-SIDE"
-  ],
   "D-REAR": [
    "D-FR",
+   "D-SIDE"
+  ],
+  "D-FR": [
+   "D-REAR",
    "D-SIDE"
   ],
   "RC-IR": [
@@ -125,17 +124,21 @@
   "RC-ER": [
    "RC-IR"
   ],
-  "N-LAT": [
-   "N-EXT",
-   "N-FLEX"
+  "N-EXT": [
+   "N-FLEX",
+   "N-LAT"
   ],
   "N-FLEX": [
    "N-EXT",
    "N-LAT"
   ],
-  "N-EXT": [
-   "N-FLEX",
-   "N-LAT"
+  "N-LAT": [
+   "N-EXT",
+   "N-FLEX"
+  ],
+  "B-SHORT": [
+   "B-BRACH",
+   "B-LONG"
   ],
   "B-BRACH": [
    "B-LONG",
@@ -145,15 +148,15 @@
    "B-BRACH",
    "B-SHORT"
   ],
-  "B-SHORT": [
-   "B-BRACH",
-   "B-LONG"
-  ],
   "TRI-LAT": [
    "TRI-LONG"
   ],
   "TRI-LONG": [
    "TRI-LAT"
+  ],
+  "F-FLEX": [
+   "F-EXT",
+   "F-GRIP"
   ],
   "F-EXT": [
    "F-FLEX",
@@ -163,24 +166,20 @@
    "F-EXT",
    "F-FLEX"
   ],
-  "F-FLEX": [
-   "F-EXT",
-   "F-GRIP"
-  ],
-  "AC-ALF": [
+  "AC-OBL": [
    "AC-AE",
-   "AC-FLEX",
-   "AC-OBL"
+   "AC-ALF",
+   "AC-FLEX"
   ],
   "AC-FLEX": [
    "AC-AE",
    "AC-ALF",
    "AC-OBL"
   ],
-  "AC-OBL": [
+  "AC-ALF": [
    "AC-AE",
-   "AC-ALF",
-   "AC-FLEX"
+   "AC-FLEX",
+   "AC-OBL"
   ],
   "AC-AE": [
    "AC-ALF",
@@ -193,23 +192,11 @@
   "LB-QL": [
    "LB-ERE"
   ],
-  "G-HF": [
-   "G-ABD",
-   "G-ER",
-   "G-EXT",
-   "G-STR"
-  ],
   "G-STR": [
    "G-ABD",
    "G-ER",
    "G-EXT",
    "G-HF"
-  ],
-  "G-ABD": [
-   "G-ER",
-   "G-EXT",
-   "G-HF",
-   "G-STR"
   ],
   "G-ER": [
    "G-ABD",
@@ -223,12 +210,17 @@
    "G-HF",
    "G-STR"
   ],
-  "H-HINGE": [
-   "AD-MAG",
-   "AD-SHORT",
-   "H-CURL",
-   "Q-KD",
-   "Q-STR"
+  "G-HF": [
+   "G-ABD",
+   "G-ER",
+   "G-EXT",
+   "G-STR"
+  ],
+  "G-ABD": [
+   "G-ER",
+   "G-EXT",
+   "G-HF",
+   "G-STR"
   ],
   "AD-MAG": [
    "AD-SHORT",
@@ -244,19 +236,26 @@
    "H-HINGE",
    "Q-STR"
   ],
-  "AD-SHORT": [
-   "AD-MAG",
-   "H-CURL",
-   "H-HINGE",
-   "Q-KD",
-   "Q-STR"
-  ],
   "Q-STR": [
    "AD-MAG",
    "AD-SHORT",
    "H-CURL",
    "H-HINGE",
    "Q-KD"
+  ],
+  "H-HINGE": [
+   "AD-MAG",
+   "AD-SHORT",
+   "H-CURL",
+   "Q-KD",
+   "Q-STR"
+  ],
+  "AD-SHORT": [
+   "AD-MAG",
+   "H-CURL",
+   "H-HINGE",
+   "Q-KD",
+   "Q-STR"
   ],
   "H-CURL": [
    "AD-MAG",
@@ -270,11 +269,6 @@
    "CA-SOL",
    "CA-TIB"
   ],
-  "CA-GAS": [
-   "CA-PER",
-   "CA-SOL",
-   "CA-TIB"
-  ],
   "CA-TIB": [
    "CA-GAS",
    "CA-PER",
@@ -283,6 +277,11 @@
   "CA-SOL": [
    "CA-GAS",
    "CA-PER",
+   "CA-TIB"
+  ],
+  "CA-GAS": [
+   "CA-PER",
+   "CA-SOL",
    "CA-TIB"
   ]
  },
@@ -388,10 +387,5 @@
   "recomputes",
   "timestamp"
  ],
- "typeCWarning": "You're replacing {from} with {to}. That trains {toSub} instead of {fromSub}, so your weekly volume for those muscles changes. Your program stays complete and safe. Accept?",
- "openItems": {
-  "permissions": "PROPOSED: client may make type A and B, trainer may make all three",
-  "driftTolerance": "15% is a starting number, not a derived one",
-  "amendBudget": "no cap on how many slots may be pinned"
- }
+ "typeCWarning": "You're replacing {from} with {to}. That trains {toSub} instead of {fromSub}, so your weekly volume for those muscles changes. Your program stays complete and safe. Accept?"
 }

@@ -1,5 +1,10 @@
 import type { ClientInput } from '../types'
 import type { Badge, Structure } from '../lib/structure'
+import {
+  ABS_PLACEMENTS,
+  ABS_PLACEMENT_BLURB,
+  ABS_PLACEMENT_LABEL,
+} from '../lib/abs'
 import { Field, Note } from './ui'
 
 export interface StructureOption {
@@ -95,6 +100,48 @@ export function StructurePicker({
           })}
         </div>
       </Field>
+
+      <Field
+        label="Where the abs work sits"
+        hint="Same exercises, same sets, same total time. Only the order changes."
+      >
+        <div className="grid gap-2 sm:grid-cols-2">
+          {ABS_PLACEMENTS.map((placement) => {
+            const selected = placement === input.absPlacement
+            return (
+              <button
+                key={placement}
+                type="button"
+                onClick={() => setInput({ ...input, absPlacement: placement })}
+                title={
+                  placement === 'integrated'
+                    ? 'Abs work is never placed before the main lift — a fatigued trunk under a heavy squat or deadlift is a real risk.'
+                    : 'One block at the end, under a Core heading.'
+                }
+                className={`rounded-xl border px-3 py-2.5 text-left transition ${
+                  selected
+                    ? 'border-udra-blue bg-udra-blue text-white'
+                    : 'border-udra-linen-300 bg-white hover:border-udra-blue-200'
+                }`}
+              >
+                <span className="text-sm font-bold">{ABS_PLACEMENT_LABEL[placement]}</span>
+                <span
+                  className={`mt-0.5 block text-[12px] ${selected ? 'text-white/80' : 'text-udra-ink-500'}`}
+                >
+                  {ABS_PLACEMENT_BLURB[placement]}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      </Field>
+
+      {input.absPlacement === 'integrated' && (
+        <Note>
+          Integrated, but never before the main lift — a fatigued trunk under a heavy squat or
+          deadlift is a real risk, not a preference.
+        </Note>
+      )}
 
       {input.structure === 'triset' && (
         <Note>

@@ -23,6 +23,7 @@ export interface CapPin {
 // ---- levers ----------------------------------------------------------------
 
 export type LeverId =
+  | 'conditioning'
   | 'filler'
   | 'rest'
   | 'structure_step'
@@ -46,6 +47,20 @@ export function leverIdOf(dataId: string): LeverId | null {
   if (dataId === 'main_lift') return null
   return dataId as LeverId
 }
+
+/**
+ * What dropping the session-length conditioning block costs.
+ *
+ * It lives here rather than in timecap.json because that file is generated upstream and is
+ * never edited by this app. One point is the cheapest price any lever carries, and the block
+ * is enumerated before every file row, so at equal cost the tie-break — insertion order —
+ * still falls its way: **conditioning is the first thing removed.** It is the cheapest thing
+ * to lose, and a client pressing this button has just asked for a shorter session.
+ */
+export const CONDITIONING_LEVER_COST = 1
+
+export const CONDITIONING_COMPROMISE =
+  'the conditioning block that was filling the session to the 55-minute floor'
 
 export function restLeverId(goal: string): string {
   return REST_LEVER_BY_GOAL[goal] ?? 'rest_BM'
@@ -102,6 +117,8 @@ export interface CapDayModel {
   restFloor: number
   fillerBoutSeconds: number
   stretchSeconds: number
+  /** the session-length conditioning block, in minutes; 0 where none was prescribed */
+  conditioningMinutes: number
   exercises: CapExercise[]
   correctives: CapCorrective[]
   /** a stretch survives while any corrective it belongs to survives */
@@ -125,6 +142,7 @@ export interface CapState {
   stepped: boolean
   fillerBouts: number
   correctivesAlive: boolean[]
+  conditioningAlive: boolean
 }
 
 export function baseState(m: CapDayModel): CapState {
@@ -135,6 +153,7 @@ export function baseState(m: CapDayModel): CapState {
     stepped: false,
     fillerBouts: m.fillerBouts,
     correctivesAlive: m.correctives.map(() => true),
+    conditioningAlive: m.conditioningMinutes > 0,
   }
 }
 
@@ -146,6 +165,7 @@ export function stateKey(s: CapState): string {
     s.stepped ? 1 : 0,
     s.fillerBouts,
     s.correctivesAlive.map((a) => (a ? 1 : 0)).join(''),
+    s.conditioningAlive ? 1 : 0,
   ].join('|')
 }
 
@@ -217,6 +237,9 @@ export function capSeconds(m: CapDayModel, s: CapState): number {
   }
 
   total += s.fillerBouts * m.fillerBoutSeconds
+  // Conditioning is time, never volume: it lengthens the session and satisfies no muscle
+  // group. The audit reads the exercise list, which it is deliberately not part of.
+  if (s.conditioningAlive) total += m.conditioningMinutes * 60
   return total + m.warmupMinutes * 60
 }
 
@@ -245,6 +268,7 @@ const clone = (s: CapState): CapState => ({
   stepped: s.stepped,
   fillerBouts: s.fillerBouts,
   correctivesAlive: [...s.correctivesAlive],
+  conditioningAlive: s.conditioningAlive,
 })
 
 const SET_LEVER_BY_TIER: Record<string, string> = {
@@ -264,12 +288,28 @@ const SET_LEVER_BY_TIER: Record<string, string> = {
  */
 export function children(m: CapDayModel, s: CapState, parentSeconds: number): Child[] {
   const out: Child[] = []
-  const push = (dataId: string, lever: LeverId, detail: string, next: CapState) => {
-    const cost = leverCost(m.data, dataId)
-    if (cost === null) return
+  const offer = (dataId: string, lever: LeverId, cost: number, detail: string, next: CapState) => {
     const seconds = capSeconds(m, next)
     if (seconds >= parentSeconds) return
     out.push({ step: { lever, dataId, cost, detail }, state: next, seconds })
+  }
+  const push = (dataId: string, lever: LeverId, detail: string, next: CapState) => {
+    const cost = leverCost(m.data, dataId)
+    if (cost === null) return
+    offer(dataId, lever, cost, detail, next)
+  }
+
+  // Enumerated before every file row, so it is the first thing this button removes.
+  if (s.conditioningAlive) {
+    const next = clone(s)
+    next.conditioningAlive = false
+    offer(
+      'conditioning',
+      'conditioning',
+      CONDITIONING_LEVER_COST,
+      `drop the ${m.conditioningMinutes}-minute conditioning block`,
+      next,
+    )
   }
 
   for (const lever of m.data.levers) {
@@ -500,7 +540,9 @@ function gaveUpSentence(m: CapDayModel, steps: CapStep[]): string {
   for (const s of steps) seen.set(s.dataId, Math.max(seen.get(s.dataId) ?? 0, s.cost))
   const parts = [...seen.entries()]
     .sort((a, b) => b[1] - a[1])
-    .map(([dataId]) => compromiseOf(m.data, dataId))
+    .map(([dataId]) =>
+      dataId === 'conditioning' ? CONDITIONING_COMPROMISE : compromiseOf(m.data, dataId),
+    )
     .filter(Boolean)
   if (parts.length === 0) return 'Nothing measurable.'
   const sentence = parts.length === 1 ? parts[0] : `${parts.slice(0, -1).join('; ')}; and ${parts.at(-1)}`

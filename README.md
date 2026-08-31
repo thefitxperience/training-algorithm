@@ -52,13 +52,13 @@ access control rather than Pages.
 
 ## Data
 
-Thirteen files in `public/data/`, served as static assets and fetched once at startup:
+Fourteen files in `public/data/`, served as static assets and fetched once at startup:
 
 | File | What it is |
 |---|---|
 | `config.json` | vocabularies (goals, levels, ages, splits, groups) and constants |
 | `allocation.json` | ~3 MB pre-computed skeleton, 2,205 blocks keyed `{split}\|{goal}\|{age}\|{level}\|{days}` |
-| `exercises.json` | 315 exercises |
+| `exercises.json` | 327 exercises |
 | `prescription.json` | reps/rest keyed `{sex}\|{days}\|{age}\|{level}` then by goal |
 | `splits.json` | split badges keyed `{goal}\|{days}\|{level}\|{split}` (age 18-29 only) |
 | `injury.json` | 18 pains, their rules, load-tag glossary, per-exercise injury records, and UI copy |
@@ -66,6 +66,7 @@ Thirteen files in `public/data/`, served as static assets and fetched once at st
 | `inbody.json` | scan thresholds, the 8 pre-blended goal vectors, rest floors, region map and filler rules |
 | `vald.json` | 6 asymmetry brackets, the 17 tests with their library coverage, and the budget/conversion rules |
 | `bodydot.json` | 26 posture indicators with their bands, and 18 arsenal entries covering 13 of them, pre-resolved to library ids |
+| `sessionlength.json` | the 55-75 minute band, the rest and conditioning levers, and the four conditioning modalities |
 | `load.json` | 17 newtons-to-kilograms constants, 17 anchors, 30 bridges, and a pre-computed class/modifier/laterality record for all 315 exercises |
 | `amend.json` | the three amend types, four blocks, seven ranking rules, sibling sub-regions for all 47 codes, and the sub-regions each pain empties |
 | `timecap.json` | the twelve levers and their costs, the rest floors, the four hard floors, and the session time model |
@@ -92,6 +93,10 @@ actor, accepted, timestamp.
   ranking, the fallback cascade, session minutes.
 - [src/lib/audit.ts](src/lib/audit.ts) — volume audit, recomputed from the chosen
   exercises rather than read from the allocation's `delivered` field.
+- [src/lib/sessionlength.ts](src/lib/sessionlength.ts) — the 55-75 band, the rest and
+  conditioning levers, and which modality a client may be prescribed.
+- [src/lib/defaults.ts](src/lib/defaults.ts) — which exercise a sub-region leads with.
+- [src/lib/abs.ts](src/lib/abs.ts) — where the abs work sits, and the three carries filed twice.
 - [src/lib/draft.ts](src/lib/draft.ts) — the client the form opens on, and the rule that a
   cleared field produces no program rather than a guessed one.
 - [src/lib/sample.ts](src/lib/sample.ts) — made-up clients for the Quick test button.
@@ -104,10 +109,11 @@ actor, accepted, timestamp.
 Page one is who the client is and what hurts. Page two is the program, with the machines
 above it and **how the session is run** beside it.
 
-That last one moved. It is the only setting worth flipping back and forth — it changes no
-exercise and no set, only how long a session takes — and the thing to judge it against is the
-day cards directly underneath, not a form filled in before any of them exist. It says which
-structure is running, so page two's summary bar does not repeat it.
+That last one moved, and **where the abs work sits** sits beside it. Both are settings worth
+flipping back and forth — neither changes an exercise or a set, only how the session is paced
+and read — and the thing to judge them against is the day cards directly underneath, not a
+form filled in before any of them exist. The structure picker says which structure is running,
+so page two's summary bar does not repeat it.
 
 Page one opens on one client — Male, 25, Beginner, Build Muscle, 4 days, Full Body — rather
 than on a menu of named starting points. The five that used to sit above the form are now
@@ -815,12 +821,178 @@ than passing quietly.
   → bench thoracic extension. The remaining 31 mappings are exact or near-exact; all 38
   pre-resolved ids are checked against the library on every run, names included.
 
-## Time cap — the "Reduce to 60 min" button
+## Session length — every workout in 55-75 minutes
 
-Runs **last**, after injury, all three machines, the structure selector and any amends, and
-it only ever removes. One button per day, rendered **if and only if that day exceeds 60
-minutes**. No slider, no target field. At 60 or under it is not rendered at all — a greyed-out
-control invites a question that has no useful answer.
+### Why the sessions were short
+
+Not because the generator was losing work. The weekly numbers count **direct + indirect**
+credit rather than sets performed, and the three volume tables are each calibrated at a
+different implied frequency: Build Muscle needs 32 sets for a 55-minute session and gets
+exactly 32, while **Lose Fat needs 46 and gets 23**. That is the whole of it, and it is why a
+25-year-old fat-loss client was being handed a 25-minute session.
+
+### What was rejected, and why it is not in here
+
+The proposal that came with this changed the Lose Fat frequency multipliers to
+1.00/1.50/2.00/2.50/3.00, doubling fat-loss volume at 4 days and tripling it at 6. Applied to
+the real numbers, **a fat-loss client would out-train a muscle-building client in 14 of 15
+muscle groups** — chest 16 sets against 12, quads 40 against 28, delts 24 against 17. It also
+cut Get Stronger by 16% at 4 days. `sessionlength.json` records all three rejections.
+
+**The volume tables are unchanged.** Length is solved with two levers that add no sets.
+
+### Three levers, in order
+
+```
+1. REST          raise rest until the session reaches 55 min, capped per goal
+2. CONDITIONING  fill whatever remains, rounded UP to 5 min, capped at 35
+3. TRIM          anything over 75 is the time-cap engine's job
+```
+
+**Lever 1 — rest.** Free: no work is added or removed, only the interval between sets. Steps
+of 5 s up to **Lose Fat 75 s, Build Muscle 150 s, Get Stronger 240 s**. The fat-loss ceiling is
+deliberately low — short rest *is* the method there, and a client resting three minutes is no
+longer doing fat-loss training. A raised rest is snapped onto the 5-second grid, because a
+prescribed rest is a number read off a clock: a fat-loss slot sits at 37.5 s by prescription,
+and 42.5 s is arithmetic nobody can follow. It fires on **59.6%** of sessions.
+
+**Lever 2 — conditioning.** The shortfall rounded **UP** to the nearest 5 minutes. Rounding to
+the *nearest* five leaves a session a minute or two under the floor and it reaches the band
+never — that alone is worth 391 blocks. Prescribed on **627 Lose Fat blocks** (median 20 min,
+max 35), 162 Build Muscle (median 7) and 120 Get Stronger.
+
+**Lever 3 — trim.** The existing time-cap engine, now driving to the **band ceiling** rather
+than to `timecap.json`'s own 60. A session the band filled to 55-60 is already where it should
+be; shrinking it further is the client's call, not the program's, so the button appears only
+above 75 and the label follows the target it is actually driving to.
+
+### Ages 6-12 are excluded from all of it
+
+No band, neither lever. A ten-year-old should not be given an hour. Their session is whatever
+their volume produces, and `sessionlength.json` gives that bracket a `null` band rather than a
+wide one, so it is excluded by the data rather than by a special case in the code.
+
+### What conditioning is, and is not
+
+A block at the **end** of the session, after all resistance work and after any BodyDot
+correctives. Four modalities; steady cycle, row or incline walk is the default, and the
+alternatives are listed beside it.
+
+**It is not resistance volume.** It never enters `day.exercises`, which is what the volume
+audit reads, so it cannot satisfy a muscle-group target — asserted directly rather than
+assumed. On ankle, knee, Achilles or foot pain the impact modality is dropped and *named as
+withheld*, the same list the InBody filler uses.
+
+### It does not fight the time-cap button
+
+The band fills a session to the floor; the button shrinks it to what the client has today. But
+where they do meet, **conditioning is the first thing removed**: it is the cheapest lever in
+the table and one pull buys 5 to 35 minutes. Its cost lives in `lib/timecap.ts` rather than in
+`timecap.json`, because that file is generated upstream and is never edited here; it is
+enumerated before every file row so the insertion-order tie-break also falls its way.
+
+### Measured
+
+`npm run acceptance` sweeps **every allocation block at ages 13+ — 7,308 sessions across 1,890
+blocks** — and prints the result:
+
+| | this build | upstream |
+|---|---|---|
+| in the 55-75 band | **82.5%** | 78.3% |
+| over the ceiling, handed to the time-cap engine | **16.6%** | 21.7% |
+| short of the floor | **0.9%** | 0.0% |
+
+The 0.9% is **65 sessions, and it does not match the upstream claim of none**. Every one is a
+Lose Fat beginner on a three-exercise day, landing at 52-54 minutes with **both levers already
+at the ceilings the file sets**: rest at 75 s, conditioning at 35 minutes. Reaching the floor
+would mean overriding one of them, and both ceilings carry a stated reason — so they stand,
+and the residual is asserted as "every short session has both levers exhausted" rather than
+quietly rounded away.
+
+## Exercise defaults — known movements, plain names
+
+A program that opens with "Chest press" reads as a real gym program. One that opens with
+"Banded pec stretch" does not, and the old ranking — tier, then load, then id — had no opinion
+about either.
+
+[src/lib/defaults.ts](src/lib/defaults.ts) is **a ranking, never a filter**, sitting above the
+tier ordering and below every eligibility rule. Injury verdicts, age restrictions, equipment
+and the main-slot rule all still decide who is even a candidate.
+
+1. **Known loadable equipment** — barbell, dumbbell, cable, machine, Smith, EZ, kettlebell,
+   trap bar, plate. Bodyweight and bands rank below; hard-filtering on equipment empties two
+   sub-regions outright, which is exactly why they rank rather than lose.
+2. **Plain name** — five words or fewer, no jargon. Eponyms (Zercher, Kroc), anatomy
+   (scapular, prone) and gym shorthand (RKC, JM) are all named in the file.
+3. **Lower skill** between two equally plain options.
+4. **More loadable.**
+5. **Alphabetical**, so the same client always sees the same program.
+
+Measured on this library: **232 of 327** exercises are on known equipment and **273** have
+plain names — the upstream note says 224 and 259, and the gap is tokenisation, not disagreement
+about the rule. **No sub-region is left empty**, and one (`CA-PER`) still leads with a jargon
+name because there is no alternative; upstream names two. Chest opens on **Chest press**
+instead of Flat bench press, biceps on **Barbell / EZ-bar curl**, side delts on **Lateral
+raise**; **22 of 47** sub-regions change their leader.
+
+One consequence worth naming: accessory-tier exercises are now reachable. They used to be
+dead — every sub-region holds a primary and the old ranking always took one, which left two of
+the twelve time-cap levers unreachable and the cheapest set cut on offer at 18 points. Both
+rows are live now.
+
+## Abs — twelve more exercises, and a placement toggle
+
+`exercises.json` carries **12 new abs exercises**, all loadable and plainly named, taking abs
+from 35 to **47** and the loadable-and-plain subset from 12 to **24**.
+
+**Barbell rollout** and **Cable rollout** carry the same `avoidAges` as Ab wheel rollout — they
+are variants of one movement and must not become a way around that restriction. Asserted, both
+ways: identical brackets, and neither reachable by a 65+ client.
+
+Three of them are the same physical movement as an entry already filed elsewhere: Farmer's
+walk against Farmer's carry, and the two overhead carries against Waiter's walk. They stay
+**separate entries with their own ids and their own primary sub-region** — each filing is a
+real claim, and merging would lose one of the two. What must not happen is the
+**indirect-volume model counting both**, since each names the other's primary sub-region in
+`alsoTrains`; where a program holds both filings, that reciprocal credit is dropped in
+[src/lib/audit.ts](src/lib/audit.ts).
+
+They are named in `DUPLICATE_MOVEMENTS` rather than derived, because "each names the other's
+sub-region" is true of **234 pairs** in this library — a squat and a lunge do genuinely credit
+each other — and a rule that broad would gut the synergist model to fix three rows.
+
+### The placement toggle
+
+One switch, beside the structure picker. **Same exercises, same sets, same total time either
+way** — only the order changes.
+
+- **End block (default)** — all the abs work gathered at the finish under a "Core" heading.
+  Reads clearly and is easy to skip when short of time.
+- **Integrated** — dealt through the session, paired with other work.
+
+**An abs exercise is never placed before the main lift.** A fatigued trunk under a heavy squat
+or a deadlift is a real risk, not a preference, so dealing starts after the block holding the
+last main lift.
+
+The "same total time" part is not an approximation, and getting it exactly true dictated the
+design. Block formation is greedy over the exercise list, so reordering the *picks* changes
+which pairs form and moves session length by up to a minute — measured, before it was fixed.
+So the placement acts on the **finished blocks**: blocks are formed from one canonical order
+(abs last) whatever order the day is in, and only their order changes. The partition is
+identical either way, so the session cannot change length by moving its abs work.
+
+## Time cap — the "Reduce to N min" button
+
+Runs **last**, after injury, all three machines, the structure selector, the session-length
+band and any amends, and it only ever removes. One button per day, rendered **if and only if
+that day exceeds its target**. No slider, no target field. At or under the target it is not
+rendered at all — a greyed-out control invites a question that has no useful answer.
+
+Since the session-length band, that target is the **band ceiling, 75**, not `timecap.json`'s
+own 60 — a session the band filled to the 55-minute floor is already where it should be. Ages
+6-12, which have no band, keep the file's figure. The button label names whichever it is
+driving to, so it can never promise a number it is not aiming at. Everything below that
+describes the engine, which is unchanged, and the worked examples in it are at the old 60.
 
 A press is a **per-day pin**, the same model as an amend: `caps=0;client;<ts>` in the URL, and
 the generator re-runs holding it rather than editing the output.
@@ -1121,12 +1293,42 @@ Places where the spec left a choice, and what was chosen:
 
 ## Acceptance criteria — current status
 
-`npm run acceptance` → **239 of 239 checks pass**. The five fixtures all run at `Full gym`, so
+`npm run acceptance` → **259 of 259 checks pass**. The five fixtures all run at `Full gym`, so
 the original criteria are unaffected by the equipment feature; the rest cover equipment
-tiers, split advice, set rounding, the injury, structure, InBody, VALD, BodyDot, Load, amend
-and time-cap layers, and the three importers — the Bodydot session reader, the DynaMo export
-reader and the InBody sheet reader. Note the count dropped to 22/22 at one point because the
-week criterion was **removed**, not because its failure was fixed — see below.
+tiers, split advice, set rounding, the injury, structure, session-length, exercise-default,
+abs, InBody, VALD, BodyDot, Load, amend and time-cap layers, and the three importers — the
+Bodydot session reader, the DynaMo export reader and the InBody sheet reader. Note the count
+dropped to 22/22 at one point because the week criterion was **removed**, not because its
+failure was fixed — see below.
+
+### Session length, exercise defaults and abs — the eleven stated criteria
+
+| Criterion | Status |
+|---|---|
+| Lose Fat, 25, 4 days, Beginner: was ~25 min, now 55-75 with a conditioning block | **pass** — 57 / 58 / 57 / 59 min, 20 min of conditioning on each day |
+| No client aged 6-12 receives conditioning or a rest extension | **pass** — every 6-12 block in `allocation.json`, none touched |
+| Conditioning never appears in the volume audit or satisfies a muscle-group target | **pass** — it is not in `day.exercises`, which is what the audit reads |
+| A client with ankle pain never gets the skipping modality | **pass** — all four impact pains, and the withholding is named in the UI |
+| Pressing "reduce" on a session with conditioning removes the conditioning first | **pass** — 1 point against a cheapest alternative of 2, and enumerated first |
+| Lose Fat rest never exceeds 75 s through the rest lever | **pass** — highest prescribed fat-loss rest is exactly 75 s |
+| Chest → Chest press, biceps → Barbell / EZ-bar curl, side delts → Lateral raise | **pass** |
+| No sub-region has an empty candidate list after the default ranking | **pass** — it is a ranking, not a filter |
+| Integrated abs never place an abs exercise before the session's main lift | **pass** — every fixture × every structure, read in block order |
+| Switching abs placement changes no set, no exercise and no total time | **pass** — 5 fixtures × 3 structures, identical to the last decimal |
+| Weekly volume per muscle group is identical before and after | **pass, with one thing named** — see below |
+| *(from the same document)* no session is left short of the floor | **fails on 0.9%** — 65 of 7,308, both levers already at their ceilings |
+
+**In-band share, swept over every allocation block at ages 13+ (7,308 sessions, 1,890 blocks):
+82.5% in band, 16.6% over the ceiling, 0.9% short**, against the upstream 78.3 / 21.7 / 0.0.
+The short cases are named rather than closed: see the session-length section.
+
+On weekly volume — **direct** sets per muscle group are asserted to equal exactly what the
+allocation asks for, under either abs placement, for every fixture. That is a stronger
+statement than "unchanged": volume is a function of the allocation alone, so no change to
+selection or ordering can move it. What does move is **indirect** credit, because it follows
+the `alsoTrains` of whichever exercise fills the slot and the default ranking changes that
+exercise on 22 sub-regions. Measured on the audit's own ±25% count across the five fixtures,
+the effect is 10/11 → 10/11, 8 → 8, **9 → 10**, 10 → 10, 7 → 7: one group better, none worse.
 
 All three import blocks are **offline**, built from fixtures shaped like the real thing: a
 synthetic Bodydot session, DynaMo grids written row by row in the export's own layout

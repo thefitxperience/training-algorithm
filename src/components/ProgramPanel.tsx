@@ -5,6 +5,7 @@ import { copyFor, type Side } from '../lib/injury'
 import { LoadCell } from './LoadPanel'
 import { AmendControl, type AmendWiring } from './AmendPanel'
 import { CORRECTIVE_REST_SECONDS } from '../lib/bodydot'
+import { isAbs } from '../lib/abs'
 import type { CapPin } from '../lib/timecap'
 import { Button, Card, Note, Pill } from './ui'
 import type { ClientInput, InjuryData } from '../types'
@@ -273,11 +274,34 @@ export function ProgramPanel({
                     </tr>
                   </thead>
                   {/* One tbody per block, so paired work reads as a unit. */}
-                  {day.blocks.map((blk, bi) => (
+                  {day.blocks.map((blk, bi) => {
+                    // On the end placement every abs block is gathered at the finish, so one
+                    // heading covers all of it. Integrated abs are spread through the
+                    // session and a heading there would label nothing.
+                    const absBlock = blk.indices.some((i) => isAbs(day.exercises[i].exercise))
+                    const firstAbsBlock =
+                      absBlock &&
+                      input.absPlacement === 'end' &&
+                      !day.blocks
+                        .slice(0, bi)
+                        .some((b) => b.indices.some((i) => isAbs(day.exercises[i].exercise)))
+                    return (
                     <tbody
                       key={bi}
                       className={blk.indices.length > 1 ? 'border-l-[3px] border-l-udra-blue' : ''}
                     >
+                      {firstAbsBlock && (
+                        <tr className="border-t border-udra-linen-200 bg-udra-linen/60">
+                          <td colSpan={3 + (showLoad ? 1 : 0)} className="px-4 py-1.5">
+                            <span className="text-[10px] font-bold tracking-[0.08em] text-udra-ink-500 uppercase">
+                              Core
+                            </span>
+                            <span className="ml-2 text-[11px] text-udra-ink-500">
+                              all together at the end — easy to skip when you are short of time
+                            </span>
+                          </td>
+                        </tr>
+                      )}
                       {blk.indices.length > 1 && (
                         <tr className="bg-udra-blue-50">
                           <td colSpan={3 + (showLoad ? 1 : 0)} className="px-4 py-1.5">
@@ -424,7 +448,8 @@ export function ProgramPanel({
                         )
                       })}
                     </tbody>
-                  ))}
+                    )
+                  })}
                 </table>
               </div>
 
@@ -505,6 +530,45 @@ export function ProgramPanel({
                         ))}
                       </tbody>
                     </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Last thing in the session, after the resistance work and after any
+                  correctives. It is time, not volume: it satisfies no muscle-group target and
+                  never appears in the audit. */}
+              {day.conditioning && (
+                <div className="border-t-2 border-udra-orange/50 bg-udra-orange/10">
+                  <div className="flex flex-wrap items-center gap-2 px-4 py-2">
+                    <span className="rounded bg-udra-orange px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-black uppercase">
+                      Conditioning
+                    </span>
+                    <span className="tnum text-[12px] font-semibold">
+                      {day.conditioning.minutes} min · {day.conditioning.modality.label}
+                    </span>
+                    <span
+                      className="text-[11px] text-udra-ink-500"
+                      title="Sessions are filled to 55 minutes with rest first, then conditioning. It adds no sets and satisfies no muscle-group target."
+                    >
+                      end of session · brings this session up to the 55-minute floor
+                    </span>
+                  </div>
+                  <div className="px-4 pb-2 text-[11px] text-udra-ink-500">
+                    {day.conditioning.alternatives.length > 0 && (
+                      <>
+                        Or:{' '}
+                        {day.conditioning.alternatives.map((m) => m.label).join(' · ')}
+                        {day.conditioning.impactWithheldFor.length > 0 && (
+                          <span className="ml-1 text-udra-flame">
+                            Skipping is withheld — you reported{' '}
+                            {day.conditioning.impactWithheldFor
+                              .map((p) => p.toLowerCase())
+                              .join(' and ')}{' '}
+                            pain.
+                          </span>
+                        )}
+                      </>
+                    )}
                   </div>
                 </div>
               )}

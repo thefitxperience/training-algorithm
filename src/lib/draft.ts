@@ -45,6 +45,7 @@ export function defaultDraft(): ClientDraft {
     // Not the goal's recommended default, deliberately: the picker badges that one, and a
     // badge that is already applied cannot be told apart from a choice somebody made.
     structure: 'straight',
+    absPlacement: 'end',
     pains: {},
     inbody: {},
     vald: {},

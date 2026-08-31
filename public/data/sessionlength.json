@@ -1,0 +1,130 @@
+{
+ "band": {
+  "default": [
+   55,
+   75
+  ],
+  "byAge": {
+   "6-12": null,
+   "13-17": [
+    55,
+    75
+   ],
+   "18-29": [
+    55,
+    75
+   ],
+   "30-39": [
+    55,
+    75
+   ],
+   "40-49": [
+    55,
+    75
+   ],
+   "50-64": [
+    55,
+    75
+   ],
+   "65+": [
+    55,
+    75
+   ]
+  },
+  "note": "Ages 13+ share one band. 6-12 has NO band - a ten-year-old should not be given an hour, and neither lever is applied to them. Their session is whatever their volume produces."
+ },
+ "workSeconds": {
+  "Lose Fat": 35,
+  "Build Muscle": 45,
+  "Get Stronger": 30
+ },
+ "warmupMinutes": 8,
+ "defaultStructure": {
+  "Lose Fat": "superset",
+  "Build Muscle": "straight",
+  "Get Stronger": "straight"
+ },
+ "levers": [
+  {
+   "order": 1,
+   "id": "rest",
+   "appliesTo": "any client below the band floor",
+   "maxRest": {
+    "Lose Fat": 75,
+    "Build Muscle": 150,
+    "Get Stronger": 240
+   },
+   "step": 5,
+   "why": "Free - no work is added or removed, only the interval between sets. Capped low for Lose Fat because short rest IS the method there; a fat-loss client resting three minutes is no longer doing fat-loss training."
+  },
+  {
+   "order": 2,
+   "id": "conditioning",
+   "appliesTo": "any client still below the floor after the rest lever",
+   "maxMinutes": 35,
+   "why": "On a fat-loss program conditioning is training, not padding. Reaching the floor on resistance sets alone would need roughly 68% more weekly volume, which is a different program rather than a longer session."
+  },
+  {
+   "order": 3,
+   "id": "trim",
+   "appliesTo": "any client above the band ceiling",
+   "why": "Hand to the existing time-cap engine, targeting the band ceiling."
+  }
+ ],
+ "conditioning": {
+  "blockName": "Conditioning",
+  "placement": "end of session, after all resistance work and after any BodyDot correctives",
+  "roundToMinutes": 5,
+  "rounding": "UP - round to nearest 5 ABOVE. Rounding to nearest leaves sessions a\n               minute or two under the floor and they never reach the band.",
+  "modalities": [
+   {
+    "id": "steady",
+    "label": "Steady cycle, row or incline walk",
+    "impact": false,
+    "default": true
+   },
+   {
+    "id": "intervals",
+    "label": "Intervals - 40 s hard / 80 s easy",
+    "impact": false
+   },
+   {
+    "id": "circuit",
+    "label": "Circuit - sled push, carries, battle rope",
+    "impact": false
+   },
+   {
+    "id": "skipping",
+    "label": "Skipping or pogo hops",
+    "impact": true
+   }
+  ],
+  "nonImpactPains": [
+   "ANKLE",
+   "KNEE",
+   "ACHILLES",
+   "FOOT"
+  ],
+  "excludeAges": [
+   "6-12"
+  ],
+  "countsTowardVolume": false,
+  "note": "Not resistance volume. It never appears in the volume audit and never satisfies a muscle-group target."
+ },
+ "interactionWithTimeCap": {
+  "rule": "The band fills a session to the floor; the time-cap button shrinks it to what the client has today. They do not conflict - a session filled to 55-60 sits under the 75 ceiling and the button is not shown.",
+  "buttonLeverOrder": "When the button IS pressed, conditioning is the first thing removed. It is the cheapest thing to lose and the client asked for a shorter session."
+ },
+ "volumeTablesUnchanged": true,
+ "rejected": {
+  "doubleLoseFatVolume": "Proposed multipliers of 1.00/1.50/2.00/2.50/3.00 for Lose Fat would double its volume at 4 days and triple it at 6. In 14 of 15 muscle groups a fat-loss client would then out-train a muscle-building client - chest 16 sets against 12, quads 40 against 28. Rejected.",
+  "cutGetStrongerVolume": "Proposed 0.42/0.63/0.84/1.05/1.15 for Get Stronger strips 16% of volume at 4 days to shorten sessions. Rejected - length is the time-cap button's job.",
+  "restAloneForLoseFat": "A fat-loss beginner would need 405 s rest to reach 55 min on rest alone. Rejected."
+ },
+ "validated": {
+  "inBand": 0.783,
+  "over": 0.217,
+  "short": 0.0,
+  "note": "Across all 2,205 blocks excluding ages 6-12. The 21.7% over the ceiling are handed to the time-cap engine, which is by design, not a failure. No block is left short."
+ }
+}

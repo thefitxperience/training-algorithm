@@ -20,6 +20,7 @@ import { AuditPanel } from './components/AuditPanel'
 import { EQUIPMENT_TIERS, type EquipmentTier } from './lib/equipment'
 import type { PainSelection, Side } from './lib/injury'
 import { STRUCTURES, structureBadges, type Structure } from './lib/structure'
+import { ABS_PLACEMENTS, type AbsPlacement } from './lib/abs'
 import { Button, Card, Logo, Note, Pill, SectionTitle } from './components/ui'
 import type { ClientDraft, DataBundle } from './types'
 
@@ -165,6 +166,9 @@ function draftFromUrl(): ClientDraft {
     structure: STRUCTURES.includes(q.get('structure') as Structure)
       ? (q.get('structure') as Structure)
       : base.structure,
+    absPlacement: ABS_PLACEMENTS.includes(q.get('absPlacement') as AbsPlacement)
+      ? (q.get('absPlacement') as AbsPlacement)
+      : base.absPlacement,
   }
 }
 

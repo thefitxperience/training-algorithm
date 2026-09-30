@@ -180,7 +180,7 @@ and are badged. Emptied slots reuse the **existing** fallback cascade — no sec
 pain"), never as "no eligible exercise found". `injury.json`'s `reroute` table was used to
 understand which sub-regions empty, not to route anything.
 
-## Structure (straight / superset / triset)
+## Structure (straight / superset / triset, shown as Circuit)
 
 Second rule layer. It changes **how** the client performs the program, never what the
 program is: one setting for the whole program, volume held exactly, nothing ever blocked.
@@ -981,6 +981,30 @@ So the placement acts on the **finished blocks**: blocks are formed from one can
 (abs last) whatever order the day is in, and only their order changes. The partition is
 identical either way, so the session cannot change length by moving its abs work.
 
+## How the program reads
+
+Two rules about presentation, and only presentation.
+
+**Session lengths are shown to the nearest ten minutes.** Nobody plans a gym session to the
+minute, and "56 min" reads as a measurement when it is really an estimate — the time model
+charges a fixed work figure per set and a fixed transition, so the last digit was never real.
+So 56 shows as 60, 74 as 70, 137 as 140.
+
+The rounding is **display only**. Every threshold, every lever and the time-cap search itself
+run on the exact figure, so a day is never offered the button, or refused it, because of how
+its length was printed. A check asserts both halves: that the displayed number differs from
+the stored one on 18 of 19 fixture days, and that no day sits where rounding would carry it
+across the 75-minute ceiling. The one place the two could visibly disagree is a plan that
+lands just inside the target and rounds back onto the ten it started from — "80 → 80" would
+read as a button that did nothing, so that case falls back to exact figures.
+
+**A triset is called a Circuit.** That is the word a trainer and a client both use for three
+exercises run back to back. It is a rename on the screen and nowhere else: the stored value
+stays `triset` in the URL, in the data files, and in the block labels the engine reasons
+about, so `?structure=triset` still works and nothing downstream had to learn a new word.
+`STRUCTURE_LABEL` and `STRUCTURE_PLURAL` in [src/lib/structure.ts](src/lib/structure.ts) are
+the only places the two vocabularies meet.
+
 ## Time cap — the "Reduce to N min" button
 
 Runs **last**, after injury, all three machines, the structure selector, the session-length
@@ -1293,7 +1317,7 @@ Places where the spec left a choice, and what was chosen:
 
 ## Acceptance criteria — current status
 
-`npm run acceptance` → **259 of 259 checks pass**. The five fixtures all run at `Full gym`, so
+`npm run acceptance` → **263 of 263 checks pass**. The five fixtures all run at `Full gym`, so
 the original criteria are unaffected by the equipment feature; the rest cover equipment
 tiers, split advice, set rounding, the injury, structure, session-length, exercise-default,
 abs, InBody, VALD, BodyDot, Load, amend and time-cap layers, and the three importers — the

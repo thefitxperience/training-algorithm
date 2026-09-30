@@ -1,10 +1,11 @@
 import type { ClientInput } from '../types'
-import type { Badge, Structure } from '../lib/structure'
+import { STRUCTURE_LABEL, type Badge, type Structure } from '../lib/structure'
 import {
   ABS_PLACEMENTS,
   ABS_PLACEMENT_BLURB,
   ABS_PLACEMENT_LABEL,
 } from '../lib/abs'
+import { sessionLength } from '../lib/sessionlength'
 import { Field, Note } from './ui'
 
 export interface StructureOption {
@@ -50,7 +51,10 @@ export function StructurePicker({
         <div className="grid gap-2 sm:grid-cols-3">
           {options.map((o) => {
             const selected = o.structure === input.structure
-            const delta = current ? Math.round(o.minutes - current.minutes) : 0
+            // Computed from the figures on screen, so the delta and the two lengths it sits
+            // between can never disagree by a rounding step.
+            const shown = sessionLength(o.minutes)
+            const delta = current ? shown - sessionLength(current.minutes) : 0
             return (
               <button
                 key={o.structure}
@@ -59,8 +63,8 @@ export function StructurePicker({
                 // The cost in time is shown BEFORE the change is committed to.
                 title={`${STRUCTURE_BLURB[o.structure]} ${
                   selected
-                    ? `Sessions average ${Math.round(o.minutes)} min.`
-                    : `This would take about ${Math.round(o.minutes)} min a session instead of ${Math.round(
+                    ? `Sessions average ${shown} min.`
+                    : `This would take about ${shown} min a session instead of ${sessionLength(
                         current?.minutes ?? o.minutes,
                       )}.`
                 }`}
@@ -71,7 +75,7 @@ export function StructurePicker({
                 }`}
               >
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-sm font-bold capitalize">{o.structure}</span>
+                  <span className="text-sm font-bold">{STRUCTURE_LABEL[o.structure]}</span>
                   {o.badge === 'RECOMMENDED' && (
                     <span
                       className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
@@ -92,7 +96,7 @@ export function StructurePicker({
                     selected ? 'text-white' : 'text-udra-ink-700'
                   }`}
                 >
-                  ~{Math.round(o.minutes)} min a session
+                  ~{shown} min a session
                   {!selected && delta !== 0 && ` (${delta > 0 ? '+' : ''}${delta})`}
                 </div>
               </button>
@@ -145,7 +149,7 @@ export function StructurePicker({
 
       {input.structure === 'triset' && (
         <Note>
-          Triset where legal — many blocks still come out as pairs, because no legal third
+          Circuit where legal — many blocks still come out as pairs, because no legal third
           exercise exists for them.
         </Note>
       )}

@@ -13,11 +13,13 @@ import { REQUIRED_FIELDS, completeClient, defaultDraft, missingFrom } from '../s
 import { EQUIPMENT_TIERS, isEquipmentAvailable, libraryCoverage } from '../src/lib/equipment'
 import { splitAdvice } from '../src/lib/splitAdvice'
 import {
+  MINUTE_STEP,
   bandFor,
   conditioningMinutes,
   maxConditioningMinutes,
   maxRestFor,
   modalitiesFor,
+  sessionLength,
 } from '../src/lib/sessionlength'
 import {
   ABS_GROUP,
@@ -30,7 +32,17 @@ import {
 import { defaultRank, hasPlainName, onKnownEquipment } from '../src/lib/defaults'
 import { pickKey, roundSets } from '../src/lib/rounding'
 import { buildInjuryIndex, verdictForPain, type PainSelection } from '../src/lib/injury'
-import { STRUCTURES, blockSeconds, buildSubAliases, pairReason, timeParams, type Structure } from '../src/lib/structure'
+import {
+  STRUCTURES,
+  STRUCTURE_LABEL,
+  STRUCTURE_PLURAL,
+  blockSeconds,
+  buildSubAliases,
+  pairReason,
+  structureBadges,
+  timeParams,
+  type Structure,
+} from '../src/lib/structure'
 import {
   baseState,
   capMinutes,
@@ -4167,6 +4179,101 @@ const fingerprint = (p: ReturnType<typeof run>) =>
       'Abs: the end block gathers them, the integrated one deals them out after the main lift',
       nameOf(at) === 'abcxy' && mid[0].ex.name === 'a' && nameOf(mid).indexOf('x') > 0,
       `end → ${nameOf(at)}, integrated → ${nameOf(mid)}`,
+    )
+  }
+}
+
+// ---- How the program reads: rounded minutes, and the Circuit label ---------
+{
+  {
+    // "56 min" reads as a measurement when it is really an estimate.
+    const cases: [number, number][] = [
+      [56, 60],
+      [55, 60],
+      [54.9, 50],
+      [74.9, 70],
+      [75, 80],
+      [63, 60],
+      [137, 140],
+    ]
+    const bad = cases.filter(([raw, want]) => sessionLength(raw) !== want)
+    check(
+      'Display: a session length is shown to the nearest ten minutes',
+      bad.length === 0 && MINUTE_STEP === 10,
+      bad.length
+        ? bad.map(([raw, want]) => `${raw} → ${sessionLength(raw)}, wanted ${want}`).join('; ')
+        : cases.map(([raw, want]) => `${raw}→${want}`).join(', '),
+    )
+  }
+
+  {
+    // Presentation ONLY. If the rounding reached the engine, a 74.9-minute day would be
+    // charged as 70 and a 75.1-minute one as 80, which would move the band, the button and
+    // every lever cost with them.
+    const bad: string[] = []
+    for (const pr of FIXTURES) {
+      const p = run(pr.input)
+      for (const d of p.days) {
+        if (Number.isInteger(d.wholeSetMinutes) && d.wholeSetMinutes % 10 === 0) continue
+        if (sessionLength(d.wholeSetMinutes) === d.wholeSetMinutes)
+          bad.push(`${pr.name} d${d.index + 1}: ${d.wholeSetMinutes} was already rounded upstream`)
+      }
+    }
+    // The stored figure is the unrounded one, and it is the one every threshold reads. Days
+    // whose display differs from what they store are the proof: if the rounding had reached
+    // the engine, there would be none.
+    const all = FIXTURES.map((pr) => run(pr.input)).flatMap((p) => p.days)
+    const differ = all.filter((d) => sessionLength(d.wholeSetMinutes) !== d.wholeSetMinutes)
+    // And a day either side of the ceiling that the rounding would move across it, if it
+    // could: 70.1-74.9 displays 70 while the band still counts it as inside, and 75.1-79.9
+    // displays 80 while the button still drives to 75.
+    const wouldMove = all.filter(
+      (d) => sessionLength(d.wholeSetMinutes) > 75 !== d.wholeSetMinutes > 75,
+    )
+    check(
+      'Display: the rounding is presentation only — the engine still runs on exact minutes',
+      bad.length === 0 && differ.length > 0,
+      bad.length
+        ? bad.slice(0, 3).join('; ')
+        : `${differ.length}/${all.length} days display a different number than they store; ` +
+          `${wouldMove.length} sit where rounding would cross the 75-minute ceiling and do not`,
+    )
+  }
+
+  {
+    // A rename on the screen and nowhere else: the stored value, the URL and everything the
+    // engine reasons about still say `triset`.
+    const stored = STRUCTURES.includes('triset')
+    const p = run({ ...fixture('Reference').input, structure: 'triset' })
+    const blockValues = new Set(p.days.flatMap((d) => d.blocks.map((b) => b.structure)))
+    const step = children(
+      p.days[0].capModel,
+      baseState(p.days[0].capModel),
+      capSeconds(p.days[0].capModel, baseState(p.days[0].capModel)),
+    ).find((c) => c.step.lever === 'structure_step')
+    check(
+      'Display: a triset is called a Circuit, and only called one',
+      STRUCTURE_LABEL.triset === 'Circuit' &&
+        STRUCTURE_PLURAL.triset === 'circuits' &&
+        stored &&
+        p.structure === 'triset' &&
+        [...blockValues].every((v) => STRUCTURES.includes(v)),
+      `label "${STRUCTURE_LABEL.triset}"; stored value "${p.structure}"; block values ${[...blockValues].join(', ')}` +
+        (step ? `; the time-cap step reads "${step.step.detail}"` : ''),
+    )
+  }
+
+  {
+    // The two sentences that used to say "triset" in prose.
+    const badges = structureBadges(data.structure, {
+      goal: 'Lose Fat',
+      ageBracket: '65+',
+      level: 'Beginner',
+    })
+    check(
+      'Display: the step-down reason names circuits, not trisets',
+      badges.trisetDowngraded && /circuits/.test(badges.downgradeReason) && !/triset/.test(badges.downgradeReason),
+      badges.downgradeReason,
     )
   }
 }

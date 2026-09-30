@@ -265,7 +265,7 @@ export function BodyDotPanel({
               {/* Nothing trims a session at generation any more — this list is only ever
                   written by the time-cap button, so it says who asked. */}
               <span className="font-semibold">
-                Dropped when you shortened a session with "Reduce to 60 min":
+                Dropped when you shortened a session with the "Reduce" button:
               </span>
               <ul className="mt-0.5 space-y-0.5">
                 {result.trimmed.map((t, i) => (

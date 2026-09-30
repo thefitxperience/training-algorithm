@@ -1,6 +1,6 @@
 import type { Exercise, TimeCapData } from '../types'
 import { CORRECTIVE_REST_SECONDS, CORRECTIVE_WORK_SECONDS } from './bodydot'
-import type { Block, Structure } from './structure'
+import { STRUCTURE_PLURAL, type Block, type Structure } from './structure'
 
 /**
  * The time-cap layer. One button per day — "Reduce to 60 min" — that finds the CHEAPEST set
@@ -343,7 +343,12 @@ export function children(m: CapDayModel, s: CapState, parentSeconds: number): Ch
         if (!to) break
         const next = clone(s)
         next.stepped = true
-        push(lever.id, 'structure_step', `run the session as ${to}s — every set survives`, next)
+        push(
+          lever.id,
+          'structure_step',
+          `run the session as ${STRUCTURE_PLURAL[to]} — every set survives`,
+          next,
+        )
         break
       }
 

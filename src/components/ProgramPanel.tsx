@@ -6,7 +6,9 @@ import { LoadCell } from './LoadPanel'
 import { AmendControl, type AmendWiring } from './AmendPanel'
 import { CORRECTIVE_REST_SECONDS } from '../lib/bodydot'
 import { isAbs } from '../lib/abs'
+import { STRUCTURE_LABEL } from '../lib/structure'
 import type { CapPin } from '../lib/timecap'
+import { sessionLength } from '../lib/sessionlength'
 import { Button, Card, Note, Pill } from './ui'
 import type { ClientInput, InjuryData } from '../types'
 
@@ -90,6 +92,19 @@ export function ProgramPanel({
     ])
   const undoCap = (dayIndex: number) => cap?.setCaps(cap.caps.filter((c) => c.dayIndex !== dayIndex))
   const pts = (n: number) => `${n} training point${n === 1 ? '' : 's'}`
+  /**
+   * "80 → 60", in the same rounded minutes the day header shows, so the two cannot contradict
+   * each other. A plan that lands just inside the target can round to the same ten it started
+   * on — rare, but "80 → 80" would read as a button that did nothing, so those fall back to
+   * the exact figures.
+   */
+  const movedFrom = (plan: { minutesBefore: number; minutesAfter: number }) => {
+    const before = sessionLength(plan.minutesBefore)
+    const after = sessionLength(plan.minutesAfter)
+    return before === after
+      ? `${plan.minutesBefore.toFixed(1)} → ${plan.minutesAfter.toFixed(1)}`
+      : `${before} → ${after}`
+  }
 
   const fallbacks = warnings.filter((w) => w.kind !== 'pain-dropped')
 
@@ -208,7 +223,7 @@ export function ProgramPanel({
                 <div className="flex items-center gap-2 text-xs">
                   <span className="text-udra-ink-500">{day.exercises.length} exercises</span>
                   <span className="tnum rounded-full bg-black px-2.5 py-0.5 font-bold text-white">
-                    {day.wholeSetMinutes.toFixed(0)} min
+                    {sessionLength(day.wholeSetMinutes)} min
                   </span>
                   {/* Rendered if and only if the day is over the target. At or under it there
                       is nothing useful the button could do. */}
@@ -225,8 +240,8 @@ export function ProgramPanel({
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <span className="text-[12px] font-bold">
                       {plan.reached
-                        ? `Reduced to ${target} min — ${plan.minutesBefore.toFixed(0)} → ${plan.minutesAfter.toFixed(0)} min for ${pts(plan.points)}`
-                        : `Could not reach ${target} min — ${plan.minutesBefore.toFixed(0)} → ${plan.minutesAfter.toFixed(1)} min, still ${plan.shortfall.toFixed(1)} over`}
+                        ? `Reduced to ${target} min — ${movedFrom(plan)} min for ${pts(plan.points)}`
+                        : `Could not reach ${target} min — ${movedFrom(plan)} min, still ${plan.shortfall.toFixed(1)} over`}
                       {plan.reached && !plan.proven && (
                         <Tag tone="ink" title={plan.reason}>
                           not proven cheapest
@@ -306,7 +321,7 @@ export function ProgramPanel({
                         <tr className="bg-udra-blue-50">
                           <td colSpan={3 + (showLoad ? 1 : 0)} className="px-4 py-1.5">
                             <span className="rounded bg-udra-blue px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-white uppercase">
-                              {blk.structure}
+                              {STRUCTURE_LABEL[blk.structure]}
                             </span>
                             <span className="ml-2 text-[11px] text-udra-blue-900">
                               {/* This block's own figures — under triset a block that found

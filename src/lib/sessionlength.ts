@@ -22,6 +22,20 @@ import type { ConditioningModality, SessionLengthData } from '../types'
  * session is whatever their volume produces.
  */
 
+/**
+ * A session length as the client reads it: to the nearest ten minutes.
+ *
+ * Nobody plans a gym session to the minute, and "56 min" reads as a measurement when it is
+ * really an estimate — the time model charges a fixed work figure per set and a fixed
+ * transition, so the last digit was never real.
+ *
+ * Rounding is presentation ONLY. Every threshold, every lever and the time-cap search itself
+ * run on the exact figure, so a day is never offered the button, or refused it, because of
+ * how its length was printed.
+ */
+export const MINUTE_STEP = 10
+export const sessionLength = (minutes: number) => Math.round(minutes / MINUTE_STEP) * MINUTE_STEP
+
 export type Band = readonly [number, number]
 
 /** The band for this age, or null where the file gives the bracket none. */

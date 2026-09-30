@@ -3,6 +3,27 @@ import type { Exercise, StructureData } from '../types'
 export type Structure = 'straight' | 'superset' | 'triset'
 export const STRUCTURES: Structure[] = ['straight', 'superset', 'triset']
 
+/**
+ * What each structure is CALLED, which is not always what it is.
+ *
+ * A triset is shown as a "Circuit", because that is the word a trainer and a client both use
+ * for three exercises run back to back. The stored value stays `triset` everywhere it
+ * matters — the URL, the data files, the block labels the engine reasons about — so this is a
+ * rename on the screen and nowhere else.
+ */
+export const STRUCTURE_LABEL: Record<Structure, string> = {
+  straight: 'Straight',
+  superset: 'Superset',
+  triset: 'Circuit',
+}
+
+/** The same names in the plural, for a sentence about how a session is run. */
+export const STRUCTURE_PLURAL: Record<Structure, string> = {
+  straight: 'straight sets',
+  superset: 'supersets',
+  triset: 'circuits',
+}
+
 export type PairReason = 'antagonist' | 'non-competing' | 'same muscle'
 export type Badge = 'RECOMMENDED' | 'AVAILABLE'
 
@@ -99,11 +120,11 @@ export function structureBadges(
     trisetDowngraded: downgraded,
     downgradeReason:
       byAge && byLevel
-        ? `trisets are stepped down at your age (${client.ageBracket}) and level (${client.level})`
+        ? `circuits are stepped down at your age (${client.ageBracket}) and level (${client.level})`
         : byAge
-          ? `trisets are stepped down at your age (${client.ageBracket})`
+          ? `circuits are stepped down at your age (${client.ageBracket})`
           : byLevel
-            ? `trisets are stepped down at your level (${client.level})`
+            ? `circuits are stepped down at your level (${client.level})`
             : '',
   }
 }

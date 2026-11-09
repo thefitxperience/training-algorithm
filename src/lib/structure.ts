@@ -65,6 +65,14 @@ export interface StructureContext {
    * the aliases are exact, never guessed.
    */
   subAliases: Map<string, Set<string>>
+  /** fit.json: a main lift is never paired, whatever the goal */
+  protectAllMainLifts?: boolean
+  /** fit.json: sub-region pairs ("a|b", both ways round) that load the same tissue */
+  competing?: Set<string>
+  /** fit.json: the most pairs one session may hold (beginners, clients from sixty) */
+  maxPairs?: number
+  /** fit.json: exercise types never paired (a carry walks away from the station) */
+  neverPairTypes?: string[]
 }
 
 export function buildSubAliases(
@@ -162,8 +170,10 @@ export function pairReason(x: Pairable, y: Pairable, ctx: StructureContext): Pai
   const a = x.exercise
   const b = y.exercise
 
-  // 1. main lifts stay alone when the goal protects them (Get Stronger only)
-  if (data.mainLiftProtectedGoals.includes(goal) && (a.mainLift || b.mainLift)) return null
+  // 1. main lifts stay alone when the goal protects them (Get Stronger in the spec; every goal
+  //    once a session has to fit the hour — a paired main lift is neither heavy nor safe)
+  if ((ctx.protectAllMainLifts || data.mainLiftProtectedGoals.includes(goal)) && (a.mainLift || b.mainLift))
+    return null
 
   // 2. two compounds sharing a joint
   if (a.type === 'compound' && b.type === 'compound' && sharesJoint(data, a.sub, b.sub)) return null
@@ -177,6 +187,13 @@ export function pairReason(x: Pairable, y: Pairable, ctx: StructureContext): Pai
     return ex.alsoTrains.some((t) => alt.has(t))
   }
   if (trains(a, b.sub) || trains(b, a.sub)) return null
+
+  // 3a. a carry walks away from the station, so it is never paired
+  if (ctx.neverPairTypes?.includes(a.type) || ctx.neverPairTypes?.includes(b.type)) return null
+
+  // 3b. sub-regions that load the same tissue without sharing a joint (a row and a shrug, a
+  //     hinge and a squat): not independent, so not a pair
+  if (ctx.competing?.has(`${a.sub}|${b.sub}`) || ctx.competing?.has(`${a.group}|${b.group}`)) return null
 
   // 4. a corrective pairs only with another corrective, so labelled blocks stay intact
   if (x.corrective !== y.corrective) return null
@@ -243,8 +260,10 @@ export function formBlocks(items: Pairable[], ctx: StructureContext): Block[] {
     } as Block
   }
 
+  // Antagonist pairs are formed first, so a session limited to a few pairs keeps the best ones.
+  const maxPairs = ctx.maxPairs ?? Infinity
   for (const pass of ['antagonist', 'any'] as const) {
-    for (let i = 0; i < items.length; i++) {
+    for (let i = 0; i < items.length && blocks.length < maxPairs; i++) {
       if (taken[i]) continue
       const block = growFrom(i, pass)
       if (block) blocks.push(block)

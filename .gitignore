@@ -34,3 +34,6 @@ dynamo-test-export*.xlsx
 
 # Tesseract drops its language model beside the process that used it
 *.traineddata
+
+# Internal handoff pack for the developers, not part of the public site
+Developer handoff/

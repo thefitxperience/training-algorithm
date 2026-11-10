@@ -106,6 +106,30 @@ export function ProgramPanel({
       : `${before} → ${after}`
   }
 
+  /** Every day is built to the hour unless the spec's old behaviour is asked for. */
+  const fitted = input.fitHour !== false
+  /**
+   * Why the generator trimmed a day by itself: it ran past the hour ("was 70 min"), or it was
+   * inside the hour but over the client's working-set ceiling (fit.json setsPerSession).
+   */
+  const fittedLabel = (dayIndex: number) => {
+    const a = program.timecap.applied.find((x) => x.dayIndex === dayIndex)
+    if (!a) return null
+    const { plan, model } = a
+    if (plan.minutesBefore > target) {
+      const was = sessionLength(plan.minutesBefore)
+      return {
+        title: `Fitted to ${target} min`,
+        was: `was ${was > target ? was : plan.minutesBefore.toFixed(1)} min`,
+      }
+    }
+    const before = model.exercises.reduce((n, e) => n + e.sets + e.unilateralExtraSets, 0)
+    return {
+      title: `Kept to ${model.maxSets ?? before} working sets`,
+      was: `was ${before}, this client's limit is ${model.maxSets ?? before}`,
+    }
+  }
+
   const fallbacks = warnings.filter((w) => w.kind !== 'pain-dropped')
 
   return (
@@ -227,7 +251,7 @@ export function ProgramPanel({
                   </span>
                   {/* Rendered if and only if the day is over the target. At or under it there
                       is nothing useful the button could do. */}
-                  {cap && !plan && day.wholeSetMinutes > target && (
+                  {cap && !fitted && !plan && day.wholeSetMinutes > target && (
                     <Button size="sm" variant="primary" onClick={() => pressCap(day.index)}>
                       Reduce to {target} min
                     </Button>
@@ -235,7 +259,41 @@ export function ProgramPanel({
                 </div>
               </div>
 
-              {plan && (
+              {/* With fitHour the generator trims a long day to the hour by itself: nobody
+                  pressed anything, so it reads as part of building the day, details on a tap. */}
+              {plan && fitted && plan.reached && (
+                <details className="group border-b border-udra-linen-200 bg-udra-linen/40 px-4 py-2">
+                  <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-2 text-[12px]">
+                    <span>
+                      <span className="font-bold">{fittedLabel(day.index)?.title}</span>
+                      <span className="text-udra-ink-500"> — {fittedLabel(day.index)?.was}</span>
+                    </span>
+                    {plan.steps.length > 0 && (
+                      <span className="text-[11px] text-udra-ink-500 underline">
+                        <span className="group-open:hidden">What was trimmed ({plan.steps.length})</span>
+                        <span className="hidden group-open:inline">Hide</span>
+                      </span>
+                    )}
+                  </summary>
+                  {plan.steps.length > 0 && (
+                    <ol className="mt-1.5 list-decimal space-y-0.5 pl-5 text-[11px]">
+                      {plan.steps.map((s, i) => (
+                        <li key={i}>
+                          {s.detail}
+                          <span className="ml-1 opacity-50">({s.cost})</span>
+                        </li>
+                      ))}
+                    </ol>
+                  )}
+                  <div className="mt-1.5 text-[11px] italic opacity-80">
+                    {pts(plan.points)} traded.{' '}
+                    {!plan.proven && 'Cheapest plan found, not proven cheapest. '}
+                    {plan.gaveUp}
+                  </div>
+                </details>
+              )}
+
+              {plan && !(fitted && plan.reached) && (
                 <div className="border-b border-udra-linen-200 bg-udra-neon/25 px-4 py-2.5">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <span className="text-[12px] font-bold">
@@ -248,7 +306,7 @@ export function ProgramPanel({
                         </Tag>
                       )}
                     </span>
-                    {cap && (
+                    {cap && !fitted && (
                       <Button size="sm" onClick={() => undoCap(day.index)}>
                         Undo
                       </Button>

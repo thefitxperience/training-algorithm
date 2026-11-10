@@ -231,9 +231,12 @@ export function AmendControl({
 export function PinsPanel({
   program,
   wiring,
+  fitted = true,
 }: {
   program: Program
   wiring: AmendWiring
+  /** the client's sessions are fitted to the hour at generation (`fitHour`) */
+  fitted?: boolean
 }) {
   const { amend } = program
   const byId = new Map(wiring.exercises.map((e) => [e.id, e]))
@@ -261,7 +264,9 @@ export function PinsPanel({
         </span>
         {/* Cutting sets shortens the week too, so a time cap shows up in the same place a
             swap does rather than moving volume with nothing on screen to explain it. */}
-        {program.timecap.applied.length > 0 && (
+        {/* With fitHour every long day is fitted at generation, not by anyone's change, so
+            only a requested trim (the spec's old behaviour) belongs among the changes. */}
+        {program.timecap.applied.length > 0 && !fitted && (
           <span className="ml-1.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">
             {program.timecap.applied.length} day
             {program.timecap.applied.length === 1 ? '' : 's'} shortened to{' '}

@@ -486,7 +486,7 @@ export default function App() {
 
             {amendWiring && (result.program.amend.active || client.pins.length > 0) && (
               <Card className="p-4">
-                <PinsPanel program={result.program} wiring={amendWiring} />
+                <PinsPanel program={result.program} wiring={amendWiring} fitted={client.fitHour !== false} />
               </Card>
             )}
 

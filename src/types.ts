@@ -431,6 +431,107 @@ export interface SessionLengthData {
   validated: { inBand: number; over: number; short: number; note: string }
 }
 
+/** data/fit.json — fitting every session into a one-hour session (see lib/fit.ts) */
+export interface FitData {
+  note: string
+  sessionMinutes: number
+  setsPerSession: Record<string, Record<string, number>>
+  older: { fromAge: number; maxSets: number; why: string }
+  setsCount: string
+  time: {
+    setupSeconds: Record<string, number>
+    setupFrom: string
+    rampSecondsPerMainLift: Record<string, number>
+    why: string
+  }
+  warmup: { generalMinutes: number; minimumMinutes: number; rule: string }
+  correctives: {
+    sets: { abnormal: number; borderline: number }
+    reps: string
+    maxLoad: number
+    excludeTypes: string[]
+    skipWhenSubTrained: boolean
+    why: string
+  }
+  pairing: {
+    protectMainLiftsAllGoals: boolean
+    competing: [string, string][]
+    limitPairs: { levels: string[]; fromAge: number; max: number }
+    neverPairTypes: string[]
+    competingGroups: [string, string][]
+    sharedRest: string
+    why: string
+  }
+  trim: {
+    levers: { id: string; cost: number; after?: string; minSets?: number; compromises: string }[]
+    redundant: { groups: string[]; subs: string[]; frontRaiseWithPress: boolean; frontRaiseAlways: boolean; sameSubTwice: boolean }
+    compoundFloor: { sets: number; whileIsolationAbove: number; why: string }
+    mainLifts: { keep: Record<string, number>; dropFirst: string[]; why: string }
+    protect: string
+  }
+  reps: {
+    smallFloor: number
+    smallRange: string
+    smallGroups: string[]
+    smallTypes: string[]
+    heavyMinLoad: number
+    heavyMaxReps: number
+    heavyRange: string
+    holdSeconds: number
+    carryMetres: number
+    why: string
+    unilateralLowerFloor: number
+    unilateralLowerRange: string
+    unilateralLowerWhy: string
+    coreCompoundFloor: number
+    coreCompoundRange: string
+  }
+  mainLiftFamilies: { families: string[][]; why: string }
+  mainLiftsPerSession: Record<string, number | string>
+  heavyHinge: { subs: string[]; types: string[]; minLoad: number; perSession: number; notOnConsecutiveDays: boolean }
+  order: { smallGroups: string[]; lastTypes: string[]; rule: string }
+  fullBody: {
+    lower: string[]
+    push: string[]
+    pull: string[]
+    rule: string
+    addMissing: { lower: string; push: string; pull: string; sets: number; why: string }
+    /** what counts as the push (a press, not a front raise) */
+    pushPress?: string[]
+  }
+  kindCompoundMinSets: { sets: number; why: string }
+  rest: {
+    neverAbovePrescription: boolean
+    isolationMaxSeconds: number
+    why: string
+    heavyFloor: { seconds: number; midRepsSeconds: number; midRepsUpTo: number; lowRepsSeconds: number; lowRepsUpTo: number; why: string }
+  }
+  conditioningMaxMinutes: Record<string, number | string>
+  /** goals made from others (Shape Up): their tables come from one goal, their prescription blends two */
+  derivedGoals?: Record<string, {
+    tablesFrom: string
+    blend: Record<string, number>
+    fatHighBlend: Record<string, number>
+    /** the blend stays as is with an InBody (high body fat adds conditioning instead) */
+    fixedBlend?: boolean
+    structure: string
+    plannedConditioning?: {
+      minutes: number
+      sessions: number
+      sessionsFatHigh: number
+      intervals: { fromLevel: string[]; underAge: number }
+      why: string
+    }
+    /** pair isolation work by default (supersets), so the conditioning fits */
+    pairIsolation?: boolean
+    why: string
+  }>
+  perSessionCaps?: { groups: string[]; max: number; maxSetsEach?: number; why: string }[]
+  frontRaiseOnlyWithoutPress?: { why: string }
+  neckFromAge: { age: number; why: string }
+  pressesPerSession: { subs: string[]; max: number; why: string }
+}
+
 export interface DataBundle {
   config: Config
   allocation: Allocation
@@ -446,6 +547,7 @@ export interface DataBundle {
   amend: AmendData
   timecap: TimeCapData
   sessionlength: SessionLengthData
+  fit: FitData
 }
 
 export interface ClientInput {
@@ -471,8 +573,17 @@ export interface ClientInput {
   bodydot: BodyDotInput
   /** slot pins from the amend layer; empty means the generator runs unconstrained */
   pins: Pin[]
-  /** days the client asked to bring down to 60 minutes; empty means no session is trimmed */
-  caps: CapPin[]
+  /**
+   * Days the client asked to bring down to the band ceiling. Only read with `fitHour: false`:
+   * otherwise every session is fitted to the hour at generation and there is nothing to ask for.
+   */
+  caps?: CapPin[]
+  /**
+   * Fit every session into a one-hour personal-training session (data/fit.json): on unless this
+   * is false. False is the spec's behaviour — sessions 55-75 minutes, trimmed only on request —
+   * which the layer tests run against so each layer is tested on its own.
+   */
+  fitHour?: boolean
 }
 
 /**

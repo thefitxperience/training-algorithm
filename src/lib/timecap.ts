@@ -33,6 +33,11 @@ export type LeverId =
   | 'set_secondary'
   | 'set_primary'
   | 'remove_accessory_exercise'
+  | 'remove_redundant'
+  | 'remove_exercise'
+  | 'remove_sole'
+  | 'remove_main'
+  | 'main_lift'
 
 /** Rest costs a different number of points per goal — it is the training variable on one. */
 const REST_LEVER_BY_GOAL: Record<string, string> = {
@@ -41,10 +46,12 @@ const REST_LEVER_BY_GOAL: Record<string, string> = {
   'Get Stronger': 'rest_GS',
 }
 
-/** The lever a data-file row drives, or null for the blocked main-lift row. */
+/**
+ * The lever a data-file row drives. The main-lift row is blocked in the spec's file, and
+ * `leverCost` refuses a blocked row, so it only ever pulls where fit.json has unblocked it.
+ */
 export function leverIdOf(dataId: string): LeverId | null {
   if (dataId.startsWith('rest_')) return 'rest'
-  if (dataId === 'main_lift') return null
   return dataId as LeverId
 }
 
@@ -76,6 +83,8 @@ export function leverCost(data: TimeCapData, dataId: string): number | null {
 export function compromiseOf(data: TimeCapData, dataId: string): string {
   return data.levers.find((l) => l.id === dataId)?.compromises ?? ''
 }
+
+const STRUCTURE_ORDER: Structure[] = ['straight', 'superset', 'triset']
 
 /** straight -> superset -> triset, and nothing beyond. One step per day, ever. */
 export function nextStructure(s: Structure): Structure | null {
@@ -132,6 +141,51 @@ export interface CapDayModel {
   blocksFor: (structure: Structure, alive: readonly boolean[]) => Block[]
   data: TimeCapData
   minSets: number
+  /** fit.json: seconds to move to and set up each exercise's station, by exercise */
+  setupSeconds?: number[]
+  /** fit.json: ramp-up seconds charged per main lift still in the session */
+  rampSeconds?: number
+  /** fit.json: posture correctives done inside the warm-up instead of after the main work */
+  warmup?: { generalMinutes: number; minimumMinutes: number }
+  /** fit.json: the most working sets the session may hold; a plan must meet it as well as the time */
+  maxSets?: number
+  /** fit.json: exercises no lever may remove (the weaker side's VALD work) */
+  protectedIdx?: boolean[]
+  /** fit.json: the week's only exercise for its sub-region — removed only by `remove_sole` */
+  soleIdx?: boolean[]
+  /** fit.json: whether exercise i is redundant among the exercises still alive */
+  redundant?: (i: number, alive: readonly boolean[]) => boolean
+  /** fit.json: the fewest sets a main lift may be cut to */
+  mainLiftMinSets?: number
+  /** fit.json: true when removing exercise i would leave the session without something it must keep (a Full Body day's last pull) */
+  essential?: (i: number, alive: readonly boolean[]) => boolean
+  /** fit.json: the least rest each exercise may be trimmed to (heavy compounds), on top of `restFloor` */
+  restFloors?: number[]
+  /** fit.json: a compound keeps this many sets while any isolation exercise has more than `isolationAbove` */
+  compoundFloor?: { sets: number; isolationAbove: number }
+  /** fit.json: a pair rests the longer of its members' rests (they share one rest) */
+  pairRestMax?: boolean
+  /** the conditioning is the goal's own (Shape Up's planned block), not filler: no lever drops it */
+  conditioningFixed?: boolean
+  /** the shortest a planned block may be cut to, in minutes */
+  conditioningShortest?: number
+  /** the furthest the structure step may go (Shape Up: supersets, never circuits) */
+  maxStructure?: Structure
+  /** fit.json: how many main lifts a session keeps, and which go first (a lower number goes first) */
+  mainLifts?: { keep: number; dropRank: number[] }
+}
+
+/** Working sets in this state: every live exercise's sets, the weaker side's extra sets included. */
+export function workingSets(m: CapDayModel, s: CapState): number {
+  let n = 0
+  for (let i = 0; i < m.exercises.length; i++)
+    if (s.alive[i]) n += s.sets[i] + m.exercises[i].unilateralExtraSets
+  return n
+}
+
+/** Inside the time and, where there is one, the set ceiling. */
+export function fits(m: CapDayModel, s: CapState, seconds: number, targetSeconds: number): boolean {
+  return seconds <= targetSeconds && workingSets(m, s) <= (m.maxSets ?? Infinity)
 }
 
 export interface CapState {
@@ -143,6 +197,8 @@ export interface CapState {
   fillerBouts: number
   correctivesAlive: boolean[]
   conditioningAlive: boolean
+  /** a planned block (Shape Up) cut to its shortest, before any compound loses its third set */
+  conditioningShort?: boolean
 }
 
 export function baseState(m: CapDayModel): CapState {
@@ -154,6 +210,7 @@ export function baseState(m: CapDayModel): CapState {
     fillerBouts: m.fillerBouts,
     correctivesAlive: m.correctives.map(() => true),
     conditioningAlive: m.conditioningMinutes > 0,
+    conditioningShort: false,
   }
 }
 
@@ -166,6 +223,7 @@ export function stateKey(s: CapState): string {
     s.fillerBouts,
     s.correctivesAlive.map((a) => (a ? 1 : 0)).join(''),
     s.conditioningAlive ? 1 : 0,
+    s.conditioningShort ? 1 : 0,
   ].join('|')
 }
 
@@ -180,14 +238,14 @@ export function stateKey(s: CapState): string {
  */
 export function restOf(m: CapDayModel, s: CapState, i: number): number {
   const base = m.exercises[i].restSeconds
-  const floor = Math.min(m.restFloor, base)
+  const floor = Math.min(Math.max(m.restFloor, m.restFloors?.[i] ?? 0), base)
   return Math.max(floor, base - s.restStep * REST_STEP_SECONDS)
 }
 
 /** true while another 10 s step would actually come off some exercise's rest */
 export function restTrimmable(m: CapDayModel, s: CapState): boolean {
   return m.exercises.some(
-    (e, i) => s.alive[i] && restOf(m, s, i) > Math.min(m.restFloor, e.restSeconds),
+    (e, i) => s.alive[i] && restOf(m, s, i) > Math.min(Math.max(m.restFloor, m.restFloors?.[i] ?? 0), e.restSeconds),
   )
 }
 
@@ -205,13 +263,19 @@ export function structureOf(m: CapDayModel, s: CapState): Structure {
 export function capSeconds(m: CapDayModel, s: CapState): number {
   const blocks = m.blocksFor(structureOf(m, s), s.alive)
   let total = 0
+  /** with a shared pair rest, the rest each exercise actually takes */
+  const pairRest = new Map<number, number>()
 
   for (const b of blocks) {
     const counts = b.indices.map((i) => s.sets[i])
     const S = counts.reduce((a, c) => a + c, 0)
     const R = Math.max(...counts)
-    // A block pairs only within one pool, so every member shares the first member's rest.
-    const rest = restOf(m, s, b.indices[0])
+    // A block pairs only within one pool, so every member shares the first member's rest (with
+    // fit.json, the longer of the members' rests: a pair takes one rest after each round).
+    const rest = m.pairRestMax
+      ? Math.max(...b.indices.map((i) => restOf(m, s, i)))
+      : restOf(m, s, b.indices[0])
+    if (m.pairRestMax) for (const i of b.indices) pairRest.set(i, rest)
     const mult = b.indices.length === 1 ? 1 : (m.restMultiplier[b.structure] ?? 1)
     total += m.workSeconds * S + (S - R) * m.transitionSeconds + R * rest * mult
   }
@@ -222,12 +286,13 @@ export function capSeconds(m: CapDayModel, s: CapState): number {
     if (!s.alive[i]) continue
     const extra = m.exercises[i].unilateralExtraSets
     if (extra === 0) continue
-    total += s.sets[i] * m.workSeconds + extra * (m.workSeconds + restOf(m, s, i))
+    total += s.sets[i] * m.workSeconds + extra * (m.workSeconds + (pairRest.get(i) ?? restOf(m, s, i)))
   }
 
+  let corrective = 0
   for (let i = 0; i < m.correctives.length; i++) {
     if (!s.correctivesAlive[i]) continue
-    total += m.correctives[i].sets * (CORRECTIVE_WORK_SECONDS + CORRECTIVE_REST_SECONDS)
+    corrective += m.correctives[i].sets * (CORRECTIVE_WORK_SECONDS + CORRECTIVE_REST_SECONDS)
   }
   for (const stretch of m.stretches) {
     const held = stretch.codes.some((code) =>
@@ -236,11 +301,22 @@ export function capSeconds(m: CapDayModel, s: CapState): number {
     if (held) total += m.stretchSeconds
   }
 
+  // Moving to each station and setting it up, and working up to each main lift.
+  for (let i = 0; i < m.exercises.length; i++) {
+    if (!s.alive[i]) continue
+    total += m.setupSeconds?.[i] ?? 0
+    if (m.exercises[i].mainLift) total += m.rampSeconds ?? 0
+  }
+
   total += s.fillerBouts * m.fillerBoutSeconds
   // Conditioning is time, never volume: it lengthens the session and satisfies no muscle
   // group. The audit reads the exercise list, which it is deliberately not part of.
-  if (s.conditioningAlive) total += m.conditioningMinutes * 60
-  return total + m.warmupMinutes * 60
+  if (s.conditioningAlive) total += (s.conditioningShort ? Math.min(m.conditioningMinutes, m.conditioningShortest ?? 5) : m.conditioningMinutes) * 60
+  // Posture work inside the warm-up: a few general minutes, then the correctives, never less
+  // than the usual warm-up. Without fit.json it follows the main work, as the spec has it.
+  if (m.warmup)
+    return total + Math.max(m.warmup.minimumMinutes * 60, m.warmup.generalMinutes * 60 + corrective)
+  return total + corrective + m.warmupMinutes * 60
 }
 
 export const capMinutes = (m: CapDayModel, s: CapState) => capSeconds(m, s) / 60
@@ -269,6 +345,7 @@ const clone = (s: CapState): CapState => ({
   fillerBouts: s.fillerBouts,
   correctivesAlive: [...s.correctivesAlive],
   conditioningAlive: s.conditioningAlive,
+  conditioningShort: s.conditioningShort,
 })
 
 const SET_LEVER_BY_TIER: Record<string, string> = {
@@ -300,7 +377,13 @@ export function children(m: CapDayModel, s: CapState, parentSeconds: number): Ch
   }
 
   // Enumerated before every file row, so it is the first thing this button removes.
-  if (s.conditioningAlive) {
+  // A planned block is shortened, never dropped: before any compound goes below three sets.
+  if (s.conditioningAlive && m.conditioningFixed && !s.conditioningShort && m.conditioningMinutes > (m.conditioningShortest ?? 5)) {
+    const next = clone(s)
+    next.conditioningShort = true
+    offer('conditioning', 'conditioning', CONDITIONING_LEVER_COST + 2, `shorten the conditioning to ${m.conditioningShortest ?? 5} minutes`, next)
+  }
+  if (s.conditioningAlive && !m.conditioningFixed) {
     const next = clone(s)
     next.conditioningAlive = false
     offer(
@@ -341,6 +424,7 @@ export function children(m: CapDayModel, s: CapState, parentSeconds: number): Ch
         if (s.stepped) break
         const to = nextStructure(m.baseStructure)
         if (!to) break
+        if (m.maxStructure && STRUCTURE_ORDER.indexOf(to) > STRUCTURE_ORDER.indexOf(m.maxStructure)) break
         const next = clone(s)
         next.stepped = true
         push(
@@ -367,11 +451,44 @@ export function children(m: CapDayModel, s: CapState, parentSeconds: number): Ch
       case 'set_accessory':
       case 'set_secondary':
       case 'set_primary': {
+        // With fit.json, a set comes off the exercise of this tier holding the most sets (the
+        // later one on a tie), so cuts spread evenly and the search is not asked to tell apart
+        // every order of the same cuts.
+        let only = -1
+        if (m.maxSets !== undefined) {
+          for (let i = 0; i < m.exercises.length; i++) {
+            const e = m.exercises[i]
+            if (!s.alive[i] || e.mainLift || SET_LEVER_BY_TIER[e.tier] !== lever.id) continue
+            if (s.sets[i] - 1 < m.minSets) continue
+            if (
+              m.compoundFloor &&
+              e.exercise.type === 'compound' &&
+              s.sets[i] - 1 < m.compoundFloor.sets &&
+              ((!!m.conditioningFixed && s.conditioningAlive && !s.conditioningShort && m.conditioningMinutes > (m.conditioningShortest ?? 5)) ||
+                m.exercises.some((o, j) => s.alive[j] && !o.mainLift && o.exercise.type !== 'compound' && s.sets[j] > m.compoundFloor!.isolationAbove))
+            )
+              continue
+            if (only < 0 || s.sets[i] >= s.sets[only]) only = i
+          }
+          if (only < 0) break
+        }
+        // A compound keeps its floor while any isolation exercise still has more than it needs.
+        const conditioningLeft = !!m.conditioningFixed && s.conditioningAlive && !s.conditioningShort && m.conditioningMinutes > (m.conditioningShortest ?? 5)
+        const compoundHeld = (i: number) =>
+          !!m.compoundFloor &&
+          m.exercises[i].exercise.type === 'compound' &&
+          s.sets[i] - 1 < m.compoundFloor.sets &&
+          (conditioningLeft ||
+            m.exercises.some(
+              (o, j) => s.alive[j] && !o.mainLift && o.exercise.type !== 'compound' && s.sets[j] > m.compoundFloor!.isolationAbove,
+            ))
         for (let i = 0; i < m.exercises.length; i++) {
           const e = m.exercises[i]
+          if (only >= 0 && i !== only) continue
           if (!s.alive[i] || e.mainLift) continue
           if (SET_LEVER_BY_TIER[e.tier] !== lever.id) continue
           if (s.sets[i] - 1 < m.minSets) continue
+          if (compoundHeld(i)) continue
           const next = clone(s)
           next.sets[i] -= 1
           push(
@@ -384,10 +501,90 @@ export function children(m: CapDayModel, s: CapState, parentSeconds: number): Ch
         break
       }
 
+      case 'remove_redundant': {
+        if (!m.redundant) break
+        for (let i = 0; i < m.exercises.length; i++) {
+          const e = m.exercises[i]
+          if (!s.alive[i] || e.mainLift || m.protectedIdx?.[i] || m.soleIdx?.[i] || !m.redundant(i, s.alive)) continue
+          if (m.essential?.(i, s.alive)) continue
+          if (s.alive.filter(Boolean).length <= 1) continue
+          const next = clone(s)
+          next.alive[i] = false
+          push(lever.id, id, `remove "${e.exercise.name}" (${e.exercise.sub}), which the session already covers`, next)
+        }
+        break
+      }
+
+      case 'remove_exercise': {
+        // Any exercise but a main lift, once it is down at its set floor.
+        for (let i = 0; i < m.exercises.length; i++) {
+          const e = m.exercises[i]
+          if (!s.alive[i] || e.mainLift || m.protectedIdx?.[i] || m.soleIdx?.[i] || s.sets[i] > m.minSets) continue
+          if (m.essential?.(i, s.alive)) continue
+          if (s.alive.filter(Boolean).length <= 1) continue
+          const next = clone(s)
+          next.alive[i] = false
+          push(lever.id, id, `remove "${e.exercise.name}" (${e.exercise.sub})`, next)
+        }
+        break
+      }
+
+      case 'remove_sole': {
+        // The week's only exercise for a sub-region, at its set floor: the last resort before a main lift.
+        for (let i = 0; i < m.exercises.length; i++) {
+          const e = m.exercises[i]
+          if (!s.alive[i] || e.mainLift || m.protectedIdx?.[i] || !m.soleIdx?.[i] || s.sets[i] > m.minSets) continue
+          if (m.essential?.(i, s.alive)) continue
+          if (s.alive.filter(Boolean).length <= 1) continue
+          const next = clone(s)
+          next.alive[i] = false
+          push(lever.id, id, `remove "${e.exercise.name}" (${e.exercise.sub}), the week's only exercise for it`, next)
+        }
+        break
+      }
+
+      case 'remove_main': {
+        // The last resort of all: a main lift goes, while the session keeps its minimum, and only
+        // the least essential one (a close-grip bench before a squat), so the search has one choice.
+        const mains = m.exercises.filter((e, i) => s.alive[i] && e.mainLift).length
+        if (mains <= (m.mainLifts?.keep ?? 1)) break
+        let only = -1
+        for (let i = 0; i < m.exercises.length; i++) {
+          if (!s.alive[i] || !m.exercises[i].mainLift || m.protectedIdx?.[i] || m.essential?.(i, s.alive)) continue
+          const rank = m.mainLifts?.dropRank[i] ?? 0
+          if (only < 0 || rank < (m.mainLifts?.dropRank[only] ?? 0)) only = i
+        }
+        for (let i = 0; i < m.exercises.length; i++) {
+          const e = m.exercises[i]
+          if (i !== only) continue
+          const next = clone(s)
+          next.alive[i] = false
+          push(lever.id, id, `remove the main lift "${e.exercise.name}" — the session keeps its other main lifts`, next)
+        }
+        break
+      }
+
+      case 'main_lift': {
+        const floor = m.mainLiftMinSets ?? 3
+        // the main lift holding the most sets gives one up (the later one on a tie)
+        let only = -1
+        for (let i = 0; i < m.exercises.length; i++)
+          if (s.alive[i] && m.exercises[i].mainLift && s.sets[i] - 1 >= floor && (only < 0 || s.sets[i] >= s.sets[only])) only = i
+        for (let i = 0; i < m.exercises.length; i++) {
+          const e = m.exercises[i]
+          if (i !== only || !s.alive[i] || !e.mainLift || s.sets[i] - 1 < floor) continue
+          const next = clone(s)
+          next.sets[i] -= 1
+          push(lever.id, id, `${e.exercise.name}: ${s.sets[i]} → ${next.sets[i]} sets (main lift)`, next)
+        }
+        break
+      }
+
       case 'remove_accessory_exercise': {
         for (let i = 0; i < m.exercises.length; i++) {
           const e = m.exercises[i]
-          if (!s.alive[i] || e.mainLift || e.tier !== 'accessory') continue
+          if (!s.alive[i] || e.mainLift || e.tier !== 'accessory' || m.protectedIdx?.[i] || m.soleIdx?.[i]) continue
+          if (m.essential?.(i, s.alive)) continue
           // Never empty the session outright.
           if (s.alive.filter(Boolean).length <= 1) continue
           const next = clone(s)
@@ -518,7 +715,7 @@ function greedyBound(m: CapDayModel, targetSeconds: number): { steps: CapStep[];
   let seconds = capSeconds(m, state)
   const steps: CapStep[] = []
   let points = 0
-  for (let guard = 0; guard < 500 && seconds > targetSeconds; guard++) {
+  for (let guard = 0; guard < 500 && !fits(m, state, seconds, targetSeconds); guard++) {
     let pick: Child | null = null
     let bestRate = 0
     for (const child of children(m, state, seconds)) {
@@ -534,7 +731,7 @@ function greedyBound(m: CapDayModel, targetSeconds: number): { steps: CapStep[];
     steps.push(pick.step)
     points += pick.step.cost
   }
-  return seconds <= targetSeconds ? { steps, state, seconds, points } : null
+  return fits(m, state, seconds, targetSeconds) ? { steps, state, seconds, points } : null
 }
 
 /** The one sentence under the itemised list. Led by the most expensive lever pulled. */
@@ -595,7 +792,7 @@ export function planCap(m: CapDayModel, opts: PlanOptions = {}): CapPlan {
     nodes: number,
     proven = true,
   ): CapPlan => ({
-    reached: seconds <= targetSeconds,
+    reached: fits(m, state, seconds, targetSeconds),
     proven,
     steps,
     points: steps.reduce((s, x) => s + x.cost, 0),
@@ -608,14 +805,14 @@ export function planCap(m: CapDayModel, opts: PlanOptions = {}): CapPlan {
     nodesExpanded: nodes,
   })
 
-  if (beforeSeconds <= targetSeconds) {
+  if (fits(m, base, beforeSeconds, targetSeconds)) {
     return done([], base, beforeSeconds, 'already inside the target', 0)
   }
 
   // Reachability first, so the unreachable case never pays for an exhausted search.
   const floor = floorState(m)
   const floorSeconds = capSeconds(m, floor.state)
-  if (floorSeconds > targetSeconds) {
+  if (!fits(m, floor.state, floorSeconds, targetSeconds)) {
     return done(
       floor.steps,
       floor.state,
@@ -668,7 +865,7 @@ export function planCap(m: CapDayModel, opts: PlanOptions = {}): CapPlan {
     visited.add(key)
     expanded++
 
-    if (node.seconds <= targetSeconds) {
+    if (fits(m, node.state, node.seconds, targetSeconds)) {
       return done(stepsTo(node), node.state, node.seconds, 'cheapest plan reaching the target', expanded)
     }
 
@@ -700,7 +897,7 @@ export function planCap(m: CapDayModel, opts: PlanOptions = {}): CapPlan {
         parent: node,
         step: child.step,
       }
-      if (child.seconds <= targetSeconds) {
+      if (fits(m, child.state, child.seconds, targetSeconds)) {
         if (!best || cheaper(next, best)) best = next
         continue
       }

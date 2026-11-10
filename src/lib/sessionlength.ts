@@ -163,6 +163,8 @@ export interface Conditioning {
   alternatives: ConditioningModality[]
   /** an impact modality was withheld, and which pains withheld it */
   impactWithheldFor: string[]
+  /** part of the goal's plan (Shape Up), not filler for a short session: the trim keeps it */
+  planned?: boolean
 }
 
 export function prescribeConditioning(

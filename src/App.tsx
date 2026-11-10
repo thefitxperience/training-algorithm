@@ -260,10 +260,10 @@ export default function App() {
           )
           .join(','),
       )
-    if (draft.caps.length)
+    if (draft.caps?.length)
       q.set(
         'caps',
-        draft.caps
+        (draft.caps ?? [])
           .map((c) => [c.dayIndex, c.actor, Date.parse(c.timestamp) || 0].join(';'))
           .join(','),
       )
@@ -364,7 +364,7 @@ export default function App() {
     : undefined
 
   const capWiring: CapWiring = {
-    caps: draft.caps,
+    caps: draft.caps ?? [],
     setCaps: (caps) => setDraft({ ...draft, caps }),
     actor: 'client',
   }

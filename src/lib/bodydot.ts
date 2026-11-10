@@ -248,6 +248,11 @@ export interface BodyDotContext {
   allowedExercise: (ex: Exercise) => boolean
   /** stretches carry no load, so only pain and equipment apply */
   allowedStretch: (ex: Exercise) => boolean
+  /**
+   * fit.json: warm-up posture work takes a fixed number of sets by tier, whatever the side,
+   * instead of the program's standard sets — it is activation, not a second workout.
+   */
+  correctiveSets?: { abnormal: number; borderline: number }
 }
 
 interface Candidate {
@@ -341,7 +346,9 @@ export function evaluateBodyDot(
       continue
     }
     const bilateral = f.resolvedSide === 'both'
-    const sets = bilateral
+    const sets = ctx.correctiveSets
+      ? ctx.correctiveSets[f.tier === 'abnormal' ? 'abnormal' : 'borderline']
+      : bilateral
       ? ctx.standardSets
       : f.tier === 'abnormal'
         ? data.sets.abnormalUnilateral

@@ -1,0 +1,444 @@
+{
+ "note": "Fitting every session into a one-hour personal-training session. This file is the app's own (the other data files come from the spec and are never edited here); lib/fit.ts applies it. The rules came out of a coach's review of real clients' programs, November 2026: the generator builds a session that fits the hour, rather than building a 90-minute one and compressing it.",
+ "sessionMinutes": 60,
+ "setsPerSession": {
+  "Lose Fat": {
+   "Beginner": 18,
+   "Intermediate": 22,
+   "Advanced": 24
+  },
+  "Build Muscle": {
+   "Beginner": 18,
+   "Intermediate": 22,
+   "Advanced": 26
+  },
+  "Get Stronger": {
+   "Beginner": 16,
+   "Intermediate": 18,
+   "Advanced": 20
+  },
+  "Shape Up": {
+   "Beginner": 18,
+   "Intermediate": 20,
+   "Advanced": 24
+  }
+ },
+ "older": {
+  "fromAge": 60,
+  "maxSets": 18,
+  "why": "Recovery between sets and sessions is slower from about sixty, whatever the training age."
+ },
+ "setsCount": "working sets, the weaker side's extra sets included; warm-up posture work and stretches are not counted",
+ "time": {
+  "setupSeconds": {
+   "barbell": 90,
+   "machine": 60,
+   "dumbbell": 30,
+   "bodyweight": 15
+  },
+  "setupFrom": "the first equipment listed for the exercise: BB or trap bar = barbell; M or C = machine; DB, KB, EZ or plate = dumbbell; BW or Bd = bodyweight",
+  "rampSecondsPerMainLift": {
+   "Lose Fat": 0,
+   "Build Muscle": 60,
+   "Get Stronger": 180,
+   "Shape Up": 60
+  },
+  "why": "Moving to a station and setting it up, and working up to a heavy lift, take real time on a gym floor. The old model charged 15 s between exercises and nothing for either, so sessions it called 60 minutes ran 70."
+ },
+ "warmup": {
+  "generalMinutes": 4,
+  "minimumMinutes": 8,
+  "rule": "Posture correctives are done inside the warm-up, after a few minutes of general warm-up: warm-up = max(minimum, general + corrective work). Stretches stay at the end."
+ },
+ "correctives": {
+  "sets": {
+   "abnormal": 2,
+   "borderline": 1
+  },
+  "reps": "10-15",
+  "maxLoad": 3,
+  "excludeTypes": [
+   "compound"
+  ],
+  "skipWhenSubTrained": true,
+  "why": "Warm-up work is light activation, not a second workout: no loaded compounds (an overhead press or a Romanian deadlift is main work), one or two sets at 10-15 reps whatever the goal, and nothing the session already trains."
+ },
+ "pairing": {
+  "protectMainLiftsAllGoals": true,
+  "competing": [
+   [
+    "Horizontal pull",
+    "Upper (shrugs, carries)"
+   ],
+   [
+    "Horizontal pull",
+    "Lower traps"
+   ],
+   [
+    "Vertical pull",
+    "Lower traps"
+   ],
+   [
+    "Retraction (rhomboids, mid traps)",
+    "Upper (shrugs, carries)"
+   ],
+   [
+    "Retraction (rhomboids, mid traps)",
+    "Rear"
+   ],
+   [
+    "Lower traps",
+    "Rear"
+   ],
+   [
+    "Lower traps",
+    "Side"
+   ],
+   [
+    "Stretch (pullover)",
+    "Upper (incline)"
+   ],
+   [
+    "Stretch (pullover)",
+    "Mid (flat)"
+   ],
+   [
+    "Stretch (pullover)",
+    "Lower (decline/dip)"
+   ],
+   [
+    "Hams - hinge",
+    "Quads - knee-dominant"
+   ],
+   [
+    "Hams - hinge",
+    "Quads - stretch"
+   ],
+   [
+    "Hams - hinge",
+    "Erectors"
+   ],
+   [
+    "Hams - hinge",
+    "Max - hip extension"
+   ],
+   [
+    "Erectors",
+    "Quads - knee-dominant"
+   ],
+   [
+    "Grip & carry",
+    "Vertical pull"
+   ],
+   [
+    "Grip & carry",
+    "Horizontal pull"
+   ],
+   [
+    "Grip & carry",
+    "Hams - hinge"
+   ],
+   [
+    "Upper (shrugs, carries)",
+    "Vertical pull"
+   ],
+   [
+    "Upper (shrugs, carries)",
+    "Horizontal pull"
+   ],
+   [
+    "Upper (shrugs, carries)",
+    "Hams - hinge"
+   ]
+  ],
+  "limitPairs": {
+   "levels": [
+    "Beginner"
+   ],
+   "fromAge": 60,
+   "max": 2
+  },
+  "why": "A main lift is never paired, whatever the goal. Pairs that load the same tissue are not independent even when they share no joint. Beginners and clients from sixty get at most two pairs a session.",
+  "neverPairTypes": [
+   "carry"
+  ],
+  "sharedRest": "the two exercises of a pair share one rest, the longer of theirs, taken after each round",
+  "competingGroups": [
+   [
+    "Forearms & grip",
+    "Lats"
+   ],
+   [
+    "Forearms & grip",
+    "Upper back"
+   ],
+   [
+    "Forearms & grip",
+    "Traps"
+   ],
+   [
+    "Forearms & grip",
+    "Lower back"
+   ]
+  ]
+ },
+ "trim": {
+  "levers": [
+   {
+    "id": "remove_redundant",
+    "cost": 3,
+    "after": "structure_step",
+    "compromises": "an exercise the session already covers, or one that adds little in a one-hour session"
+   },
+   {
+    "id": "remove_exercise",
+    "cost": 24,
+    "after": "set_primary",
+    "compromises": "removes that sub-region from the session"
+   },
+   {
+    "id": "remove_sole",
+    "cost": 28,
+    "after": "remove_exercise",
+    "compromises": "removes the week's only exercise for that sub-region"
+   },
+   {
+    "id": "main_lift",
+    "cost": 30,
+    "minSets": 3,
+    "compromises": "a set off a main lift, which keeps at least three"
+   },
+   {
+    "id": "remove_main",
+    "cost": 10000,
+    "after": "main_lift",
+    "compromises": "a main lift — only once every accessory but the weaker side's work is gone, and never below two main lifts a session (one for a beginner)"
+   }
+  ],
+  "redundant": {
+   "groups": [
+    "Neck",
+    "Forearms & grip"
+   ],
+   "subs": [
+    "Upper (shrugs, carries)"
+   ],
+   "frontRaiseWithPress": true,
+   "sameSubTwice": true,
+   "frontRaiseAlways": true
+  },
+  "protect": "An exercise carrying the weaker side's extra sets (VALD) is never removed. The week's only exercise for a sub-region goes only as the last resort before a main lift (remove_sole), unless that sub-region is in the redundant list.",
+  "compoundFloor": {
+   "sets": 3,
+   "whileIsolationAbove": 2,
+   "why": "Sets come off isolation, core and calf work before a compound goes below three."
+  },
+  "mainLifts": {
+   "keep": {
+    "Beginner": 1,
+    "default": 2
+   },
+   "dropFirst": [
+    "Lateral / medial (lockout)",
+    "Lower (decline/dip)",
+    "Max - hip extension",
+    "Erectors",
+    "Upper (incline)",
+    "Max - stretch"
+   ],
+   "why": "A main lift goes last of all, after every accessory, and the least essential first: a close-grip or decline bench, a hip thrust or a rack pull before the squat, deadlift, bench, overhead press, row or pull-up."
+  }
+ },
+ "reps": {
+  "smallFloor": 10,
+  "smallRange": "10-12",
+  "smallGroups": [
+   "Rotator cuff",
+   "Neck",
+   "Forearms & grip",
+   "Abs & core"
+  ],
+  "smallTypes": [
+   "isolation"
+  ],
+  "heavyMinLoad": 4,
+  "heavyMaxReps": 12,
+  "heavyRange": "10-12",
+  "holdSeconds": 30,
+  "carryMetres": 30,
+  "why": "Small and isolation work is never loaded below ten reps, whatever the goal; heavy compounds are never prescribed above twelve; holds are timed and carries measured.",
+  "unilateralLowerFloor": 6,
+  "unilateralLowerRange": "6-8",
+  "unilateralLowerWhy": "One-leg and stability lower-body lifts (step-ups, lunges, split squats) are never loaded below six reps: a knee and balance risk.",
+  "coreCompoundFloor": 8,
+  "coreCompoundRange": "8-10"
+ },
+ "mainLiftFamilies": {
+  "families": [
+   [
+    "Upper (incline)",
+    "Mid (flat)",
+    "Lower (decline/dip)",
+    "Lateral / medial (lockout)"
+   ],
+   [
+    "Front"
+   ],
+   [
+    "Vertical pull"
+   ],
+   [
+    "Horizontal pull"
+   ],
+   [
+    "Quads - knee-dominant",
+    "Max - stretch"
+   ],
+   [
+    "Max - hip extension"
+   ]
+  ],
+  "why": "One main lift per movement a session: a flat bench and a close-grip bench are two heavy presses, a back squat and a front squat two heavy squats. The second slot takes the sub-region's best non-main exercise. Heavy hinges have their own rule."
+ },
+ "mainLiftsPerSession": {
+  "Beginner": 2,
+  "default": 3,
+  "why": "A main lift is a heavy barbell lift with ramp-up sets and long rest; more than three in one hour (two for a beginner) cannot be done well. Further slots take the sub-region's best non-main exercise."
+ },
+ "heavyHinge": {
+  "subs": [
+   "Hams - hinge",
+   "Erectors",
+   "Adductors - magnus (extension)"
+  ],
+  "types": [
+   "compound"
+  ],
+  "minLoad": 4,
+  "perSession": 1,
+  "notOnConsecutiveDays": true
+ },
+ "order": {
+  "smallGroups": [
+   "Rotator cuff",
+   "Neck",
+   "Forearms & grip",
+   "Lower back"
+  ],
+  "lastTypes": [
+   "carry"
+  ],
+  "rule": "Main lifts, then other compounds, then isolation, then small work (rotator cuff, neck, grip, lower back) and carries. Abs follow the abs placement."
+ },
+ "fullBody": {
+  "lower": [
+   "Quads - knee-dominant",
+   "Hams - hinge",
+   "Max - hip extension",
+   "Max - stretch",
+   "Adductors - magnus (extension)"
+  ],
+  "push": [
+   "Upper (incline)",
+   "Mid (flat)",
+   "Lower (decline/dip)",
+   "Front"
+  ],
+  "pull": [
+   "Vertical pull",
+   "Horizontal pull"
+  ],
+  "rule": "A Full Body week is re-dealt across its days: the lower-body, push and pull slots first, one of each to every day where the week has enough, then everything else to the day with the fewest sets so far, the same sub-region never twice in a day where it can be helped. The week's volume is unchanged. Only a press counts as the push (a front raise does not); a split's Full day gets the same three.",
+  "addMissing": {
+   "lower": "Quads - knee-dominant",
+   "push": "Mid (flat)",
+   "pull": "Horizontal pull",
+   "sets": 3,
+   "why": "A day still without a lower-body lift, a push or a pull because the week has too few gets one added (three sets); the trim makes room by taking isolation work."
+  },
+  "pushPress": [
+   "Upper (incline)",
+   "Mid (flat)",
+   "Lower (decline/dip)"
+  ]
+ },
+ "rest": {
+  "neverAbovePrescription": true,
+  "isolationMaxSeconds": 75,
+  "why": "Long rest is for heavy compounds. A lateral raise or a rotator-cuff set does not need two and a half minutes because the goal is strength; isolation, holds and carries rest at most 75 s.",
+  "heavyFloor": {
+   "seconds": 90,
+   "midRepsSeconds": 120,
+   "midRepsUpTo": 9,
+   "lowRepsSeconds": 150,
+   "lowRepsUpTo": 5,
+   "why": "A main lift or heavy compound rests at least 90 s at ten reps or more, 120 s at six to nine and 150 s at five or fewer, whatever the goal. A session that cannot fit drops its least essential main lift before it cuts this."
+  }
+ },
+ "conditioningMaxMinutes": {
+  "Lose Fat": 10,
+  "default": 5,
+  "why": "A client does not pay a personal trainer for half an hour of steady cardio: a short session takes at most ten minutes of conditioning on fat loss and five otherwise.",
+  "Shape Up": 10
+ },
+ "neckFromAge": {
+  "age": 50,
+  "why": "Loaded neck work is left out from fifty."
+ },
+ "pressesPerSession": {
+  "subs": [
+   "Upper (incline)",
+   "Mid (flat)",
+   "Lower (decline/dip)"
+  ],
+  "max": 2,
+  "why": "At most two chest presses a session; a third press's sets go to the other two."
+ },
+ "kindCompoundMinSets": {
+  "sets": 3,
+  "why": "A squat, hinge, press, row or pulldown is prescribed at least three sets."
+ },
+ "derivedGoals": {
+  "Shape Up": {
+   "tablesFrom": "Build Muscle",
+   "blend": {
+    "Build Muscle": 0.6,
+    "Lose Fat": 0.4
+   },
+   "fatHighBlend": {
+    "Lose Fat": 0.6,
+    "Build Muscle": 0.4
+   },
+   "structure": "superset",
+   "why": "Build muscle and lose fat together (the diet plan's Shape Up). Recomposition is driven by muscle-building training with progressive overload, the diet doing most of the fat loss: Build Muscle's splits with less volume (never more than Build Muscle's, two sets a session fewer from intermediate), reps and rest blended 60/40 toward Build Muscle, isolation work paired, and planned conditioning, its real difference from Build Muscle: 8-10 minutes on two sessions a week inside the hour (three when InBody shows body fat over range). The blend stays fixed with an InBody; high body fat adds conditioning instead. Its conditioning is shortened to five minutes before any compound loses its third set, and it pairs, never circuits.",
+   "fixedBlend": true,
+   "plannedConditioning": {
+    "minutes": 10,
+    "sessions": 2,
+    "sessionsFatHigh": 3,
+    "intervals": {
+     "fromLevel": [
+      "Intermediate",
+      "Advanced"
+     ],
+     "underAge": 50
+    },
+    "why": "Planned, not filler: on spread-out sessions, intervals for clients under 50 at intermediate level and up, steady work otherwise."
+   },
+   "pairIsolation": true
+  }
+ },
+ "perSessionCaps": [
+  {
+   "groups": [
+    "Calves & ankle"
+   ],
+   "max": 2,
+   "why": "At most two calf and lower-leg exercises a session, and four sets on one; a third's sets go to the others.",
+   "maxSetsEach": 4
+  }
+ ],
+ "frontRaiseOnlyWithoutPress": {
+  "why": "No front raises: a week with an overhead press has the front delts covered, and a week without one gets a three-set overhead press in the first front raise's place."
+ }
+}

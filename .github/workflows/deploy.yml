@@ -28,8 +28,8 @@ jobs:
 
       - run: npm ci
 
-      # Fails the deploy if the generator regresses.
-      - run: npm run acceptance
+      # The acceptance suite (npm run acceptance) is run locally before
+      # merging; it takes ~5 min, too slow for every deploy.
 
       - run: npm run build
 

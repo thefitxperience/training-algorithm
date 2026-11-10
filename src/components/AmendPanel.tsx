@@ -232,11 +232,14 @@ export function PinsPanel({
   program,
   wiring,
   fitted = true,
+  headless = false,
 }: {
   program: Program
   wiring: AmendWiring
   /** the client's sessions are fitted to the hour at generation (`fitHour`) */
   fitted?: boolean
+  /** the heading is drawn by whatever holds the panel (the page's foldaway section) */
+  headless?: boolean
 }) {
   const { amend } = program
   const byId = new Map(wiring.exercises.map((e) => [e.id, e]))
@@ -245,7 +248,7 @@ export function PinsPanel({
   if (!amend.active)
     return (
       <div className="space-y-1">
-        <h2 className="text-sm font-bold text-slate-800">Your changes</h2>
+        {!headless && <h2 className="text-sm font-bold text-slate-800">Your changes</h2>}
         <p className="text-[11px] text-slate-500">
           Use <em>change</em> on any exercise to swap it. A change is kept as a pin, so it survives
           a re-test, a new scan or a goal change instead of being silently undone.
@@ -257,23 +260,25 @@ export function PinsPanel({
 
   return (
     <div className="space-y-2">
-      <h2 className="text-sm font-bold text-slate-800">
-        Your changes
-        <span className="ml-1.5 rounded-full bg-sky-100 px-1.5 py-0.5 text-[10px] font-bold text-sky-800">
-          {amend.applied.length} active
-        </span>
-        {/* Cutting sets shortens the week too, so a time cap shows up in the same place a
-            swap does rather than moving volume with nothing on screen to explain it. */}
-        {/* With fitHour every long day is fitted at generation, not by anyone's change, so
-            only a requested trim (the spec's old behaviour) belongs among the changes. */}
-        {program.timecap.applied.length > 0 && !fitted && (
-          <span className="ml-1.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">
-            {program.timecap.applied.length} day
-            {program.timecap.applied.length === 1 ? '' : 's'} shortened to{' '}
-            {program.timecap.target} min
+      {!headless && (
+        <h2 className="text-sm font-bold text-slate-800">
+          Your changes
+          <span className="ml-1.5 rounded-full bg-sky-100 px-1.5 py-0.5 text-[10px] font-bold text-sky-800">
+            {amend.applied.length} active
           </span>
-        )}
-      </h2>
+          {/* Cutting sets shortens the week too, so a time cap shows up in the same place a
+              swap does rather than moving volume with nothing on screen to explain it. */}
+          {/* With fitHour every long day is fitted at generation, not by anyone's change, so
+              only a requested trim (the spec's old behaviour) belongs among the changes. */}
+          {program.timecap.applied.length > 0 && !fitted && (
+            <span className="ml-1.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">
+              {program.timecap.applied.length} day
+              {program.timecap.applied.length === 1 ? '' : 's'} shortened to{' '}
+              {program.timecap.target} min
+            </span>
+          )}
+        </h2>
+      )}
 
       {all.length > 0 && (
         <ul className="space-y-0.5">

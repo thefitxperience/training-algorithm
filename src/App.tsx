@@ -484,12 +484,6 @@ export default function App() {
 
             {hasPains && <MedicalDisclaimer injury={data.injury} />}
 
-            {amendWiring && (result.program.amend.active || client.pins.length > 0) && (
-              <Card className="p-4">
-                <PinsPanel program={result.program} wiring={amendWiring} fitted={client.fitHour !== false} />
-              </Card>
-            )}
-
             {/* Beside the program, not in the client's details: it changes no exercise and no
                 set, only how long a session takes, so the thing to judge it against is the day
                 cards directly underneath. */}
@@ -534,6 +528,31 @@ export default function App() {
                 </div>
               </div>
             </details>
+
+            {/* The trainer's swaps, at the foot of the page and folded like the technical
+                detail: the program above is what is read first. A swap that no longer
+                applies opens it, so it is never folded out of sight. */}
+            {amendWiring && (result.program.amend.active || client.pins.length > 0) && (
+              <details
+                className="rounded-2xl border border-udra-linen-200 bg-white"
+                open={result.program.amend.retired.length > 0 || undefined}
+              >
+                <summary className="cursor-pointer px-4 py-3 text-sm font-bold">
+                  Your changes
+                  <span className="ml-2 font-normal text-udra-ink-500">
+                    {changesSummary(result.program.amend)}
+                  </span>
+                </summary>
+                <div className="border-t border-udra-linen-200 p-4">
+                  <PinsPanel
+                    program={result.program}
+                    wiring={amendWiring}
+                    fitted={client.fitHour !== false}
+                    headless
+                  />
+                </div>
+              </details>
+            )}
           </>
         ) : (
           <Note tone="flame" title="Cannot generate a program">
@@ -543,6 +562,15 @@ export default function App() {
       </div>
     </Shell>
   )
+}
+
+/** "2 active, 1 no longer applied", for the folded Your changes heading. */
+function changesSummary(amend: { active: boolean; applied: unknown[]; pending: unknown[]; retired: unknown[] }): string {
+  if (!amend.active) return 'swaps you make on an exercise, kept as pins'
+  const parts = [`${amend.applied.length} active`]
+  if (amend.pending.length) parts.push(`${amend.pending.length} not accepted yet`)
+  if (amend.retired.length) parts.push(`${amend.retired.length} no longer applied`)
+  return parts.join(', ')
 }
 
 function Shell({ children, action }: { children: React.ReactNode; action?: React.ReactNode }) {

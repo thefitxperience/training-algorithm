@@ -232,6 +232,8 @@ const roundHalf = (n: number) => Math.round(n * 2) / 2
 
 export interface ResolveContext {
   statedGoal: string
+  /** a derived goal's own blend (Shape Up, fit.json), in place of the stated-goal rules; given body fat over range */
+  derivedWeights?: (fatOver: boolean) => Record<string, number> | null
   ageBracket: string
   level: string
   /** the exercises actually chosen, to solve sets against real indirect credit */
@@ -253,12 +255,12 @@ export function evaluateInBody(
   const { states, tbwRatio } = deriveStates(input, data)
 
   // ---- step 2 -------------------------------------------------------------
-  const weights = goalWeights(ctx.statedGoal, states)
+  const weights = ctx.derivedWeights?.(states.pbf === 'Over') ?? goalWeights(ctx.statedGoal, states)
   const key = vectorKey(weights)
   const vector = data.goalVectors[key]
   const dominantGoal = Object.entries(weights).sort((a, b) => b[1] - a[1])[0][0]
 
-  if (weights[ctx.statedGoal] < 1) {
+  if (weights[ctx.statedGoal] !== undefined && weights[ctx.statedGoal] < 1) {
     notes.push({
       rule: states.smm === 'Under' && states.pbf === 'Over' ? 'Rule 1 + Rule 2 (skinny-fat)' : states.pbf === 'Over' ? 'Rule 2' : 'Rule 1',
       measured: `SMM ${states.smm}, body fat ${states.pbf}`,

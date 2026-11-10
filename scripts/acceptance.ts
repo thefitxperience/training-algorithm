@@ -7,6 +7,8 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { ageBracket, generate, isEligible, prescriptionKey } from '../src/lib/generate'
+import { withDerivedGoals } from '../src/lib/goals'
+import { fullBodyKindOf } from '../src/lib/fit'
 import { competingPairs, conditioningCapFor, isHeavyHinge, mainFamily, maxMainLiftsFor, maxPairsFor, maxSetsFor, orderRank, restFloorFor } from '../src/lib/fit'
 import { buildAudit } from '../src/lib/audit'
 import { FIXTURES } from './fixtures'
@@ -4311,6 +4313,11 @@ const fingerprint = (p: ReturnType<typeof run>) =>
     const { input, seed } = sampleClient(data, ALL, s * 104729 + 7)
     clients.push({ name: `seed ${seed}`, input })
   }
+  // Shape Up (a derived goal, so the Quick test never draws it): every rule below holds for it too.
+  for (let s = 0; s < 150; s++) {
+    const { input, seed } = sampleClient(data, ALL, s * 92821 + 11)
+    clients.push({ name: `Shape Up seed ${seed}`, input: { ...input, goal: 'Shape Up' } })
+  }
 
   const v: Record<string, string[]> = {}
   const flag = (rule: string, what: string) => (v[rule] ??= []).push(what)
@@ -4410,14 +4417,35 @@ const fingerprint = (p: ReturnType<typeof run>) =>
         if (trained.has(k.exercise.sub)) flag('correctives', `${at(d)}: "${k.prescribedName}" while the session trains ${k.exercise.sub}`)
       }
 
-      if (c.input.split === 'Full Body') {
-        for (const [kind, subs] of [['lower', fit.fullBody.lower], ['push', fit.fullBody.push], ['pull', fit.fullBody.pull]] as const) {
-          // Only where another day holds two to give: a week with fewer slots of it than days cannot cover every day.
-          const spare = p.days.some((x) => x !== d && x.exercises.filter((e) => subs.includes(e.exercise.sub)).length >= 2)
-          if (spare && !d.exercises.some((e) => subs.includes(e.exercise.sub))) flag('fullBody', `${at(d)}: no ${kind}`)
+      // A Full Body day, or a split's Full day: a lower-body lift, a press (never a front raise) and a pull.
+      if (c.input.split === 'Full Body' || /full/i.test(d.label)) {
+        for (const [k, kind] of [[0, 'lower'], [1, 'press'], [2, 'pull']] as const) {
+          // On a Full Body week only where another day holds two to give (fewer than days can't cover every day).
+          const spare = c.input.split !== 'Full Body' || p.days.some((x) => x !== d && x.exercises.filter((e) => fullBodyKindOf(fit, e.exercise) === k).length >= 2)
+          // Only where this client can do one at all (age, level, equipment and pains can rule every one out).
+          const removed = new Set(p.removedByPain.map((r) => r.exercise.id))
+          const possible = data.exercises.some((e) => fullBodyKindOf(fit, e) === k && !removed.has(e.id) && isEligible(e, c.input.level, p.ageBracket, c.input.equipment))
+          if (spare && possible && !d.exercises.some((e) => fullBodyKindOf(fit, e.exercise) === k)) flag('fullBody', `${at(d)}: no ${kind}`)
+        }
+      }
+      const calves = d.exercises.filter((e) => e.exercise.group === 'Calves & ankle' && !e.pinned)
+      if (calves.length > 2) flag('calves', `${at(d)}: ${calves.length} calf exercises`)
+      for (const e of calves) if (e.sets > 4) flag('calves', `${at(d)}: "${e.exercise.name}" ${e.sets} sets`)
+      if (c.input.goal === 'Shape Up') {
+        if (d.blocks.some((b) => b.indices.length > 2)) flag('shapeUpCircuits', `${at(d)}: a group of ${Math.max(...d.blocks.map((b) => b.indices.length))}`)
+        if (d.conditioning?.planned && d.conditioning.minutes > 5) {
+          const thin = d.exercises.filter((e) => e.exercise.type === 'compound' && !e.exercise.mainLift && e.sets < 3)
+          const trimmed = p.timecap.applied.find((a) => a.dayIndex === d.index)
+          const wasThree = (e: (typeof thin)[number]) => !!trimmed?.model.exercises.some((m) => m.exercise.id === e.exercise.id && m.sets >= 3)
+          for (const e of thin) if (wasThree(e)) flag('shapeUpCompounds', `${at(d)}: "${e.exercise.name}" ${e.sets} sets with ${d.conditioning.minutes} min conditioning`)
         }
       }
     }
+
+    // A front raise only in a week with no overhead press.
+    const pressWeek = p.days.some((d) => d.exercises.some((e) => e.exercise.sub === 'Front' && e.exercise.type === 'compound'))
+    if (pressWeek && p.days.some((d) => d.exercises.some((e) => e.exercise.sub === 'Front' && e.exercise.type !== 'compound' && !e.pinned)))
+      flag('frontRaise', `${c.name}: a front raise in a week with an overhead press`)
 
     // The weaker side's work is never trimmed away: every VALD bump is still in the program.
     const kept = p.days.flatMap((d) => d.exercises).filter((e) => e.unilateral && e.unilateral.extraSets > 0).length
@@ -4460,7 +4488,11 @@ const fingerprint = (p: ReturnType<typeof run>) =>
   check('Fit: holds timed, carries measured, small work from ten reps, heavy compounds to twelve', !v.reps, report('reps'))
   check('Fit: isolation rests at most 75 s, and filling never raises rest past the prescription', !v.rest, report('rest'))
   check('Fit: warm-up posture work is light, unloaded, and never what the session already trains', !v.correctives, report('correctives'))
-  check('Fit: every Full Body day has a lower-body lift, a push and a pull', !v.fullBody, report('fullBody'))
+  check('Fit: every Full Body day (and a split\'s Full day) has a lower-body lift, a press and a pull', !v.fullBody, report('fullBody'))
+  check('Fit: at most two calf and lower-leg exercises a session, four sets on one', !v.calves, report('calves'))
+  check('Shape Up: pairs, never groups of three', !v.shapeUpCircuits, report('shapeUpCircuits'))
+  check('Shape Up: conditioning is shortened before a compound loses its third set', !v.shapeUpCompounds, report('shapeUpCompounds'))
+  check('Fit: no front raise in a week with an overhead press (one is added where a front raise was)', !v.frontRaise, report('frontRaise'))
   check('Fit: the weaker side’s extra sets are never trimmed away', !v.vald, report('vald'))
   check('Fit: a main lift is never cut below three sets', !v.mainSets, report('mainSets'))
   check('Fit: a compound keeps three sets while isolation work keeps more than two', !v.compoundSets, report('compoundSets'))
@@ -4494,6 +4526,83 @@ const fingerprint = (p: ReturnType<typeof run>) =>
     const held = r.ok && r.program.days.some((d) => d.exercises.some((e) => e.slotId === slot.slotId && e.exercise.id === alt.id))
     check('Fit: a trainer’s swap is never trimmed away', held, `${alt.name} in ${slot.slotId}`)
   }
+}
+
+// ---- Shape Up (fit.json's derived goals) ---------------------------------------
+// Build muscle and lose fat together: Build Muscle's volume and splits, reps and rest blended between the two.
+{
+  const goals = withDerivedGoals(data)
+  const failures: string[] = []
+  let compared = 0
+  for (const f of FIXTURES) {
+    for (const level of ['Beginner', 'Intermediate', 'Advanced'])
+      for (const days of [2, 3, 4, 5, 6])
+        for (const split of data.config.splits) {
+          const base = { ...f.input, level, days, split, fitHour: false }
+          const bm = generate(data, { ...base, goal: 'Build Muscle' })
+          const su = generate(data, { ...base, goal: 'Shape Up' })
+          if (bm.ok !== su.ok) { failures.push(`${f.name} ${level} ${days}d ${split}: Build Muscle ${bm.ok} vs Shape Up ${su.ok}`); continue }
+          if (!bm.ok || !su.ok) continue
+          compared++
+          const sets = (p: typeof bm) => p.ok ? p.program.days.reduce((n, d) => n + d.exercises.reduce((m, e) => m + e.sets, 0), 0) : 0
+          if (Math.abs(sets(bm) - sets(su)) > 1e-6) failures.push(`${f.name} ${level} ${days}d ${split}: volume ${sets(bm)} vs ${sets(su)}`)
+        }
+  }
+  check('Shape Up: Build Muscle\'s volume and splits, for every combination', failures.length === 0 && compared > 0, failures.slice(0, 3).join(' | ') || `${compared} programs`)
+
+  const ends = (s: string) => s.split('-').map(Number)
+  let between = true
+  const notes: string[] = []
+  for (const row of Object.values(goals.prescription)) {
+    const r = row as Record<string, { reps: string; rest: string }>
+    if (!r['Shape Up']) continue
+    for (const k of ['reps', 'rest'] as const) {
+      const [lf, bm, su] = [ends(r['Lose Fat'][k]), ends(r['Build Muscle'][k]), ends(r['Shape Up'][k])]
+      for (let i = 0; i < 2; i++) {
+        const lo = Math.min(lf[i] ?? lf[0], bm[i] ?? bm[0]) - 5
+        const hi = Math.max(lf[i] ?? lf[0], bm[i] ?? bm[0]) + 5
+        if ((su[i] ?? su[0]) < lo || (su[i] ?? su[0]) > hi) { between = false; notes.push(`${k} ${r['Shape Up'][k]} outside ${r['Lose Fat'][k]} / ${r['Build Muscle'][k]}`) }
+      }
+    }
+  }
+  check('Shape Up: reps and rest sit between Lose Fat\'s and Build Muscle\'s', between, notes.slice(0, 3).join(' | '))
+  check('Shape Up: listed among the goals, and the data files untouched', goals.config.goals.includes('Shape Up') && !data.config.goals.includes('Shape Up'), goals.config.goals.join(', '))
+
+  const ib = generate(data, { ...fixture('Reference').input, goal: 'Shape Up', inbody: WORKED_EXAMPLE })
+  check('Shape Up: with an InBody it stays 40/60 Lose Fat / Build Muscle (high body fat adds conditioning instead)',
+    ib.ok && ib.program.inbody.vectorKey === 'Lose Fat:0.4|Build Muscle:0.6|Get Stronger:0.0',
+    ib.ok ? ib.program.inbody.vectorKey : '')
+
+  // Never more volume than Build Muscle for the same client; planned conditioning on two sessions (three at high body fat).
+  const heavier: string[] = []
+  const unplanned: string[] = []
+  for (let s = 0; s < 80; s++) {
+    const { input } = sampleClient(data, { pain: true, vald: true, inbody: true, bodydot: true }, s * 6113 + 5)
+    const su = generate(data, { ...input, goal: 'Shape Up' })
+    const bm = generate(data, { ...input, goal: 'Build Muscle' })
+    if (!su.ok || !bm.ok) continue
+    const sets = (p: typeof su) => (p.ok ? p.program.days.reduce((n, d) => n + d.exercises.reduce((m, e) => m + e.sets + (e.unilateral?.extraSets ?? 0), 0), 0) : 0)
+    if (sets(su) > sets(bm)) heavier.push(`seed ${s}: ${sets(su)} vs ${sets(bm)}`)
+    const want = Math.min(su.program.days.length, su.program.inbody.active && su.program.inbody.states.pbf === 'Over' ? 3 : 2)
+    const got = su.program.days.filter((d) => d.conditioning?.planned).length
+    if (got !== want) unplanned.push(`seed ${s}: ${got} of ${want}`)
+  }
+  check('Shape Up: never more weekly volume than Build Muscle for the same client', heavier.length === 0, heavier.slice(0, 3).join(' | ') || '80 clients')
+  check('Shape Up: planned conditioning on two sessions a week, three when body fat is over range', unplanned.length === 0, unplanned.slice(0, 3).join(' | ') || '80 clients')
+
+  // Every one-hour rule holds for Shape Up too.
+  let worst = 0
+  const over: string[] = []
+  for (let s = 0; s < 60; s++) {
+    const { input } = sampleClient(data, { pain: true, vald: true, inbody: true, bodydot: true }, s * 7907 + 3)
+    const r = generate(data, { ...input, goal: 'Shape Up' })
+    if (!r.ok) continue
+    for (const d of r.program.days) {
+      worst = Math.max(worst, d.wholeSetMinutes)
+      if (d.wholeSetMinutes > data.fit.sessionMinutes + 1e-6) over.push(`seed ${s} day ${d.index + 1}: ${d.wholeSetMinutes.toFixed(1)}`)
+    }
+  }
+  check('Shape Up: every session an hour or less', over.length === 0, over.slice(0, 3).join(' | ') || `longest ${worst.toFixed(1)} min`)
 }
 
 // ---- Report ----------------------------------------------------------------

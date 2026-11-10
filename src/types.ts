@@ -496,6 +496,8 @@ export interface FitData {
     pull: string[]
     rule: string
     addMissing: { lower: string; push: string; pull: string; sets: number; why: string }
+    /** what counts as the push (a press, not a front raise) */
+    pushPress?: string[]
   }
   kindCompoundMinSets: { sets: number; why: string }
   rest: {
@@ -505,6 +507,27 @@ export interface FitData {
     heavyFloor: { seconds: number; midRepsSeconds: number; midRepsUpTo: number; lowRepsSeconds: number; lowRepsUpTo: number; why: string }
   }
   conditioningMaxMinutes: Record<string, number | string>
+  /** goals made from others (Shape Up): their tables come from one goal, their prescription blends two */
+  derivedGoals?: Record<string, {
+    tablesFrom: string
+    blend: Record<string, number>
+    fatHighBlend: Record<string, number>
+    /** the blend stays as is with an InBody (high body fat adds conditioning instead) */
+    fixedBlend?: boolean
+    structure: string
+    plannedConditioning?: {
+      minutes: number
+      sessions: number
+      sessionsFatHigh: number
+      intervals: { fromLevel: string[]; underAge: number }
+      why: string
+    }
+    /** pair isolation work by default (supersets), so the conditioning fits */
+    pairIsolation?: boolean
+    why: string
+  }>
+  perSessionCaps?: { groups: string[]; max: number; maxSetsEach?: number; why: string }[]
+  frontRaiseOnlyWithoutPress?: { why: string }
   neckFromAge: { age: number; why: string }
   pressesPerSession: { subs: string[]; max: number; why: string }
 }

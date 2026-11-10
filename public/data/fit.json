@@ -16,6 +16,11 @@
    "Beginner": 16,
    "Intermediate": 18,
    "Advanced": 20
+  },
+  "Shape Up": {
+   "Beginner": 18,
+   "Intermediate": 20,
+   "Advanced": 24
   }
  },
  "older": {
@@ -35,7 +40,8 @@
   "rampSecondsPerMainLift": {
    "Lose Fat": 0,
    "Build Muscle": 60,
-   "Get Stronger": 180
+   "Get Stronger": 180,
+   "Shape Up": 60
   },
   "why": "Moving to a station and setting it up, and working up to a heavy lift, take real time on a gym floor. The old model charged 15 s between exercises and nothing for either, so sessions it called 60 minutes ran 70."
  },
@@ -342,14 +348,19 @@
    "Vertical pull",
    "Horizontal pull"
   ],
-  "rule": "A Full Body week is re-dealt across its days: the lower-body, push and pull slots first, one of each to every day where the week has enough, then everything else to the day with the fewest sets so far, the same sub-region never twice in a day where it can be helped. The week's volume is unchanged.",
+  "rule": "A Full Body week is re-dealt across its days: the lower-body, push and pull slots first, one of each to every day where the week has enough, then everything else to the day with the fewest sets so far, the same sub-region never twice in a day where it can be helped. The week's volume is unchanged. Only a press counts as the push (a front raise does not); a split's Full day gets the same three.",
   "addMissing": {
    "lower": "Quads - knee-dominant",
    "push": "Mid (flat)",
    "pull": "Horizontal pull",
    "sets": 3,
    "why": "A day still without a lower-body lift, a push or a pull because the week has too few gets one added (three sets); the trim makes room by taking isolation work."
-  }
+  },
+  "pushPress": [
+   "Upper (incline)",
+   "Mid (flat)",
+   "Lower (decline/dip)"
+  ]
  },
  "rest": {
   "neverAbovePrescription": true,
@@ -367,7 +378,8 @@
  "conditioningMaxMinutes": {
   "Lose Fat": 10,
   "default": 5,
-  "why": "A client does not pay a personal trainer for half an hour of steady cardio: a short session takes at most ten minutes of conditioning on fat loss and five otherwise."
+  "why": "A client does not pay a personal trainer for half an hour of steady cardio: a short session takes at most ten minutes of conditioning on fat loss and five otherwise.",
+  "Shape Up": 10
  },
  "neckFromAge": {
   "age": 50,
@@ -385,5 +397,48 @@
  "kindCompoundMinSets": {
   "sets": 3,
   "why": "A squat, hinge, press, row or pulldown is prescribed at least three sets."
+ },
+ "derivedGoals": {
+  "Shape Up": {
+   "tablesFrom": "Build Muscle",
+   "blend": {
+    "Build Muscle": 0.6,
+    "Lose Fat": 0.4
+   },
+   "fatHighBlend": {
+    "Lose Fat": 0.6,
+    "Build Muscle": 0.4
+   },
+   "structure": "superset",
+   "why": "Build muscle and lose fat together (the diet plan's Shape Up). Recomposition is driven by muscle-building training with progressive overload, the diet doing most of the fat loss: Build Muscle's splits with less volume (never more than Build Muscle's, two sets a session fewer from intermediate), reps and rest blended 60/40 toward Build Muscle, isolation work paired, and planned conditioning, its real difference from Build Muscle: 8-10 minutes on two sessions a week inside the hour (three when InBody shows body fat over range). The blend stays fixed with an InBody; high body fat adds conditioning instead. Its conditioning is shortened to five minutes before any compound loses its third set, and it pairs, never circuits.",
+   "fixedBlend": true,
+   "plannedConditioning": {
+    "minutes": 10,
+    "sessions": 2,
+    "sessionsFatHigh": 3,
+    "intervals": {
+     "fromLevel": [
+      "Intermediate",
+      "Advanced"
+     ],
+     "underAge": 50
+    },
+    "why": "Planned, not filler: on spread-out sessions, intervals for clients under 50 at intermediate level and up, steady work otherwise."
+   },
+   "pairIsolation": true
+  }
+ },
+ "perSessionCaps": [
+  {
+   "groups": [
+    "Calves & ankle"
+   ],
+   "max": 2,
+   "why": "At most two calf and lower-leg exercises a session, and four sets on one; a third's sets go to the others.",
+   "maxSetsEach": 4
+  }
+ ],
+ "frontRaiseOnlyWithoutPress": {
+  "why": "No front raises: a week with an overhead press has the front delts covered, and a week without one gets a three-set overhead press in the first front raise's place."
  }
 }

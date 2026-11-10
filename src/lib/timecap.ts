@@ -84,6 +84,8 @@ export function compromiseOf(data: TimeCapData, dataId: string): string {
   return data.levers.find((l) => l.id === dataId)?.compromises ?? ''
 }
 
+const STRUCTURE_ORDER: Structure[] = ['straight', 'superset', 'triset']
+
 /** straight -> superset -> triset, and nothing beyond. One step per day, ever. */
 export function nextStructure(s: Structure): Structure | null {
   return s === 'straight' ? 'superset' : s === 'superset' ? 'triset' : null
@@ -163,6 +165,12 @@ export interface CapDayModel {
   compoundFloor?: { sets: number; isolationAbove: number }
   /** fit.json: a pair rests the longer of its members' rests (they share one rest) */
   pairRestMax?: boolean
+  /** the conditioning is the goal's own (Shape Up's planned block), not filler: no lever drops it */
+  conditioningFixed?: boolean
+  /** the shortest a planned block may be cut to, in minutes */
+  conditioningShortest?: number
+  /** the furthest the structure step may go (Shape Up: supersets, never circuits) */
+  maxStructure?: Structure
   /** fit.json: how many main lifts a session keeps, and which go first (a lower number goes first) */
   mainLifts?: { keep: number; dropRank: number[] }
 }
@@ -189,6 +197,8 @@ export interface CapState {
   fillerBouts: number
   correctivesAlive: boolean[]
   conditioningAlive: boolean
+  /** a planned block (Shape Up) cut to its shortest, before any compound loses its third set */
+  conditioningShort?: boolean
 }
 
 export function baseState(m: CapDayModel): CapState {
@@ -200,6 +210,7 @@ export function baseState(m: CapDayModel): CapState {
     fillerBouts: m.fillerBouts,
     correctivesAlive: m.correctives.map(() => true),
     conditioningAlive: m.conditioningMinutes > 0,
+    conditioningShort: false,
   }
 }
 
@@ -212,6 +223,7 @@ export function stateKey(s: CapState): string {
     s.fillerBouts,
     s.correctivesAlive.map((a) => (a ? 1 : 0)).join(''),
     s.conditioningAlive ? 1 : 0,
+    s.conditioningShort ? 1 : 0,
   ].join('|')
 }
 
@@ -299,7 +311,7 @@ export function capSeconds(m: CapDayModel, s: CapState): number {
   total += s.fillerBouts * m.fillerBoutSeconds
   // Conditioning is time, never volume: it lengthens the session and satisfies no muscle
   // group. The audit reads the exercise list, which it is deliberately not part of.
-  if (s.conditioningAlive) total += m.conditioningMinutes * 60
+  if (s.conditioningAlive) total += (s.conditioningShort ? Math.min(m.conditioningMinutes, m.conditioningShortest ?? 5) : m.conditioningMinutes) * 60
   // Posture work inside the warm-up: a few general minutes, then the correctives, never less
   // than the usual warm-up. Without fit.json it follows the main work, as the spec has it.
   if (m.warmup)
@@ -333,6 +345,7 @@ const clone = (s: CapState): CapState => ({
   fillerBouts: s.fillerBouts,
   correctivesAlive: [...s.correctivesAlive],
   conditioningAlive: s.conditioningAlive,
+  conditioningShort: s.conditioningShort,
 })
 
 const SET_LEVER_BY_TIER: Record<string, string> = {
@@ -364,7 +377,13 @@ export function children(m: CapDayModel, s: CapState, parentSeconds: number): Ch
   }
 
   // Enumerated before every file row, so it is the first thing this button removes.
-  if (s.conditioningAlive) {
+  // A planned block is shortened, never dropped: before any compound goes below three sets.
+  if (s.conditioningAlive && m.conditioningFixed && !s.conditioningShort && m.conditioningMinutes > (m.conditioningShortest ?? 5)) {
+    const next = clone(s)
+    next.conditioningShort = true
+    offer('conditioning', 'conditioning', CONDITIONING_LEVER_COST + 2, `shorten the conditioning to ${m.conditioningShortest ?? 5} minutes`, next)
+  }
+  if (s.conditioningAlive && !m.conditioningFixed) {
     const next = clone(s)
     next.conditioningAlive = false
     offer(
@@ -405,6 +424,7 @@ export function children(m: CapDayModel, s: CapState, parentSeconds: number): Ch
         if (s.stepped) break
         const to = nextStructure(m.baseStructure)
         if (!to) break
+        if (m.maxStructure && STRUCTURE_ORDER.indexOf(to) > STRUCTURE_ORDER.indexOf(m.maxStructure)) break
         const next = clone(s)
         next.stepped = true
         push(
@@ -444,7 +464,8 @@ export function children(m: CapDayModel, s: CapState, parentSeconds: number): Ch
               m.compoundFloor &&
               e.exercise.type === 'compound' &&
               s.sets[i] - 1 < m.compoundFloor.sets &&
-              m.exercises.some((o, j) => s.alive[j] && !o.mainLift && o.exercise.type !== 'compound' && s.sets[j] > m.compoundFloor!.isolationAbove)
+              ((!!m.conditioningFixed && s.conditioningAlive && !s.conditioningShort && m.conditioningMinutes > (m.conditioningShortest ?? 5)) ||
+                m.exercises.some((o, j) => s.alive[j] && !o.mainLift && o.exercise.type !== 'compound' && s.sets[j] > m.compoundFloor!.isolationAbove))
             )
               continue
             if (only < 0 || s.sets[i] >= s.sets[only]) only = i
@@ -452,13 +473,15 @@ export function children(m: CapDayModel, s: CapState, parentSeconds: number): Ch
           if (only < 0) break
         }
         // A compound keeps its floor while any isolation exercise still has more than it needs.
+        const conditioningLeft = !!m.conditioningFixed && s.conditioningAlive && !s.conditioningShort && m.conditioningMinutes > (m.conditioningShortest ?? 5)
         const compoundHeld = (i: number) =>
           !!m.compoundFloor &&
           m.exercises[i].exercise.type === 'compound' &&
           s.sets[i] - 1 < m.compoundFloor.sets &&
-          m.exercises.some(
-            (o, j) => s.alive[j] && !o.mainLift && o.exercise.type !== 'compound' && s.sets[j] > m.compoundFloor!.isolationAbove,
-          )
+          (conditioningLeft ||
+            m.exercises.some(
+              (o, j) => s.alive[j] && !o.mainLift && o.exercise.type !== 'compound' && s.sets[j] > m.compoundFloor!.isolationAbove,
+            ))
         for (let i = 0; i < m.exercises.length; i++) {
           const e = m.exercises[i]
           if (only >= 0 && i !== only) continue

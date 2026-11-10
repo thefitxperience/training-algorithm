@@ -73,6 +73,8 @@ export interface StructureContext {
   maxPairs?: number
   /** fit.json: exercise types never paired (a carry walks away from the station) */
   neverPairTypes?: string[]
+  /** fit.json: only exercises of these types pair (Shape Up pairs its isolation work) */
+  pairTypes?: string[]
 }
 
 export function buildSubAliases(
@@ -187,6 +189,9 @@ export function pairReason(x: Pairable, y: Pairable, ctx: StructureContext): Pai
     return ex.alsoTrains.some((t) => alt.has(t))
   }
   if (trains(a, b.sub) || trains(b, a.sub)) return null
+
+  // 3a. a goal that pairs only some work (Shape Up: isolation) leaves the rest alone
+  if (ctx.pairTypes && (!ctx.pairTypes.includes(a.type) || !ctx.pairTypes.includes(b.type))) return null
 
   // 3a. a carry walks away from the station, so it is never paired
   if (ctx.neverPairTypes?.includes(a.type) || ctx.neverPairTypes?.includes(b.type)) return null

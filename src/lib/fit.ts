@@ -93,6 +93,34 @@ export function fullBodyKind(fit: FitData, sub: string): number {
   return [fit.fullBody.lower, fit.fullBody.push, fit.fullBody.pull].findIndex((k) => k.includes(sub))
 }
 
+/**
+ * The kind an exercise actually covers: only a compound counts (a leg extension isn't the day's leg lift), and
+ * the push is a press — a chest press, or an overhead press — never a front raise.
+ */
+export function fullBodyKindOf(fit: FitData, ex: Exercise): number {
+  if (ex.type !== 'compound') return -1
+  const kind = fullBodyKind(fit, ex.sub)
+  if (kind === 1 && fit.fullBody.pushPress && !fit.fullBody.pushPress.includes(ex.sub) && ex.sub !== 'Front') return -1
+  return kind
+}
+
+/**
+ * A split's Full day (Upper / Lower / Full) keeps a lower-body lift, a press and a pull too: a day labelled Full
+ * missing one gets a three-set slot of it. Returns new days; the allocation is never mutated.
+ */
+export function completeFullDays(days: AllocationDay[], fit: FitData): AllocationDay[] {
+  const add = fit.fullBody.addMissing
+  const kinds = [fit.fullBody.lower, fit.fullBody.pushPress ?? fit.fullBody.push, fit.fullBody.pull]
+  return days.map((d) => {
+    if (!/full/i.test(d.label)) return d
+    const slots = (d.slots as Slot[]).map((x) => [...x] as Slot)
+    ;[add.lower, add.push, add.pull].forEach((sub, k) => {
+      if (!slots.some((x) => kinds[k].includes(x[0]))) slots.push([sub, 1, add.sets])
+    })
+    return { ...d, slots }
+  })
+}
+
 export function isHeavyHinge(fit: FitData, ex: Exercise): boolean {
   const h = fit.heavyHinge
   return h.subs.includes(ex.sub) && h.types.includes(ex.type) && ex.load >= h.minLoad
@@ -219,8 +247,10 @@ export function balanceFullBody(days: AllocationDay[], fit: FitData): Allocation
 
   // A day still without one (the week has fewer than there are days) gets one added.
   const add = fit.fullBody.addMissing
+  // the push it must have is a press (a front-delt slot may be a raise)
+  const needs = [kinds[0], fit.fullBody.pushPress ?? kinds[1], kinds[2]]
   ;[add.lower, add.push, add.pull].forEach((sub, k) => {
-    for (const day of dealt) if (!day.some((u) => kinds[k].includes(u.sub))) day.push({ sub, sets: add.sets, order: order++ })
+    for (const day of dealt) if (!day.some((u) => needs[k].includes(u.sub))) day.push({ sub, sets: add.sets, order: order++ })
   })
 
   return days.map((d, i) => {

@@ -50,6 +50,7 @@ import {
   type TimeCapResult,
 } from './timecap'
 import { evaluateLoad, type LoadResult } from './weight'
+import { derivedWeights, withDerivedGoals } from './goals'
 import { pickKey, roundSets } from './rounding'
 import {
   INERT_AMEND,
@@ -79,7 +80,9 @@ import {
   competingPairs,
   conditioningCapFor,
   fitTimecap,
+  completeFullDays,
   fullBodyKind,
+  fullBodyKindOf,
   isHeavyHinge,
   isRedundant,
   maxMainLiftsFor,
@@ -345,7 +348,9 @@ export function rankCandidates(
   })
 }
 
-export function generate(data: DataBundle, input: ClientInput): GenerateResult {
+export function generate(raw: DataBundle, input: ClientInput): GenerateResult {
+  // Shape Up and any other goal made from others (fit.json) get their table entries first.
+  const data = withDerivedGoals(raw)
   const { config, allocation, exercises, prescription } = data
   const ageBr = ageBracket(input.age, config.ages)
 
@@ -380,6 +385,20 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
   // ---- fitting the hour (fit.json) -----------------------------------------
   const fitOn = input.fitHour !== false
   const fit = data.fit
+  /** a goal made from others (Shape Up), with its own rules on top of the blend */
+  const derived = fitOn ? fit.derivedGoals?.[input.goal] : undefined
+  // Never more volume than the goal it takes its tables from: Shape Up's days are held to the sets of this
+  // client's Build Muscle program, day by day.
+  const referenceSets = new Map<number, number>()
+  if (derived) {
+    const ref = generate(raw, { ...input, goal: derived.tablesFrom })
+    if (ref.ok)
+      for (const d of ref.program.days)
+        referenceSets.set(d.index, d.exercises.reduce((n, c) => n + c.sets + (c.unilateral?.extraSets ?? 0), 0))
+  }
+  // Shape Up pairs its isolation work from the start (room for its conditioning).
+  // Shape Up pairs its isolation work from the start, and pairs only: never straight, never circuits.
+  const baseStructure: Structure = derived?.pairIsolation ? (derived.structure as Structure) : input.structure
   const maxSets = fitOn ? maxSetsFor(fit, input.goal, input.level, input.age) : undefined
   const timecapData = fitOn ? fitTimecap(data.timecap, fit) : data.timecap
   /** the prescription's rest range, in seconds — the rest an exercise is charged sits inside it */
@@ -431,7 +450,7 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
   const correctiveIds = new Set(data.injury.exercises.filter((r) => r.corrective).map((r) => r.id))
   const structureCtx: StructureContext = {
     goal: input.goal,
-    structure: input.structure,
+    structure: baseStructure,
     data: data.structure,
     corrective: correctiveIds,
     subAliases: buildSubAliases(exercises, data.injury.exercises),
@@ -440,12 +459,13 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
       competing: competingPairs(fit),
       maxPairs: maxPairsFor(fit, input.level, input.age),
       neverPairTypes: fit.pairing.neverPairTypes,
+      ...(derived?.pairIsolation && { pairTypes: ['isolation'] }),
     }),
   }
   const tp = timeParams(
     data.structure,
     input.goal,
-    input.structure,
+    baseStructure,
     config.restMid[input.goal],
     config.warmupMinutes,
   )
@@ -502,7 +522,11 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
   const selected: { index: number; label: string; chosen: ChosenExercise[] }[] = []
 
   // Every Full Body day gets a lower-body compound, a push and a pull (the week's volume is unchanged).
-  const allocDays = fitOn && input.split === 'Full Body' ? balanceFullBody(block.days, fit) : block.days
+  const allocDays = !fitOn
+    ? block.days
+    : input.split === 'Full Body'
+      ? balanceFullBody(block.days, fit)
+      : completeFullDays(block.days, fit)
   /** heavy hinges per day, so a session holds at most one and (from four days a week) none follow one */
   const hingesOn: number[] = []
   /** main lifts per day: at most three a session (two for a beginner) */
@@ -513,6 +537,7 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
 
   allocDays.forEach((allocDay, dayIndex) => {
     const chosen: ChosenExercise[] = []
+    const fullDay = fitOn && (input.split === 'Full Body' || /full/i.test(allocDay.label))
     hingesOn[dayIndex] = 0
     mainOn[dayIndex] = 0
     familiesOn[dayIndex] = new Set()
@@ -573,6 +598,27 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
         // a lighter exercise for the same sub-region, where there is one.
         const lighter = allRanked.filter((ex) => !hingeBlocked(ex) && !mainBlocked(ex))
         let ranked = lighter.length > 0 ? lighter : allRanked
+        let borrowedKind = false
+        // A Full day's first slot of a kind (a leg lift, a press, a pull) takes a real one: a compound, and for the
+        // push a press, not a fly or a raise, where the sub-region has one.
+        const kind = fullDay ? fullBodyKind(fit, sub) : -1
+        if (kind >= 0 && !chosen.some((c) => fullBodyKindOf(fit, c.exercise) === kind)) {
+          const real = ranked.filter((ex) => fullBodyKindOf(fit, ex) === kind)
+          if (real.length > 0) ranked = real
+          else {
+            // Nothing real here for this client (age, level, equipment or pain): one from another area of the kind.
+            const kindSubs = [fit.fullBody.lower, fit.fullBody.pushPress ?? fit.fullBody.push, fit.fullBody.pull][kind]
+            const pool = rankCandidates(kindSubs.filter((x) => x !== sub).flatMap(eligibleIn), input.goal, verdicts).filter(
+              (ex) => fullBodyKindOf(fit, ex) === kind && !hingeBlocked(ex) && !mainBlocked(ex),
+            )
+            // one not used this week, or else one already used: the day needs it more than variety
+            const other = pool.find((ex) => !usedThisWeek.has(ex.id)) ?? pool[0]
+            if (other) {
+              ranked = [other]
+              borrowedKind = true
+            }
+          }
+        }
         // Every candidate here is a second heavy hinge or a second main lift of its family (a
         // bodyweight client's pull-up slots): a lighter exercise from a sibling sub-region first.
         let borrowed: Exercise | undefined
@@ -587,7 +633,7 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
 
         // 1. eligible and unused
         let pick = ranked.find((ex) => !usedThisWeek.has(ex.id))
-        let flag: ChosenExercise['flag'] = borrowed ? 'substituted' : undefined
+        let flag: ChosenExercise['flag'] = borrowed || borrowedKind ? 'substituted' : undefined
 
         // 2. eligible but already used this week -> reuse, warn
         if (!pick && ranked.length > 0) {
@@ -708,7 +754,7 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
   // the picks are balanced too: a day missing one takes it from the day holding two or more.
   if (fitOn && input.split === 'Full Body') {
     for (let kind = 0; kind < 3; kind++) {
-      const ofKind = (c: ChosenExercise) => fullBodyKind(fit, c.exercise.sub) === kind
+      const ofKind = (c: ChosenExercise) => fullBodyKindOf(fit, c.exercise) === kind
       for (const day of selected) {
         if (day.chosen.some(ofKind)) continue
         const donor = [...selected]
@@ -721,6 +767,41 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
         donor.chosen = donor.chosen.filter((c) => c !== move)
         day.chosen.push(move)
       }
+    }
+  }
+
+  if (fitOn) {
+    // At most so many of a group a session (two calf and lower-leg exercises): the extra ones' sets go to the rest.
+    for (const cap of fit.perSessionCaps ?? []) {
+      const of = (c: ChosenExercise) => cap.groups.includes(c.exercise.group)
+      for (const day of selected) {
+        const all = day.chosen.filter(of)
+        if (all.length <= cap.max) continue
+        const keep = [...all.filter((c) => c.pinned), ...all.filter((c) => !c.pinned)].slice(0, cap.max)
+        const extra = all.filter((c) => !keep.includes(c))
+        const moved = extra.reduce((n, c) => n + c.sets, 0)
+        keep.forEach((c) => (c.sets = Math.min(c.sets + moved / keep.length, cap.maxSetsEach ?? Infinity)))
+        day.chosen = day.chosen.filter((c) => !extra.includes(c))
+      }
+    }
+    // No front raises: a week with an overhead press has the front delts covered; a week without one gets one,
+    // at three sets, in the first front raise's place (when the client can do one), and the other raises go.
+    if (fit.frontRaiseOnlyWithoutPress) {
+      const raise = (c: ChosenExercise) => !c.pinned && c.exercise.sub === 'Front' && c.exercise.type !== 'compound'
+      let pressing = selected.some((d) => d.chosen.some((c) => c.exercise.sub === 'Front' && c.exercise.type === 'compound'))
+      if (!pressing) {
+        const day = selected.find((d) => d.chosen.some(raise))
+        const press = rankCandidates(eligibleIn('Front'), input.goal, verdicts).find(
+          (ex) => ex.type === 'compound' && !ex.mainLift && !isHeavyHinge(fit, ex),
+        )
+        if (day && press) {
+          const at = day.chosen.findIndex(raise)
+          day.chosen[at] = { ...day.chosen[at], exercise: press, sets: Math.max(3, day.chosen[at].sets), verdict: verdicts.get(press.id) ?? { verdict: 'OK', byPain: [] } }
+          usedThisWeek.add(press.id)
+          pressing = true
+        }
+      }
+      if (pressing) for (const day of selected) day.chosen = day.chosen.filter((c) => !raise(c))
     }
   }
 
@@ -746,6 +827,7 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
   const allChosen = selected.flatMap((d) => d.chosen)
   const inbody = evaluateInBody(input.inbody, data.inbody, {
     statedGoal: input.goal,
+    derivedWeights: (fatOver) => derivedWeights(data, input.goal, fatOver),
     ageBracket: ageBr,
     level: input.level,
     chosen: allChosen.map((c) => ({ exercise: c.exercise, group: c.exercise.group })),
@@ -893,6 +975,9 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
         c.restSeconds = cap
         c.rest = String(cap)
       }
+      // At most so many sets on one exercise of a capped group (four on a calf exercise), after InBody's sets.
+      for (const cap of fit.perSessionCaps ?? [])
+        if (cap.maxSetsEach !== undefined && cap.groups.includes(c.exercise.group)) c.sets = Math.min(c.sets, cap.maxSetsEach)
       // A main lift or heavy compound never rests like isolation work, whatever the goal.
       const floor = restFloorFor(fit, c.exercise, c.reps)
       if (c.restSeconds < floor) {
@@ -967,7 +1052,8 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
       })
       const rule4Blocks = formBlocks(
         rule4Idx.map((i) => pairable[i]),
-        { ...structureCtx, structure: data.inbody.rule4.structure as Structure },
+        // Shape Up pairs, never circuits, even where InBody wants its fat-burning structure.
+        { ...structureCtx, structure: (derived?.pairIsolation ? derived.structure : data.inbody.rule4.structure) as Structure },
       ).map((b) => remap(rule4Idx, b))
       // A session's pair limit covers both pools together.
       const left =
@@ -1042,6 +1128,11 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
     stretches: CorrectiveStretch[],
     fillerBouts: number,
     conditioningMinutes: number,
+    conditioningFixed = false,
+    /** a Full Body day, or a split's Full day: it keeps a leg lift, a press and a pull */
+    fullDay = false,
+    /** this day's own set ceiling, under the session's (Shape Up: Build Muscle's day) */
+    dayMaxSets?: number,
   ): CapDayModel => {
     const blockCache = new Map<string, Block[]>()
     const listed = list.map((c) => c.exercise)
@@ -1056,6 +1147,9 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
       fillerBoutSeconds: inbody.filler?.seconds ?? data.timecap.timeModel.fillerBoutSeconds,
       stretchSeconds: data.bodydot.stretchSeconds,
       conditioningMinutes,
+      conditioningFixed,
+      conditioningShortest: 5,
+      ...(derived?.pairIsolation && { maxStructure: derived.structure as Structure }),
       exercises: list.map((c) => ({
         exercise: c.exercise,
         tier: c.exercise.tier,
@@ -1090,7 +1184,7 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
         setupSeconds: list.map((c) => setupSeconds(fit, c.exercise)),
         rampSeconds: fit.time.rampSecondsPerMainLift[input.goal] ?? 0,
         warmup: fit.warmup,
-        maxSets,
+        maxSets: dayMaxSets !== undefined && maxSets !== undefined ? Math.min(maxSets, dayMaxSets) : maxSets,
         protectedIdx: list.map(isProtected),
         soleIdx: list.map(isSole),
         redundant: (i: number, alive: readonly boolean[]) => isRedundant(fit, listed, alive, i),
@@ -1106,11 +1200,11 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
             return at >= 0 ? at : fit.trim.mainLifts.dropFirst.length
           }),
         },
-        ...(input.split === 'Full Body' && {
+        ...(fullDay && {
           // A Full Body day keeps a lower-body lift, a push and a pull.
           essential: (i: number, alive: readonly boolean[]) => {
-            const kind = fullBodyKind(fit, listed[i].sub)
-            return kind >= 0 && !listed.some((o, j) => j !== i && alive[j] && fullBodyKind(fit, o.sub) === kind)
+            const kind = fullBodyKindOf(fit, listed[i])
+            return kind >= 0 && !listed.some((o, j) => j !== i && alive[j] && fullBodyKindOf(fit, o) === kind)
           },
         }),
       }),
@@ -1155,6 +1249,9 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
       stretches,
       fillerBouts,
       conditioning?.minutes ?? 0,
+      !!conditioning?.planned,
+      fitOn && (input.split === 'Full Body' || /full/i.test(label)),
+      referenceSets.get(dayIndex),
     )
     const capState = baseState(capModel)
     return {
@@ -1197,8 +1294,31 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
 
   const days: GeneratedDay[] = selected.map(({ index, label, chosen }) => {
     const w = warmupFor(chosen)
-    return buildDay(index, label, chosen, input.structure, w.correctives, w.stretches)
+    return buildDay(index, label, chosen, baseStructure, w.correctives, w.stretches)
   })
+
+  // Shape Up's planned conditioning: its real difference from Build Muscle. Ten minutes on two sessions a week
+  // (three when InBody shows body fat over range), spread across the week, inside the hour: the trim makes room
+  // for it and never drops it. Intervals from intermediate under fifty, steady work otherwise.
+  const planned = derived?.plannedConditioning
+  if (planned && days.length > 0) {
+    const count = Math.min(days.length, inbody.active && inbody.states.pbf === 'Over' ? planned.sessionsFatHigh : planned.sessions)
+    const at = new Set(Array.from({ length: count }, (_, k) => Math.floor(((k + 0.5) * days.length) / count)))
+    const base = prescribeConditioning(data.sessionlength, planned.minutes, Object.keys(input.pains))
+    if (base) {
+      const intervals = planned.intervals.fromLevel.includes(input.level) && input.age < planned.intervals.underAge
+      const pick = intervals ? [base.modality, ...base.alternatives].find((m) => m.id === 'intervals') : undefined
+      const conditioning: Conditioning = {
+        ...base,
+        ...(pick && { modality: pick, alternatives: [base.modality, ...base.alternatives].filter((m) => m.id !== pick.id) }),
+        planned: true,
+      }
+      days.forEach((d, i) => {
+        if (!at.has(i)) return
+        days[i] = buildDay(d.index, d.label, d.exercises, d.structure, d.correctives, d.correctiveStretches, d.fillerBouts, conditioning, d.restBoost)
+      })
+    }
+  }
 
   /**
    * The rounding carries an error per muscle group across the whole week, so every day's
@@ -1292,7 +1412,11 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
         stretches,
         state.fillerBouts,
         // Conditioning is the cheapest lever, so it is the first thing a trim removes.
-        state.conditioningAlive ? day.conditioning : null,
+        state.conditioningAlive
+          ? state.conditioningShort && day.conditioning
+            ? { ...day.conditioning, minutes: Math.min(day.conditioning.minutes, 5) }
+            : day.conditioning
+          : null,
         day.restBoost,
       )
       // `model` is the day as the search saw it — whole sets, nothing cut yet. Kept so the
@@ -1341,6 +1465,8 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
           day.correctiveStretches,
           day.fillerBouts,
           conditioning,
+          !!day.conditioning?.planned,
+          fitOn && (input.split === 'Full Body' || /full/i.test(day.label)),
         )
         return capMinutes(model, { ...baseState(model), sets })
       }
@@ -1353,10 +1479,10 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
         day.exercises.map((c) => c.restSeconds),
         sl,
         input.goal,
-        (b) => probe(b, 0),
+        (b) => probe(b, day.conditioning?.planned ? day.conditioning.minutes : 0),
       )
       // Stepped rest rounds up, so on a long list of sets it could jump past the hour: not taken.
-      if (fitOn && boost > 0 && probe(boost, 0) > capTarget) boost = 0
+      if (fitOn && boost > 0 && probe(boost, day.conditioning?.planned ? day.conditioning.minutes : 0) > capTarget) boost = 0
       if (boost > 0) {
         for (const c of day.exercises) {
           c.restSeconds = boostedRest(c.restSeconds, boost, restCeiling(c), step)
@@ -1368,13 +1494,16 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
 
       // Lever 2 — conditioning, rounded UP to five minutes. Rounding to the NEAREST five
       // leaves a session a minute or two under the floor, which reaches the band never.
-      const conditioning = prescribeConditioning(
-        sl,
-        fitOn
-          ? Math.min(conditioningMinutes(sl, floor, probe(0, 0)), conditioningCapFor(fit, input.goal))
-          : conditioningMinutes(sl, floor, probe(0, 0)),
-        painIds,
-      )
+      // A planned block (Shape Up) stays as it is; anything else short of the floor gets filler.
+      const conditioning = day.conditioning?.planned
+        ? day.conditioning
+        : prescribeConditioning(
+            sl,
+            fitOn
+              ? Math.min(conditioningMinutes(sl, floor, probe(0, 0)), conditioningCapFor(fit, input.goal))
+              : conditioningMinutes(sl, floor, probe(0, 0)),
+            painIds,
+          )
 
       days[at] = buildDay(
         day.index,
@@ -1483,8 +1612,8 @@ export function generate(data: DataBundle, input: ClientInput): GenerateResult {
       prescriptionKey: pKey,
       exerciseCount: days.reduce((s, d) => s + d.exercises.length, 0),
       timeParams: tp,
-      structure: input.structure,
-      loadAdjustment: data.structure.loadAdjustment[input.structure] ?? 0,
+      structure: baseStructure,
+      loadAdjustment: data.structure.loadAdjustment[baseStructure] ?? 0,
       restMultiplier: tp.restMultiplier,
       inbody,
       vald,

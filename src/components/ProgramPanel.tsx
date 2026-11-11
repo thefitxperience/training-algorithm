@@ -414,6 +414,11 @@ export function ProgramPanel({
                                   Skill · {c.skill}
                                 </Tag>
                               )}
+                              {c.support && (
+                                <Tag tone="cyan" title={`Support work for the ${c.support.toLowerCase()}, added on its days`}>
+                                  Support · {c.support}
+                                </Tag>
+                              )}
                               {c.verdict.decidedBy && c.verdict.verdict === 'PRIORITY' && (
                                 <Tag
                                   tone="neon"

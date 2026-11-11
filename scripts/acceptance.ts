@@ -139,7 +139,12 @@ const namesOf = (p: ReturnType<typeof run>) =>
 const results: { name: string; pass: boolean; detail: string }[] = []
 const notes: string[] = []
 const log = (m: string) => notes.push(m)
-const check = (name: string, pass: boolean, detail = '') => results.push({ name, pass, detail })
+const T0 = Date.now()
+const check = (name: string, pass: boolean, detail = '') => {
+  results.push({ name, pass, detail })
+  // Progress on stderr, so a slow or stuck check can be found while the suite runs.
+  if (process.env.ACCEPTANCE_PROGRESS) process.stderr.write(`${((Date.now() - T0) / 1000).toFixed(1)}s  ${name}\n`)
+}
 
 /**
  * The layer tests below run on the spec's own behaviour (`fitHour: false`): sessions in the
@@ -4743,6 +4748,7 @@ const fingerprint = (p: ReturnType<typeof run>) =>
           if (firstSkill > 0 && d.exercises.slice(0, firstSkill).some((c) => !c.skill && !skillFamilyOf(styleData, c.exercise) && c.verdict.verdict !== 'PRIORITY'))
             fail('skills', `${tag} day ${d.index + 1}: the skill is not first`)
           for (const c of d.exercises) if (c.skill && !(c.exercise.ladders ?? []).some((l) => l.family === c.skill)) fail('skills', `${tag}: the ${c.skill} skill became ${c.exercise.name}`)
+          for (const c of d.exercises) if (c.skill && c.restSeconds < M.ladders.skillRestSeconds) fail('skills', `${tag}: ${c.exercise.name} rests ${c.restSeconds} s`)
         }
         const mc = d.conditioning?.metcon
         if (mc) {
@@ -4771,6 +4777,27 @@ const fingerprint = (p: ReturnType<typeof run>) =>
           if (d.conditioning!.minutes !== mc.minutes) fail('metcon', `${tag}: the metcon was cut to ${d.conditioning!.minutes} min`)
         }
         if (strengthStyles.length === 1 && strengthStyles[0] === 'CrossFit' && !mc && !d.conditioning?.planned) fail('metcon', `${tag} day ${d.index + 1}: no metcon or planned conditioning`)
+        // a pull day's rear delts are never stood in for by front-delt pressing
+        for (const c of d.exercises) if (c.requestedSub === 'Rear' && c.exercise.sub === 'Front') fail('twice', `${tag}: ${c.exercise.name} stands in for rear delts`)
+        // a skill's moves come only through the skill block (a strength ladder's rung or a support move aside)
+        if (styles.includes('Calisthenics'))
+          for (const c of d.exercises) {
+            const all = c.exercise.ladders ?? []
+            const supportNames = Object.values(M.ladders.focus!.support).flatMap((x) => x.names)
+            if (all.length && all.every((l) => M.ladders.skillFamilies.includes(l.family)) && !c.skill && !c.support && !supportNames.includes(c.exercise.name))
+              fail('skills', `${tag} day ${d.index + 1}: ${c.exercise.name} outside the skill block`)
+          }
+      }
+      // CrossFit as the main style: a metcon every day, unless all that is left is skills and main lifts.
+      if (styles[0] === 'CrossFit' && strengthStyles.length > 1 && plan.strength)
+        for (const d of plan.strength.days)
+          if (!d.conditioning?.metcon && d.exercises.some((c) => !c.skill && !c.exercise.mainLift && !c.pinned && !c.unilateral?.extraSets && !c.support))
+            fail('metcon', `${tag} day ${d.index + 1}: the metcon went while ${d.exercises.filter((c) => !c.skill && !c.exercise.mainLift).map((c) => c.exercise.name).join(', ')} stayed`)
+      // A CrossFit hybrid keeps its metcons: at least one a week, two when CrossFit is the main style.
+      if (styles.includes('CrossFit') && strengthStyles.length > 1 && plan.strength) {
+        const n = plan.strength.days.filter((d) => d.conditioning?.metcon).length
+        const want = Math.min(styles[0] === 'CrossFit' ? 2 : 1, plan.strength.days.length)
+        if (n < want) fail('metcon', `${tag}: ${n} metcon${n === 1 ? '' : 's'} in the week (wanted ${want})`)
       }
       // Pilates: within the level, the age and the pains; in order; the spine's four directions; an hour.
       const injIdx = buildInjuryIndex(styleData.injury, ex)
@@ -4814,7 +4841,7 @@ const fingerprint = (p: ReturnType<typeof run>) =>
     pain: 'nothing a pain removes, warm-ups, metcons and Pilates included',
     twice: 'never the same exercise twice in a session',
     order: 'calisthenics skills open the session',
-    skills: 'a calisthenics session opens with its skill, never paired',
+    skills: 'a calisthenics session opens with its skill, never paired, never swapped, fully rested',
     rung: 'a ladder exercise only at the client\'s rung or the two under it',
     hour: 'every strength session an hour or less, metcon included',
     warmup: 'five warm-up moves, no machine, no repeat',
@@ -4884,6 +4911,97 @@ const fingerprint = (p: ReturnType<typeof run>) =>
       for (const d of r.plan.strength.days) if (!d.exercises.some((c) => c.skill)) bad.push(`seed ${seed} day ${d.index + 1}: no skill`)
     }
     check('Styles: Calisthenics first in a hybrid makes a calisthenics week, skills included', bad.length === 0, bad.slice(0, 3).join(' | ') || '10 clients')
+  }
+
+  // 9c. Skills to master: only those open the sessions, each about three times a week at a steady dose,
+  // the program leans on their support work, at most three, and one a pain rules out is refused.
+  {
+    const bad: string[] = []
+    const reference = FIXTURES[0].input
+    const SKILLS = M.ladders.skillFamilies
+    for (let seed = 0; seed < 14; seed++) {
+      const level = (['Beginner', 'Intermediate', 'Advanced'] as const)[seed % 3]
+      const pick = [SKILLS[seed % SKILLS.length], SKILLS[(seed * 3 + 1) % SKILLS.length], SKILLS[(seed * 5 + 2) % SKILLS.length]].slice(0, 1 + (seed % 3))
+      const want = [...new Set(pick)]
+      // half of them with an InBody scan: its sets and rest must never reach the skills
+      const r = buildPlan(styleData, {
+        ...reference,
+        level,
+        days: 3 + (seed % 3),
+        modalities: ['Calisthenics'],
+        focusSkills: [...want, 'Back lever', 'L-sit', 'Muscle-up'].slice(0, 5),
+        ...(seed % 2 && { inbody: WORKED_EXAMPLE }),
+      })
+      if (!r.ok || !r.plan.strength) {
+        bad.push(`seed ${seed}: ${r.ok ? 'no strength' : r.error}`)
+        continue
+      }
+      const st = r.plan.strength.styles
+      if (st.focus.length > (M.ladders.focus?.max ?? 3)) bad.push(`seed ${seed}: ${st.focus.length} focus skills`)
+      const days = r.plan.strength.days
+      const opened = days.flatMap((d) => d.exercises.filter((c) => c.skill).map((c) => c.skill!))
+      for (const sk of opened) if (!st.focus.includes(sk)) bad.push(`seed ${seed}: ${sk} opened a session but is not a focus`)
+      const F = M.ladders.focus!
+      for (const f of st.focus) {
+        const n = opened.filter((x) => x === f).length
+        const most = F.timesPerWeek[f] ?? F.timesPerWeek.default
+        if (n < Math.min(2, days.length)) bad.push(`seed ${seed}: ${f} only ${n}x in ${days.length} days`)
+        if (n > most) bad.push(`seed ${seed}: ${f} ${n}x a week, over ${most}`)
+        // straight-arm skills never two days running, from four days a week
+        if (F.straightArm.includes(f) && days.length >= 4)
+          days.forEach((d, i) => i > 0 && d.exercises.some((c) => c.skill === f) && days[i - 1].exercises.some((c) => c.skill === f) && bad.push(`seed ${seed}: ${f} two days running`))
+        for (const d of days)
+          for (const c of d.exercises.filter((x) => x.skill === f)) {
+            if (c.sets < F.minSetsEach || c.sets > (F.setsEachMax?.[level] ?? 9)) bad.push(`seed ${seed}: ${f} ${c.sets} sets`)
+            const dose = Math.max(...days.flatMap((x) => x.exercises.filter((y) => y.skill === f).map((y) => y.sets)))
+            const told = r.plan.strength.warnings.some((w) => w.dayIndex === d.index && w.message.includes(`${f.toLowerCase()} at`))
+            if (c.sets !== dose && !told) bad.push(`seed ${seed}: ${f} ${c.sets} sets on day ${d.index + 1}, ${dose} elsewhere, unannounced`)
+            if (c.verdict.verdict === 'CAUTION') bad.push(`seed ${seed}: ${f} trained while a pain cautions it`)
+          }
+      }
+      // With skills picked, another skill's moves never fill a slot (its easy rungs are warm-up only).
+      for (const d of days)
+        for (const c of d.exercises) {
+          const fam = skillFamilyOf(styleData, c.exercise)
+          if (st.focus.length && fam && !st.focus.includes(fam) && !c.support && !Object.values(F.support).some((x) => x.names.includes(c.exercise.name)))
+            bad.push(`seed ${seed}: ${c.exercise.name} (${fam}) fills a slot though ${fam} was not picked`)
+        }
+      for (const r of st.focusRefused) if (/no step of it fits/.test(r.reason)) bad.push(`seed ${seed}: a vague refusal for ${r.family}`)
+    }
+    // A shoulder pain removes overhead work: a human flag focus is refused, with the reason.
+    const hurt = buildPlan(styleData, { ...reference, modalities: ['Calisthenics'], focusSkills: ['Human flag', 'Front lever'], pains: { SHOULDER: 'Both' } })
+    if (hurt.ok && !hurt.plan.strength?.styles.focusRefused.some((x) => x.family === 'Human flag')) bad.push('Human flag kept through a shoulder pain')
+    const sh = buildPlan(styleData, { ...reference, modalities: ['Calisthenics'], focusSkills: ['Planche'], pains: { SHOULDER: 'Both' } })
+    if (sh.ok && sh.plan.strength?.styles.focus.includes('Planche')) bad.push('Planche kept through a shoulder pain')
+    const lb = buildPlan(styleData, { ...reference, level: 'Advanced', modalities: ['Calisthenics'], focusSkills: ['Back lever'], pains: { LOWBACK: 'Both' } })
+    if (lb.ok && lb.plan.strength?.styles.focus.includes('Back lever')) bad.push('Back lever kept through a low-back pain')
+    // 65+: the handstand's realistic target (chest-to-wall) is open, the muscle-up has none.
+    const old = buildPlan(styleData, { ...reference, age: 68, level: 'Intermediate', modalities: ['Calisthenics'], focusSkills: ['Handstand', 'Muscle-up'] })
+    if (old.ok) {
+      const st = old.plan.strength!.styles
+      if (!st.focus.includes('Handstand')) bad.push(`68: Handstand refused (${st.focusRefused.map((x) => x.reason).join('; ')})`)
+      if (st.focus.includes('Muscle-up')) bad.push('68: Muscle-up accepted')
+    }
+    // An intermediate with no rungs set can work towards the back lever and the muscle-up.
+    const mid = buildPlan(styleData, { ...reference, level: 'Intermediate', modalities: ['Calisthenics'], focusSkills: ['Back lever', 'Muscle-up'] })
+    if (mid.ok && mid.plan.strength!.styles.focus.length < 2) bad.push(`Intermediate: ${mid.plan.strength!.styles.focusRefused.map((x) => `${x.family}: ${x.reason}`).join('; ')}`)
+    // A beginner's two picks each get two sessions of a four-day week.
+    const beg = buildPlan(styleData, { ...reference, level: 'Beginner', days: 4, modalities: ['Calisthenics'], focusSkills: ['Handstand', 'Planche'] })
+    if (beg.ok)
+      for (const f of beg.plan.strength!.styles.focus) {
+        const n = beg.plan.strength!.days.filter((d) => d.exercises.some((c) => c.skill === f)).length
+        if (n < 2) bad.push(`Beginner: ${f} ${n}x`)
+      }
+    // A CrossFit-first week never loses its last metcon to the hour (2-day, advanced, Get Stronger: the reviewer's case).
+    for (let sd = 0; sd < 24; sd++) {
+      const { input: b } = sampleClient(data, { pain: true, vald: true, inbody: true, bodydot: true }, sd * 6151 + 40)
+      const cf = buildPlan(styleData, { ...b, level: 'Advanced', goal: 'Get Stronger', days: 2, modalities: ['CrossFit', 'Calisthenics'], equipment: 'Full gym', pins: [] })
+      if (cf.ok && cf.plan.strength && !cf.plan.strength.days.some((d) => d.conditioning?.metcon)) bad.push(`CrossFit-first seed ${sd}: no metcon all week`)
+    }
+    // The over-hour guard never takes the week's only vertical pull (the reviewer's case).
+    const vp = buildPlan(styleData, { ...reference, level: 'Intermediate', days: 4, split: 'Upper / Lower', modalities: ['CrossFit', 'Calisthenics'] })
+    if (vp.ok && !vp.plan.strength!.days.some((d) => d.exercises.some((c) => c.exercise.sub === 'Vertical pull'))) bad.push('CrossFit + Calisthenics: no vertical pull all week')
+    check('Styles: skills to master: twice to three or four times a week, never straight-arm two days running, capped sets, no other skill in the slots, refused with a reason when they cannot be trained', bad.length === 0, bad.slice(0, 4).join(' | ') || '14 clients')
   }
 
   // 10. Pilates answers U-Body: a finding's moves stay in every session.

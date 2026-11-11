@@ -81,16 +81,61 @@ export function RungsPanel({ plan, draft, setDraft, data }: { plan: Plan; draft:
     setDraft({ ...draft, rungs: next })
   }
   const clean = data.modalities?.ladders.cleanWhen
+  const styles = plan.strength?.styles
+  const focus = styles?.focus ?? []
+  const asked = draft.focusSkills ?? []
+  const max = data.modalities?.ladders.focus?.max ?? 3
+  const toggleFocus = (f: string) => {
+    const next = asked.includes(f) ? asked.filter((x) => x !== f) : asked.length < max ? [...asked, f] : asked
+    setDraft({ ...draft, focusSkills: next })
+  }
   return (
     <Card className="p-4">
+      <SectionTitle hint={`Up to ${max}. A skill picked here opens most sessions with more sets, instead of every skill taking its turn, and the rest of the program leans on the work that leads to it.`}>
+        Skills to master
+      </SectionTitle>
+      <div className="mt-2 mb-4 flex flex-wrap items-center gap-2">
+        {(styles?.skillLadders ?? []).map((f) => {
+          const on = asked.includes(f)
+          return (
+            <button
+              key={f}
+              type="button"
+              onClick={() => toggleFocus(f)}
+              disabled={!on && asked.length >= max}
+              className={`rounded-xl border px-3 py-1.5 text-sm font-semibold transition disabled:opacity-40 ${
+                on ? 'border-udra-blue bg-udra-blue text-white' : 'border-udra-linen-300 bg-white text-udra-ink-500 hover:text-black'
+              }`}
+            >
+              {on && '★ '}
+              {f}
+            </button>
+          )
+        })}
+        {!asked.length && <span className="text-[12px] text-udra-ink-500">None picked: every skill takes its turn.</span>}
+        {asked.length > 0 && !focus.length && (
+          <span className="text-[12px] text-udra-flame">None of the picked skills can be trained now: why is below each.</span>
+        )}
+        {focus.length > 0 && <span className="text-[12px] text-udra-ink-500">Working towards: {focus.join(', ')}.</span>}
+      </div>
+      {(styles?.focusRefused ?? []).map((r) => (
+        <div key={r.family} className="mb-3">
+          <Note tone="flame" title={`${r.family} cannot be a focus right now`}>
+            {r.reason}.
+          </Note>
+        </div>
+      ))}
       <SectionTitle hint={`One rung per ladder, never the level: move a rung up when it is clean (${clean?.reps ?? ''}; holds: ${clean?.hold ?? ''}). Easier rungs become warm-up drills.`}>
         Calisthenics ladders
       </SectionTitle>
       <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
         {rungs.map((r) => (
-          <div key={r.family} className="rounded-xl border border-udra-linen-200 bg-white px-3 py-2">
+          <div key={r.family} className={`rounded-xl border bg-white px-3 py-2 ${focus.includes(r.family) ? 'border-udra-blue' : 'border-udra-linen-200'}`}>
             <div className="flex items-center gap-2">
-              <span className="text-sm font-bold">{r.family}</span>
+              <span className="text-sm font-bold">
+                {focus.includes(r.family) && <span className="text-udra-blue">★ </span>}
+                {r.family}
+              </span>
               <span className="tnum text-[11px] text-udra-ink-500">
                 step {r.step} of {r.steps}
               </span>

@@ -177,14 +177,15 @@ function draftFromUrl(): ClientDraft {
 }
 
 /** `styles=Gym,Calisthenics` and `rungs=Push-up:4;Pull-up:3`: the training styles and ladder rungs. */
-function stylesFromUrl(q: URLSearchParams): Pick<ClientDraft, 'modalities' | 'rungs'> {
+function stylesFromUrl(q: URLSearchParams): Pick<ClientDraft, 'modalities' | 'rungs' | 'focusSkills'> {
   const styles = (q.get('styles') ?? '').split(',').filter((x): x is Modality => ALL_STYLES.includes(x as Modality))
   const rungs: Record<string, number> = {}
   for (const part of (q.get('rungs') ?? '').split(';')) {
     const [family, n] = part.split(':')
     if (family && Number(n) > 0) rungs[family] = Number(n)
   }
-  return { ...(styles.length && { modalities: styles }), ...(Object.keys(rungs).length && { rungs }) }
+  const focus = (q.get('focus') ?? '').split(',').filter(Boolean)
+  return { ...(styles.length && { modalities: styles }), ...(Object.keys(rungs).length && { rungs }), ...(focus.length && { focusSkills: focus }) }
 }
 
 /**
@@ -229,7 +230,8 @@ export default function App() {
             k !== 'pins' &&
             k !== 'caps' &&
             k !== 'modalities' &&
-            k !== 'rungs',
+            k !== 'rungs' &&
+            k !== 'focusSkills',
         )
         .map(([k, v]) => [k, String(v)]) as [string, string][],
     )
@@ -286,6 +288,7 @@ export default function App() {
       )
     if (draft.modalities?.length && !(draft.modalities.length === 1 && draft.modalities[0] === 'Gym'))
       q.set('styles', draft.modalities.join(','))
+    if (draft.focusSkills?.length) q.set('focus', draft.focusSkills.join(','))
     if (draft.rungs && Object.keys(draft.rungs).length)
       q.set('rungs', Object.entries(draft.rungs).map(([f, n]) => `${f}:${n}`).join(';'))
     window.history.replaceState(null, '', `?${q.toString()}`)

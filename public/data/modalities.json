@@ -213,7 +213,166 @@
       }
     },
     "workingRungs": 3,
-    "workingWhy": "The sheet's rule 2: the client's rung and the two under it are working sets (the client's own rung first); everything easier is a warm-up drill, never deleted; anything harder waits."
+    "workingWhy": "The sheet's rule 2: the client's rung and the two under it are working sets (the client's own rung first); everything easier is a warm-up drill, never deleted; anything harder waits.",
+    "focus": {
+      "why": "A client can pick the skills they want to master (up to three; two for a beginner). Those replace the rotation through all seven: each is trained up to three times a week (four for the handstand and the L-sit, which are lower stress), never a straight-arm skill two days running, first in the session at a capped number of sets, and each brings one support exercise on its days. A focus the client cannot train now is refused with its reason; one a pain only cautions is refused too, rather than trained at full dose.",
+      "max": 3,
+      "perSession": {
+        "Beginner": 1,
+        "Intermediate": 2,
+        "Advanced": 2
+      },
+      "setsPerSession": {
+        "Beginner": 4,
+        "Intermediate": 6,
+        "Advanced": 8
+      },
+      "minSetsEach": 3,
+      "support": {
+        "Front lever": {
+          "names": [
+            "Straight-arm pulldown",
+            "Hollow hold",
+            "Feet-elevated inverted row",
+            "Ring row",
+            "Inverted row",
+            "Scapular pull-up / dead-hang retraction"
+          ],
+          "families": [
+            "Row",
+            "Pull-up"
+          ]
+        },
+        "Back lever": {
+          "names": [
+            "Straight-arm pulldown",
+            "Superman / prone extension",
+            "Ring row",
+            "Inverted row"
+          ],
+          "families": [
+            "Row",
+            "Pull-up"
+          ]
+        },
+        "Planche": {
+          "names": [
+            "Planche lean",
+            "Pseudo planche push-up",
+            "Scapular push-up",
+            "Ring support hold",
+            "Hollow hold"
+          ],
+          "families": [
+            "Push-up"
+          ]
+        },
+        "Handstand": {
+          "names": [
+            "Pike push-up",
+            "Feet-elevated pike push-up",
+            "Wall handstand push-up",
+            "Hollow hold",
+            "Scapular push-up"
+          ],
+          "families": [
+            "Handstand push-up"
+          ]
+        },
+        "Muscle-up": {
+          "names": [
+            "Explosive pull-up",
+            "Low-bar transition drill",
+            "Chest dip, forward lean",
+            "Triceps dip"
+          ],
+          "families": [
+            "Pull-up"
+          ]
+        },
+        "Human flag": {
+          "names": [
+            "Side plank",
+            "Pike push-up",
+            "Hanging knee raise"
+          ],
+          "families": [
+            "Pull-up"
+          ]
+        },
+        "L-sit": {
+          "names": [
+            "Hanging knee raise",
+            "Ring support hold",
+            "Lying leg raise",
+            "Hollow hold"
+          ],
+          "families": [
+            "Hanging core"
+          ]
+        }
+      },
+      "maxByLevel": {
+        "Beginner": 2,
+        "Intermediate": 3,
+        "Advanced": 3
+      },
+      "timesPerWeek": {
+        "default": 3,
+        "Handstand": 4,
+        "L-sit": 4
+      },
+      "straightArm": [
+        "Front lever",
+        "Back lever",
+        "Planche",
+        "Human flag"
+      ],
+      "straightArmWhy": "Straight-arm skills load the elbow and the biceps tendon: never on two days in a row (48 hours between).",
+      "setsEachMax": {
+        "Beginner": 3,
+        "Intermediate": 4,
+        "Advanced": 5
+      },
+      "goalByAge": {
+        "why": "What 'mastering' a skill means at an age its final step is closed to: a realistic target that still is the skill. With no safe target (the flag, the muscle-up from 65) it is not a focus at that age; its easier steps can still come up in the rotation.",
+        "65+": {
+          "Handstand": "Chest-to-wall handstand hold",
+          "L-sit": "L-sit",
+          "Planche": "Tuck planche",
+          "Front lever": "Advanced tuck front lever",
+          "Back lever": "Advanced tuck back lever",
+          "Human flag": null,
+          "Muscle-up": null
+        }
+      },
+      "pullSubs": [
+        "Vertical pull",
+        "Horizontal pull",
+        "Retraction (rhomboids, mid traps)"
+      ]
+    },
+    "holdByName": {
+      "why": "A hold's time is the step's, not the skill's: a frog stand or a lean is held 15-30 s, a straddle or full lever or planche 3-8 s.",
+      "Frog stand": "15-30",
+      "Planche lean": "15-30",
+      "Elbow lever": "10-20",
+      "Straddle front lever": "3-8",
+      "Full front lever": "3-8",
+      "Straddle back lever": "3-8",
+      "Full back lever": "3-8",
+      "Straddle planche": "3-8",
+      "Advanced tuck planche": "5-10",
+      "Straddle human flag": "3-8",
+      "Full human flag": "3-8",
+      "Freestanding handstand": "15-30",
+      "V-sit": "5-10"
+    },
+    "countedNotHeld": [
+      "Feet-on-wall plank walk",
+      "Handstand shoulder taps",
+      "Skin the cat"
+    ]
   },
   "crossfit": {
     "strengthExcludeTags": [
@@ -915,7 +1074,8 @@
         "Single-leg RDL",
         "Sit-up",
         "Lying leg raise",
-        "Reverse crunch"
+        "Reverse crunch",
+        "Straight-arm pulldown"
       ],
       "CrossFit": [
         "Push-up",
@@ -989,7 +1149,10 @@
       "Strict handstand push-up": "3-6",
       "Archer push-up": "4-6",
       "Archer pull-up": "3-5",
-      "Commando pull-up": "4-6"
+      "Commando pull-up": "4-6",
+      "Pseudo planche push-up": "5-8",
+      "Feet-on-wall plank walk": "3-5",
+      "Handstand shoulder taps": "6-10 taps"
     },
     "bodyweightMaxReps": 12,
     "bodyweightMaxWhy": "An unloaded compound of skill 2 and up never goes above 12 reps: past that the move is too easy, and the next rung is the progression.",

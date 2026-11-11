@@ -37,7 +37,9 @@ const RULES: [RegExp, Tag[]][] = [
   [/pike push|handstand push/i, ['ELB_EXT']],
   [/kipping handstand/i, ['LUM_EXT', 'IMPACT']],
   [/planche|frog stand|elbow lever/i, ['WR_WB', 'ELB_WB', 'SH_LOAD', 'IAP']],
-  [/planche/i, ['ELB_FLEX']],
+  // The planche family loads the front of the shoulder at full stretch (the anterior capsule): a shoulder
+  // pain removes it, as it does a deep dip.
+  [/planche/i, ['ELB_FLEX', 'PEC_STRETCH']],
   [/support hold|ring dip|korean dip/i, ['ELB_WB', 'SH_LOAD', 'ELB_EXT']],
   [/ring dip|korean dip/i, ['PEC_STRETCH']],
   [/l-sit|v-sit/i, [...HAND_SUPPORT, 'HF_LOAD', 'IAP']],
@@ -45,7 +47,9 @@ const RULES: [RegExp, Tag[]][] = [
   [/pull-up|muscle-up|transition drill|rope climb|front lever|back lever|skin the cat|human flag|flag hold|toes-to-bar|knees-to-elbow|hanging windshield|pull-over to bar/i, HANG],
   [/kipping pull|butterfly pull|muscle-up|transition drill/i, ['SH_IMPINGE', 'LUM_EXT']],
   [/muscle-up|transition drill/i, ['ELB_EXT', 'PEC_STRETCH']],
-  [/back lever|skin the cat/i, ['PEC_STRETCH', 'LUM_EXT']],
+  // A back lever is the low back's extension skill under the whole body's weight: heavy bracing, so a sore
+  // low back removes it (IAP), not just cautions it.
+  [/back lever|skin the cat/i, ['PEC_STRETCH', 'LUM_EXT', 'IAP']],
   [/front lever|human flag|flag hold/i, ['IAP']],
   [/human flag|flag hold/i, ['TRUNK_ROT']],
   [/inverted row|ring row|lever row/i, ['GRIP', 'ELB_FLEX', 'SH_LOAD']],

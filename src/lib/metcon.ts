@@ -126,7 +126,9 @@ export function buildMetcon(data: Pick<DataBundle, 'exercises' | 'modalities'>, 
   if (m.age >= 50) minutes = Math.min(minutes, rules.minutesOver50)
   if (m.maxMinutes !== undefined) minutes = Math.min(minutes, m.maxMinutes)
   const formats = (m.level === 'Beginner' ? rules.formatsBeginner : rules.formats) as Metcon['format'][]
-  const format = formats[m.dayIndex % formats.length]
+  let format = formats[m.dayIndex % formats.length]
+  // An EMOM is whole rounds of its moves: one that would round under eight minutes is an AMRAP instead.
+  if (format === 'EMOM' && Math.floor(minutes / chosen.length) * chosen.length < 8) format = 'AMRAP'
   const base = rules.reps[m.level] ?? rules.reps.Beginner
   const factor = format === 'EMOM' ? rules.emomRepsFactor : 1
 

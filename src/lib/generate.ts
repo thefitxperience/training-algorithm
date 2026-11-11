@@ -170,6 +170,8 @@ export interface ChosenExercise {
   pinned?: { equipment?: string; actor: string }
   /** the calisthenics skill that opens the session, chosen on purpose (not a sub-region slot) */
   skill?: string
+  /** the work that leads to a focus skill, added for it on its days */
+  support?: string
 }
 
 export interface GeneratedDay {
@@ -268,6 +270,12 @@ export interface Program {
   styles: {
     styles: Modality[]
     rungs: { family: string; rung: number; set: boolean; exercises: string[]; next: string[]; top: number; step: number; steps: number; prevRung?: number; nextRung?: number }[]
+    /** the skills the client is working towards (they open the sessions instead of the rotation) */
+    focus: string[]
+    /** focus skills asked for that this client cannot train now, and why */
+    focusRefused: { family: string; reason: string }[]
+    /** every skill ladder, for the picker */
+    skillLadders: string[]
   }
 }
 
@@ -394,6 +402,21 @@ export function generate(raw: DataBundle, input: ClientInput): GenerateResult {
   const strengthStyles = styles.filter((st) => STRENGTH_STYLES.includes(st))
   const ladders = styled && strengthStyles.includes('Calisthenics') ? laddersOf(exercises) : undefined
   const rungs: Map<string, Rung> | undefined = ladders ? rungsFor(data, ladders, input, ageBr) : undefined
+  // A starting rung the client cannot train at all (skin the cat is a mobility move; the muscle-up's first
+  // rung is the pull-up, which the pull-up ladder has not reached) starts one step up instead.
+  if (rungs && ladders)
+    for (const [family, r] of rungs) {
+      if (r.set) continue
+      const steps = ladders.get(family)!
+      const i = steps.findIndex((st) => st.rung === r.rung)
+      const elsewhere = (e: Exercise) =>
+        (e.ladders ?? []).some((l) => {
+          if (l.family === family || !rungs.has(l.family) || !ladders.has(l.family)) return false
+          const other = ladders.get(l.family)!
+          return other.findIndex((st) => st.rung === l.rung) > other.findIndex((st) => st.rung === rungs.get(l.family)!.rung)
+        })
+      if (steps[i + 1] && steps[i].exercises.every((e) => e.type === 'mobility' || elsewhere(e))) rungs.set(family, { rung: steps[i + 1].rung, set: false })
+    }
   /**
    * In one of the client's strength styles (CrossFit's metcon moves are the metcon's). For the gym
    * this is the library as it was: the modality sheet's rows reach a gym program only when
@@ -411,6 +434,8 @@ export function generate(raw: DataBundle, input: ClientInput): GenerateResult {
     return d === undefined || (d >= 0 && d < working)
   }
   const moveWarmup = fitHourOn(input) && usesMoveWarmup(data, styles)
+  /** set once the skills to master are known: the other skills' moves stay out of the slots */
+  let keepOutOfSlots = (_ex: Exercise) => false
 
   const key = allocationKey({
     split: input.split,
@@ -503,6 +528,7 @@ export function generate(raw: DataBundle, input: ClientInput): GenerateResult {
       (ex) =>
         inPool(ex) &&
         onRung(ex) &&
+        !keepOutOfSlots(ex) &&
         // A rung the trainer set may sit above the level's ceiling; the age rules still hold.
         ((isEligible(ex, input.level, ageBr, input.equipment) && withinSheetLevel(data, ex, input.level)) ||
           (!!rungs && rungIsSet(ex, rungs) && isEligible(ex, 'Advanced', ageBr, input.equipment))),
@@ -620,23 +646,163 @@ export function generate(raw: DataBundle, input: ClientInput): GenerateResult {
       ? list
       : [...list].sort(
           (a, b) =>
+            // the work that leads to a focus skill comes first wherever there is some
+            (focus.length ? Number(isSupport(b)) - Number(isSupport(a)) : 0) ||
             (calisthenicsFirst ? Number(memberOf(data, b, 'Calisthenics')) - Number(memberOf(data, a, 'Calisthenics')) : 0) ||
             (olympicFirst ? Number((b.tags ?? []).includes('Olympic')) - Number((a.tags ?? []).includes('Olympic')) : 0) ||
             // two rungs of one ladder: the client's own before the easier one
             ((a.ladders?.length ?? 0) && (b.ladders?.length ?? 0) ? rungRank(a) - rungRank(b) : 0),
         )
   /**
-   * Calisthenics skills, programmed on purpose: each session opens with one ladder's skill (two from
-   * intermediate), rotated across the week so each gets its turn, ladders the trainer set first.
+   * Calisthenics skills, programmed on purpose. With skills to master picked, those are scheduled
+   * across the week (up to three sessions each, four for the handstand and the L-sit; never a
+   * straight-arm skill two days running) with a support exercise each; with none picked, every skill
+   * takes its turn. A skill is trained at the client's rung, or the nearest step under it they can do.
    */
-  const skillFamilies = (() => {
-    if (!rungs || !ladders || !data.modalities) return []
+  const focusRules = data.modalities?.ladders.focus
+  const skillLadders = data.modalities?.ladders.skillFamilies ?? []
+  /** a skill step the client can do: their styles, level, age, equipment and pains, never a mobility move */
+  /** above the client on a ladder other than this skill's own (a pull-up the pull-up ladder has not reached) */
+  const aboveElsewhere = (e: Exercise, own: string) =>
+    !!rungs &&
+    !!ladders &&
+    (e.ladders ?? []).some((l) => {
+      if (l.family === own || !rungs.has(l.family) || !ladders.has(l.family)) return false
+      const steps = ladders.get(l.family)!
+      return steps.findIndex((st) => st.rung === l.rung) > steps.findIndex((st) => st.rung === rungs.get(l.family)!.rung)
+    })
+  const skillEligible = (e: Exercise, own = '') =>
+    inPool(e) &&
+    e.type !== 'mobility' &&
+    !isRemoved(e) &&
+    verdicts.get(e.id)?.verdict !== 'CAUTION' &&
+    !aboveElsewhere(e, own) &&
+    ((isEligible(e, input.level, ageBr, input.equipment) && withinSheetLevel(data, e, input.level)) ||
+      (!!rungs && rungIsSet(e, rungs) && isEligible(e, 'Advanced', ageBr, input.equipment)))
+  /** the step a skill is trained at: the client's rung, or the nearest under it that they can do */
+  const skillStep = (f: string): Exercise[] => {
+    const r = rungs?.get(f)
+    const steps = ladders?.get(f)
+    if (!r || !steps) return []
+    const at = steps.findIndex((st) => st.rung === r.rung)
+    for (let i = at; i >= 0; i--) {
+      const ok = steps[i].exercises.filter((e) => skillEligible(e, f))
+      if (ok.length) return ok
+    }
+    // Nothing at or under the rung only because those steps are a mobility move or a rung of another ladder
+    // the client has not reached (skin the cat; the pull-up for the muscle-up): one step up, if their level
+    // allows it. Never past a step a pain, the age or the level closes: harder is not the answer to that.
+    const structural = steps.slice(0, at + 1).every((st) => st.exercises.every((e) => e.type === 'mobility' || aboveElsewhere(e, f)))
+    if (structural && steps[at + 1]) return steps[at + 1].exercises.filter((e) => skillEligible(e, f))
+    return []
+  }
+  /** why a skill cannot be trained now, in words the trainer can act on */
+  const skillRefusal = (f: string): string | null => {
+    if (!skillLadders.includes(f)) return `${f} is not a skill ladder`
+    const steps = ladders?.get(f) ?? []
+    const r = rungs?.get(f)
+    const at = steps.findIndex((st) => st.rung === r?.rung)
+    // What mastering it means at this age (modalities.json focus.goalByAge): its final step, or a realistic
+    // target where the final step is closed to the age; none at all where there is no safe one.
+    const byAge = focusRules?.goalByAge?.[ageBr]
+    const goalName = typeof byAge === 'object' ? byAge[f] : undefined
+    if (goalName === null) return `there is no safe target for it at ${ageBr}; its easier steps can still come up in the rotation`
+    const goal = (goalName && steps.find((st) => st.exercises.some((e) => e.name === goalName))) || steps[steps.length - 1]
+    if (goal && goal.exercises.every((e) => e.avoidAges.includes(ageBr)))
+      return `its target (${goal.exercises.map((e) => e.name.toLowerCase()).join(' / ')}) is closed at ${ageBr}, so it cannot be mastered; the easier steps can still come up in the rotation`
+    if (skillStep(f).length) return null
+    const here = steps.slice(0, at + 1).flatMap((st) => st.exercises).filter((e) => e.type !== 'mobility')
+    if (!here.length) return `there is no step of ${f} for this client to start on yet`
+    const painOf = (v?: ExerciseVerdict) =>
+      [...new Set((v?.byPain ?? []).filter((x) => x.verdict === 'REMOVE' || x.verdict === 'CAUTION').map((x) => x.painLabel.toLowerCase()))]
+        .map((l) => (/pain/.test(l) ? l : `${l} pain`))
+        .join(' and ')
+    const pained = here.find((e) => ['REMOVE', 'CAUTION'].includes(verdicts.get(e.id)?.verdict ?? ''))
+    if (pained) return `the reported ${painOf(verdicts.get(pained.id))} ${verdicts.get(pained.id)?.verdict === 'REMOVE' ? 'rules it out' : 'calls for care with it, so it is not trained at a focus dose'}`
+    if (here.every((e) => e.avoidAges.includes(ageBr))) return `its steps are closed at ${ageBr}`
+    if (rungs && ladders && here.every((e) => rungsBelow(e, rungs, ladders) === -1)) {
+      const other = here.flatMap((e) => e.ladders ?? []).find((l) => l.family !== f && rungs.has(l.family))
+      return other ? `it starts from the ${other.family.toLowerCase()} ladder's ${here[0].name.toLowerCase()}, which the client has not reached yet` : 'its first step is above the client for now'
+    }
+    if (here.every((e) => !isEquipmentAvailable(e, input.equipment))) return `it needs equipment the client does not have (${input.equipment})`
+    return `its steps are above ${input.level === 'Intermediate' || input.level === 'Advanced' ? 'an' : 'a'} ${input.level.toLowerCase()} for now; set the rung by hand to override`
+  }
+  // The picks: skill ladders only, each checked, the first that pass up to the level's maximum.
+  const focusMax = Math.min(focusRules?.max ?? 3, focusRules?.maxByLevel?.[input.level] ?? 3)
+  const focusRefused: { family: string; reason: string }[] = []
+  const focus: string[] = []
+  for (const f of rungs ? [...new Set(input.focusSkills ?? [])] : []) {
+    const why = skillRefusal(f)
+    if (why) focusRefused.push({ family: f, reason: why })
+    else if (focus.length >= focusMax)
+      focusRefused.push({ family: f, reason: `${focusMax} skills at a time for ${input.level === 'Beginner' ? 'a' : 'an'} ${input.level.toLowerCase()}; finish one first` })
+    else focus.push(f)
+  }
+  // Each focus skill needs two sessions a week at least: more picks than the week holds are refused.
+  // (With no focus picked and calisthenics the second style of a hybrid, one skill a session.)
+  const perSession = focus.length
+    ? (focusRules?.perSession[input.level] ?? 1)
+    : input.level === 'Beginner' || (styles[0] !== 'Calisthenics' && strengthStyles.length > 1)
+      ? 1
+      : 2
+  const nDays = allocDays.length
+  while (focus.length > 1 && focus.length * 2 > nDays * perSession) {
+    const f = focus.pop()!
+    focusRefused.push({ family: f, reason: `${nDays} session${nDays === 1 ? '' : 's'} a week cannot train ${focus.length + 1} skills twice each; pick fewer or add a day` })
+  }
+  const straightArm = new Set(focusRules?.straightArm ?? [])
+  /** the skills each day opens with */
+  const skillsOn: string[][] = (() => {
+    if (!rungs || !ladders || !data.modalities) return allocDays.map(() => [])
+    if (focus.length) {
+      const target = new Map(focus.map((f) => [f, Math.min(focusRules?.timesPerWeek[f] ?? focusRules?.timesPerWeek.default ?? 3, nDays)]))
+      const done = new Map(focus.map((f) => [f, 0]))
+      const out: string[][] = []
+      for (let d = 0; d < nDays; d++) {
+        const yesterday = out[d - 1] ?? []
+        // The skill furthest behind its week first; a straight-arm skill never the day after itself.
+        const today = [...focus]
+          // (From four days a week, like the heavy hinge: on fewer, the sessions are not on consecutive days.)
+          .filter((f) => done.get(f)! < target.get(f)! && !(straightArm.has(f) && input.days >= 4 && yesterday.includes(f)))
+          // every skill reaches its two sessions before any gets a third or fourth, then the furthest behind
+          .sort(
+            (a, b) =>
+              done.get(a)! - done.get(b)! ||
+              target.get(b)! - done.get(b)! - (target.get(a)! - done.get(a)!) ||
+              focus.indexOf(a) - focus.indexOf(b),
+          )
+          .slice(0, perSession)
+        for (const f of today) done.set(f, done.get(f)! + 1)
+        out.push(today)
+      }
+      return out
+    }
     const order = data.modalities.ladders.skillFamilies
-    return [...order]
-      .filter((f) => ladders.has(f) && rungs.has(f))
+    const families = [...order]
+      .filter((f) => ladders.has(f) && rungs.has(f) && skillStep(f).length > 0)
       .sort((a, b) => Number(rungs.get(b)!.set) - Number(rungs.get(a)!.set) || order.indexOf(a) - order.indexOf(b))
+    return allocDays.map((_, d) => (families.length ? Array.from({ length: Math.min(perSession, families.length) }, (_, k) => families[(d * perSession + k) % families.length]) : []))
   })()
-  const skillsPerDay = input.level === 'Beginner' ? 1 : 2
+  /** sets per skill: the session's skill budget shared, never under three nor over the level's cap */
+  const skillSetsFor = (count: number) =>
+    focus.length
+      ? Math.min(focusRules?.setsEachMax?.[input.level] ?? 5, Math.max(focusRules?.minSetsEach ?? 3, Math.floor((focusRules?.setsPerSession[input.level] ?? 4) / Math.max(1, count))))
+      : input.level === 'Advanced'
+        ? 4
+        : 3
+  /** the work that leads to the focus skills: named moves first, then their support ladders */
+  const supportFamilies = new Set(focus.flatMap((f) => focusRules?.support[f]?.families ?? []))
+  const supportNames = new Set(focus.flatMap((f) => focusRules?.support[f]?.names ?? []))
+  // (A skill's own hold is the skill, not support for a slot: a plank walk does not replace the week's press.)
+  const isSupport = (e: Exercise) =>
+    e.type !== 'isometric' && (supportNames.has(e.name) || (e.ladders ?? []).some((l) => supportFamilies.has(l.family)))
+  // A skill's moves come only through the skill block, so a lever never turns up unannounced on another
+  // day (or stands in for a shoulder press): a move that is also a strength ladder's rung (a pull-up) or
+  // a focus skill's named support stays in the slots.
+  if (rungs && data.modalities) {
+    const skillSet = new Set(skillLadders)
+    keepOutOfSlots = (ex: Exercise) => !!ex.ladders?.length && ex.ladders.every((l) => skillSet.has(l.family))
+  }
 
   allocDays.forEach((allocDay, dayIndex) => {
     const chosen: ChosenExercise[] = []
@@ -658,31 +824,57 @@ export function generate(raw: DataBundle, input: ClientInput): GenerateResult {
       (hingesOn[dayIndex] >= fit.heavyHinge.perSession ||
         (fit.heavyHinge.notOnConsecutiveDays && input.days >= 4 && (hingesOn[dayIndex - 1] ?? 0) > 0))
 
-    // The day's skill work, before any slot: the skill at the client's rung, straight sets.
-    if (skillFamilies.length) {
-      let placed = 0
-      for (let k = 0; k < skillFamilies.length && placed < skillsPerDay; k++) {
-        const family = skillFamilies[(dayIndex * skillsPerDay + k) % skillFamilies.length]
-        const r = rungs!.get(family)!
-        const pick = ladders!
-          .get(family)!
-          .find((st) => st.rung === r.rung)
-          ?.exercises.find((e) => eligibleIn(e.sub).some((x) => x.id === e.id) && !chosen.some((c) => c.exercise.id === e.id))
-        if (!pick) continue
-        placed++
+    // The day's skill work, before any slot: each skill at its step, straight sets, then (with skills
+    // picked) one support exercise for each.
+    const todaysSkills = skillsOn[dayIndex] ?? []
+    // One dose per skill for the whole week, whatever else shares the day.
+    const skillSets = skillSetsFor(Math.min(perSession, Math.max(1, focus.length || skillLadders.length)))
+    for (const family of todaysSkills) {
+      const pick = skillStep(family).find((e) => !chosen.some((c) => c.exercise.id === e.id))
+      if (!pick) continue
+      chosen.push({
+        exercise: pick,
+        requestedSub: pick.sub,
+        slotId: slotId({ dayIndex, sub: `Skill: ${family}`, n: 0 }),
+        sets: skillSets,
+        reps: rx.reps,
+        rest: rx.rest,
+        restSeconds: baseRest,
+        verdict: verdicts.get(pick.id) ?? { verdict: 'OK', byPain: [] },
+        skill: family,
+      })
+    }
+    if (focus.length)
+      for (const family of todaysSkills) {
+        const names = focusRules?.support[family]?.names ?? []
+        const fams = new Set(focusRules?.support[family]?.families ?? [])
+        const pool = [
+          ...names.map((n) => exercises.find((e) => e.name === n)).filter((e): e is Exercise => !!e),
+          ...exercises.filter((e) => (e.ladders ?? []).some((l) => fams.has(l.family))),
+        ]
+        const support = pool.find(
+          (e) =>
+            e.type !== 'mobility' &&
+            // never the skill's own ladder: that is the skill, not its support
+            !(e.ladders ?? []).some((l) => l.family === family) &&
+            !chosen.some((c) => c.exercise.id === e.id) &&
+            (eligibleIn(e.sub).some((x) => x.id === e.id) || (inPool(e) && !isRemoved(e) && isEligible(e, input.level, ageBr, input.equipment) && withinSheetLevel(data, e, input.level))) &&
+            verdicts.get(e.id)?.verdict !== 'CAUTION',
+        )
+        if (!support) continue
+        usedThisWeek.add(support.id)
         chosen.push({
-          exercise: pick,
-          requestedSub: pick.sub,
-          slotId: slotId({ dayIndex, sub: `Skill: ${family}`, n: 0 }),
-          sets: input.level === 'Advanced' ? 4 : 3,
+          exercise: support,
+          requestedSub: support.sub,
+          slotId: slotId({ dayIndex, sub: `Support: ${family}`, n: 0 }),
+          sets: 3,
           reps: rx.reps,
           rest: rx.rest,
           restSeconds: baseRest,
-          verdict: verdicts.get(pick.id) ?? { verdict: 'OK', byPain: [] },
-          skill: family,
+          verdict: verdicts.get(support.id) ?? { verdict: 'OK', byPain: [] },
+          support: family,
         })
       }
-    }
 
     for (const slot of allocDay.slots as Slot[]) {
       const [sub, count, setsPerExercise] = slot
@@ -809,7 +1001,13 @@ export function generate(raw: DataBundle, input: ClientInput): GenerateResult {
             const siblings = (groupToSubs.get(group) ?? []).filter((s) => s !== sub)
             const allSiblings = rankCandidates(siblings.flatMap(eligibleIn), input.goal, verdicts).filter(
               // An Olympic lift trains its own slot, never another's as a stand-in; nor anything twice a session.
-              (ex) => !styled || (!(ex.tags ?? []).includes('Olympic') && !chosen.some((c) => c.exercise.id === ex.id)),
+              (ex) =>
+                !styled ||
+                (!(ex.tags ?? []).includes('Olympic') &&
+                  !skillFamilyOf(data, ex) &&
+                  // a pull day's rear delts are never stood in for by front-delt pressing
+                  !(sub === 'Rear' && ex.sub === 'Front') &&
+                  !chosen.some((c) => c.exercise.id === ex.id)),
             )
             // A borrowed exercise follows the same rules: no second heavy hinge or second main lift of a family.
             const lighterSiblings = allSiblings.filter((ex) => !hingeBlocked(ex) && !mainBlocked(ex))
@@ -948,7 +1146,8 @@ export function generate(raw: DataBundle, input: ClientInput): GenerateResult {
   // At most two chest presses a session: a third's sets go to the other two (the week's chest
   // volume is unchanged). A trainer's own pick stays.
   if (fitOn) {
-    const press = (c: ChosenExercise) => fit.pressesPerSession.subs.includes(c.exercise.sub)
+    // (A calisthenics skill, a pseudo planche push-up say, is a skill with its own dose, not a chest press.)
+    const press = (c: ChosenExercise) => !c.skill && fit.pressesPerSession.subs.includes(c.exercise.sub)
     for (const day of selected) {
       const presses = day.chosen.filter(press)
       if (presses.length <= fit.pressesPerSession.max) continue
@@ -1079,6 +1278,8 @@ export function generate(raw: DataBundle, input: ClientInput): GenerateResult {
   if (inbody.active) {
     for (const { chosen } of selected) {
       for (const c of chosen) {
+        // A calisthenics skill keeps its own dose and rest: InBody's figures are for the muscle work.
+        if (c.skill) continue
         const resolved = inbody.sets[c.exercise.group]
         if (resolved !== undefined) c.sets = resolved
         c.rule4 = onRule4(c)
@@ -1122,6 +1323,11 @@ export function generate(raw: DataBundle, input: ClientInput): GenerateResult {
       // Unloaded work is never 3-5 reps: its strength comes from the harder rung.
       if (styled && input.goal === 'Get Stronger' && data.modalities && c.exercise.type !== 'isometric' && isUnloaded(data, c.exercise))
         c.reps = data.modalities.bodyweightStrengthReps
+      // A skill (a pseudo planche push-up, a muscle-up) is rested fully, like the holds, and that is its rest.
+      if (c.skill && data.modalities && c.restSeconds !== data.modalities.ladders.skillRestSeconds) {
+        c.restSeconds = data.modalities.ladders.skillRestSeconds
+        c.rest = String(c.restSeconds)
+      }
       // Hard bodyweight and technique moves have their own counts (a negative is 3-5, never 16-19), and
       // no unloaded compound above twelve: past that the next rung is the progression.
       const caps = styled ? data.modalities?.repCaps : undefined
@@ -1135,10 +1341,12 @@ export function generate(raw: DataBundle, input: ClientInput): GenerateResult {
       }
       // A calisthenics skill hold is short and maximal, rested fully: seconds by family, not the goal's.
       const family = styled ? skillFamilyOf(data, c.exercise) : undefined
-      if (family && c.exercise.type === 'isometric' && data.modalities) {
+      if (family && c.exercise.type === 'isometric' && data.modalities && !(data.modalities.ladders.countedNotHeld ?? []).includes(c.exercise.name)) {
         const l = data.modalities.ladders
-        c.reps = `${l.holdSeconds[family] ?? l.holdSeconds.default} s`
-        c.restSeconds = Math.max(c.restSeconds, l.skillRestSeconds)
+        // the step's own time where it has one (a frog stand 15-30 s, a full lever 3-8 s), else the skill's
+        c.reps = `${l.holdByName?.[c.exercise.name] ?? l.holdSeconds[family] ?? l.holdSeconds.default} s`
+        // A skill is rested fully, and that is its rest: not the goal's (Get Stronger's 150 s is for a heavy lift).
+        c.restSeconds = c.skill ? l.skillRestSeconds : Math.max(c.restSeconds, l.skillRestSeconds)
         c.rest = String(c.restSeconds)
         continue
       }
@@ -1147,7 +1355,8 @@ export function generate(raw: DataBundle, input: ClientInput): GenerateResult {
         c.sets = fit.kindCompoundMinSets.sets
       // Heavy-compound rest is not for isolation work, holds or carries.
       const cap = restCapFor(fit, c.exercise)
-      if (c.restSeconds > cap) {
+      // (A skill keeps its full rest: the cap is for isolation work, not a handstand drill.)
+      if (!c.skill && c.restSeconds > cap) {
         c.restSeconds = cap
         c.rest = String(cap)
       }
@@ -1155,7 +1364,7 @@ export function generate(raw: DataBundle, input: ClientInput): GenerateResult {
       for (const cap of fit.perSessionCaps ?? [])
         if (cap.maxSetsEach !== undefined && cap.groups.includes(c.exercise.group)) c.sets = Math.min(c.sets, cap.maxSetsEach)
       // A main lift or heavy compound never rests like isolation work, whatever the goal.
-      const floor = restFloorFor(fit, c.exercise, c.reps)
+      const floor = c.skill ? 0 : restFloorFor(fit, c.exercise, c.reps)
       if (c.restSeconds < floor) {
         c.restSeconds = floor
         c.rest = String(floor)
@@ -1290,7 +1499,7 @@ export function generate(raw: DataBundle, input: ClientInput): GenerateResult {
   for (const d of selected)
     for (const c of d.chosen) weekSubs.set(c.exercise.sub, (weekSubs.get(c.exercise.sub) ?? 0) + 1)
   // A trainer's own pick (a swap) is theirs, so it is never removed automatically either.
-  const isProtected = (c: ChosenExercise) => (c.unilateral?.extraSets ?? 0) > 0 || !!c.pinned || !!c.skill
+  const isProtected = (c: ChosenExercise) => (c.unilateral?.extraSets ?? 0) > 0 || !!c.pinned || !!c.skill || !!c.support
   const isSole = (c: ChosenExercise) =>
     weekSubs.get(c.exercise.sub) === 1 &&
     !fit.trim.redundant.groups.includes(c.exercise.group) &&
@@ -1365,10 +1574,16 @@ export function generate(raw: DataBundle, input: ClientInput): GenerateResult {
         warmup: moveWarmup ? { ...fit.warmup, generalMinutes: warmupMinutesFor(data) } : fit.warmup,
         maxSets: dayMaxSets !== undefined && maxSets !== undefined ? Math.min(maxSets, dayMaxSets) : maxSets,
         protectedIdx: list.map(isProtected),
+        // A skill's sets come off last of all and never below its floor (a day too tight for everything).
+        // The trim never cuts a skill's dose: only the last guard after it does, once the accessories are gone.
+        ...(list.some((c) => c.skill) && { minSetsIdx: list.map((c) => (c.skill ? c.sets : undefined)) }),
         soleIdx: list.map(isSole),
         redundant: (i: number, alive: readonly boolean[]) => isRedundant(fit, listed, alive, i),
         mainLiftMinSets,
-        restFloors: list.map((c) => restFloorFor(fit, c.exercise, c.reps)),
+        // A calisthenics skill is rested fully however tight the hour: the trim takes time elsewhere.
+        restFloors: list.map((c) =>
+          c.skill && data.modalities ? data.modalities.ladders.skillRestSeconds : restFloorFor(fit, c.exercise, c.reps),
+        ),
         compoundFloor: { sets: fit.trim.compoundFloor.sets, isolationAbove: fit.trim.compoundFloor.whileIsolationAbove },
         pairRestMax: true,
         mainLifts: {
@@ -1505,7 +1720,8 @@ export function generate(raw: DataBundle, input: ClientInput): GenerateResult {
   // hybrid, half the week's days, spread.
   if (styles.includes('CrossFit') && data.modalities && days.length > 0) {
     const rules = data.modalities.crossfit.metcon
-    const count = strengthStyles.length === 1 ? days.length : Math.ceil(days.length / 2)
+    // CrossFit alone or as the main style: every day; as a hybrid's second style: half the week.
+    const count = strengthStyles.length === 1 || styles[0] === 'CrossFit' ? days.length : Math.ceil(days.length / 2)
     // From the first day: a one-day strength week (the first day of a two-day program) keeps its metcon.
     const at = new Set(Array.from({ length: count }, (_, k) => Math.floor((k * days.length) / count)))
     const usedInMetcons = new Set<number>()
@@ -1769,6 +1985,87 @@ export function generate(raw: DataBundle, input: ClientInput): GenerateResult {
         days[i] = buildDay(d.index, d.label, d.exercises, d.structure, d.correctives, d.correctiveStretches, d.fillerBouts, { ...d.conditioning, minutes: shorter.minutes, metcon: shorter }, d.restBoost)
       })
     refreshWholeSetMinutes()
+    refreshWholeSetMinutes()
+    // Styles only: a session the trim could not bring inside the hour (skills, support and metcons are
+    // protected, the pools are small) gives up, one step at a time and says so: an accessory first; then
+    // the metcon, while the week keeps its share (one, two when CrossFit is the main style); then a skill's
+    // sets above three; then any other exercise but a main lift or a trainer's pick (support work last);
+    // the metcon last of all.
+    if (styled) {
+      const tierOf = (c: ChosenExercise) => (c.exercise.tier === 'accessory' ? 2 : c.exercise.tier === 'secondary' ? 1 : 0)
+      const metconsKept = styles[0] === 'CrossFit' ? 2 : 1
+      const floor = focusRules?.minSetsEach ?? 3
+      refreshWholeSetMinutes()
+      days.forEach((_, i) => {
+        for (let guard = 0; guard < 12 && days[i].wholeSetMinutes > capTarget + 1e-6; guard++) {
+          const d = days[i]
+          const list = d.exercises.map((c) => ({ ...c }))
+          let conditioning = d.conditioning
+          const say = (what: string) =>
+            warnings.push({ kind: 'dropped', dayIndex: d.index, dayLabel: d.label, sub: what, message: `Day ${d.index + 1} (${d.label}): ${what} to keep the session inside the hour.` })
+          // A day's only pull, and the week's only vertical pull, are never what goes: a third press is.
+          const pulls = new Set(focusRules?.pullSubs ?? [])
+          const essential = (j: number) => {
+            const e = list[j].exercise
+            if (!pulls.has(e.sub)) return false
+            if (list.filter((c) => pulls.has(c.exercise.sub)).length <= 1) return true
+            return e.sub === 'Vertical pull' && days.flatMap((x) => x.exercises).filter((c) => c.exercise.sub === 'Vertical pull').length <= 1
+          }
+          const droppable = (j: number, kind: 'accessory' | 'other' | 'support') =>
+            !list[j].skill &&
+            !list[j].pinned &&
+            !list[j].exercise.mainLift &&
+            !list[j].unilateral?.extraSets &&
+            !essential(j) &&
+            (kind === 'support' ? true : !list[j].support) &&
+            (kind !== 'accessory' || list[j].exercise.tier === 'accessory')
+          const pickDrop = (kind: 'accessory' | 'other' | 'support') =>
+            list
+              .map((_, j) => j)
+              .filter((j) => droppable(j, kind))
+              .sort((a, b) => (list[b].support ? 0 : 10) + tierOf(list[b]) - ((list[a].support ? 0 : 10) + tierOf(list[a])) || b - a)[0]
+          const metconsLeft = days.filter((x) => x.conditioning?.metcon).length
+          const accessory = pickDrop('accessory')
+          const other = accessory === undefined ? pickDrop('other') : undefined
+          const skill = list.map((_, j) => j).filter((j) => list[j].skill && list[j].sets > floor).sort((a, b) => list[b].sets - list[a].sets)[0]
+          const support = pickDrop('support')
+          if (accessory !== undefined) {
+            say(`"${list[accessory].exercise.name}" left out`)
+            list.splice(accessory, 1)
+          } else if (conditioning?.metcon && styles[0] !== 'CrossFit' && metconsLeft > metconsKept) {
+            // (With CrossFit the main style every day keeps its metcon: other work goes first.)
+            say('the metcon left out')
+            conditioning = null
+          } else if (other !== undefined) {
+            say(`"${list[other].exercise.name}" left out`)
+            list.splice(other, 1)
+          } else if (skill !== undefined) {
+            say(`the ${list[skill].skill!.toLowerCase()} at ${list[skill].sets - 1} sets`)
+            list[skill].sets -= 1
+          } else if (support !== undefined) {
+            say(`"${list[support].exercise.name}" left out`)
+            list.splice(support, 1)
+          } else if (
+            conditioning?.metcon &&
+            styles[0] === 'CrossFit' &&
+            metconsLeft <= metconsKept &&
+            list.filter((c) => c.exercise.mainLift).length > 1
+          ) {
+            // With CrossFit the main style, the week's metcons are its point: a day's second main lift goes
+            // before the week loses one of them.
+            const main = list.map((_, j) => j).filter((j) => list[j].exercise.mainLift && !list[j].pinned && !list[j].skill).pop()
+            if (main === undefined) break
+            say(`"${list[main].exercise.name}" left out (the metcon stays)`)
+            list.splice(main, 1)
+          } else if (conditioning?.metcon) {
+            say('the metcon left out')
+            conditioning = null
+          } else break
+          days[i] = buildDay(d.index, d.label, list, d.structure, d.correctives, d.correctiveStretches, d.fillerBouts, conditioning, d.restBoost)
+          refreshWholeSetMinutes()
+        }
+      })
+    }
     fillDays()
     // The two exercises of a pair share one rest, the longer of theirs, taken after each round
     // (the time model already charges it so).
@@ -1892,6 +2189,9 @@ export function generate(raw: DataBundle, input: ClientInput): GenerateResult {
       removedByPain,
       styles: {
         styles,
+        focus,
+        focusRefused,
+        skillLadders: rungs ? skillLadders.filter((f) => ladders?.has(f)) : [],
         rungs:
           ladders && rungs
             ? [...ladders.entries()]

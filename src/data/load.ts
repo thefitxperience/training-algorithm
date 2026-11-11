@@ -17,6 +17,7 @@ import type {
   Splits,
 } from '../types'
 import { withDerivedGoals } from '../lib/goals'
+import { withModalityInjury, type ModalitiesData } from '../lib/modality'
 
 /**
  * allocation.json is ~3 MB. The promise is cached at module scope so the fetch and
@@ -55,8 +56,12 @@ export function loadData(): Promise<DataBundle> {
         fetchJson<SessionLengthData>('sessionlength.json'),
         fetchJson<FitData>('fit.json'),
       ])
+      const [modalities, injuryExtra] = await Promise.all([
+        fetchJson<ModalitiesData>('modalities.json'),
+        fetchJson<{ exercises: InjuryData['exercises'] }>('injury-modalities.json'),
+      ])
       // Shape Up and any other goal made from others (fit.json): in the goal lists and every table.
-      return withDerivedGoals({ config, allocation, exercises, prescription, splits, injury, structure, inbody, vald, bodydot, load, amend, timecap, sessionlength, fit })
+      return withDerivedGoals({ config, allocation, exercises, prescription, splits, injury: withModalityInjury(injury, injuryExtra), structure, inbody, vald, bodydot, load, amend, timecap, sessionlength, fit, modalities })
     })()
   }
   return bundlePromise

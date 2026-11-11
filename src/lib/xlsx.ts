@@ -87,6 +87,18 @@ export function colToIndex(ref: string): number {
 export type Grid = string[][]
 
 export async function readFirstSheet(buf: ArrayBuffer): Promise<Grid> {
+  const sheets = await readSheets(buf, 1)
+  const first = sheets.values().next().value
+  if (!first) throw new Error('That .xlsx has no readable worksheet.')
+  return first
+}
+
+/**
+ * Every worksheet, by its tab name, in workbook order (`limit` stops after that many). Follows
+ * the workbook's relationships rather than assuming sheetN.xml: exports from other tools name
+ * the parts differently, and the first sheet is not always sheet1.
+ */
+export async function readSheets(buf: ArrayBuffer, limit = Infinity): Promise<Map<string, Grid>> {
   const files = await unzip(buf)
   const decode = (name: string) => {
     const raw = files.get(name)
@@ -105,50 +117,51 @@ export async function readFirstSheet(buf: ArrayBuffer): Promise<Grid> {
     }
   }
 
-  // Follow the workbook's relationships rather than assuming sheet1.xml — exports from
-  // other tools name the part differently and the first sheet is not always sheet1.
-  let sheetPath = 'xl/worksheets/sheet1.xml'
+  const sheets: { name: string; path: string }[] = []
   const wbXml = decode('xl/workbook.xml')
   const relXml = decode('xl/_rels/workbook.xml.rels')
   if (wbXml && relXml) {
-    const firstSheet = parse(wbXml).getElementsByTagName('sheet')[0]
-    const rid = firstSheet?.getAttribute('r:id') ?? firstSheet?.getAttribute('id')
-    if (rid) {
-      for (const rel of parse(relXml).getElementsByTagName('Relationship')) {
-        if (rel.getAttribute('Id') !== rid) continue
-        const target = rel.getAttribute('Target') ?? ''
-        sheetPath = target.startsWith('/')
-          ? target.slice(1)
-          : `xl/${target.replace(/^\.\//, '')}`
-      }
+    const rels = new Map<string, string>()
+    for (const rel of parse(relXml).getElementsByTagName('Relationship')) {
+      const target = rel.getAttribute('Target') ?? ''
+      rels.set(rel.getAttribute('Id') ?? '', target.startsWith('/') ? target.slice(1) : `xl/${target.replace(/^\.\//, '')}`)
+    }
+    for (const sh of parse(wbXml).getElementsByTagName('sheet')) {
+      const rid = sh.getAttribute('r:id') ?? sh.getAttribute('id')
+      const path = rid ? rels.get(rid) : undefined
+      if (path) sheets.push({ name: sh.getAttribute('name') ?? path, path })
     }
   }
+  if (sheets.length === 0) sheets.push({ name: 'Sheet1', path: 'xl/worksheets/sheet1.xml' })
 
-  const sheetXml = decode(sheetPath)
-  if (!sheetXml) throw new Error('That .xlsx has no readable worksheet.')
-
-  const grid: Grid = []
-  for (const row of parse(sheetXml).getElementsByTagName('row')) {
-    const cells: string[] = []
-    for (const c of row.getElementsByTagName('c')) {
-      const at = colToIndex(c.getAttribute('r') ?? '')
-      const type = c.getAttribute('t')
-      let value = ''
-      if (type === 'inlineStr') {
-        for (const t of c.getElementsByTagName('t')) value += t.textContent ?? ''
-      } else {
-        const v = c.getElementsByTagName('v')[0]
-        value = v?.textContent ?? ''
-        if (type === 's' && value !== '') value = shared[Number(value)] ?? ''
+  const out = new Map<string, Grid>()
+  for (const { name, path } of sheets.slice(0, limit)) {
+    const sheetXml = decode(path)
+    if (!sheetXml) continue
+    const grid: Grid = []
+    for (const row of parse(sheetXml).getElementsByTagName('row')) {
+      const cells: string[] = []
+      for (const c of row.getElementsByTagName('c')) {
+        const at = colToIndex(c.getAttribute('r') ?? '')
+        const type = c.getAttribute('t')
+        let value = ''
+        if (type === 'inlineStr') {
+          for (const t of c.getElementsByTagName('t')) value += t.textContent ?? ''
+        } else {
+          const v = c.getElementsByTagName('v')[0]
+          value = v?.textContent ?? ''
+          if (type === 's' && value !== '') value = shared[Number(value)] ?? ''
+        }
+        if (at >= 0) {
+          while (cells.length < at) cells.push('')
+          cells[at] = value
+        }
       }
-      if (at >= 0) {
-        while (cells.length < at) cells.push('')
-        cells[at] = value
-      }
+      grid.push(cells)
     }
-    grid.push(cells)
+    out.set(name, grid)
   }
-  return grid
+  return out
 }
 
 /** Excel serial date -> ISO yyyy-mm-dd. Day 1 is 1900-01-01, with the 1900 leap-year bug. */

@@ -22,7 +22,10 @@ import type { PainSelection, Side } from './lib/injury'
 import { STRUCTURES, structureBadges, type Structure } from './lib/structure'
 import { ABS_PLACEMENTS, type AbsPlacement } from './lib/abs'
 import { Button, Card, Logo, Note, Pill, SectionTitle } from './components/ui'
-import type { ClientDraft, DataBundle } from './types'
+import type { ClientDraft, DataBundle, Modality } from './types'
+import { buildPlan, type Plan } from './lib/plan'
+import { ALL_STYLES, STRENGTH_STYLES, inStrengthPool } from './lib/modality'
+import { PilatesPanel, RungsPanel, StylePicker, WeekStrip } from './components/StylePanel'
 
 /** Client state lives in the query string so a given program is a linkable regression case. */
 function painsFromUrl(q: URLSearchParams): PainSelection | null {
@@ -169,7 +172,19 @@ function draftFromUrl(): ClientDraft {
     absPlacement: ABS_PLACEMENTS.includes(q.get('absPlacement') as AbsPlacement)
       ? (q.get('absPlacement') as AbsPlacement)
       : base.absPlacement,
+    ...stylesFromUrl(q),
   }
+}
+
+/** `styles=Gym,Calisthenics` and `rungs=Push-up:4;Pull-up:3`: the training styles and ladder rungs. */
+function stylesFromUrl(q: URLSearchParams): Pick<ClientDraft, 'modalities' | 'rungs'> {
+  const styles = (q.get('styles') ?? '').split(',').filter((x): x is Modality => ALL_STYLES.includes(x as Modality))
+  const rungs: Record<string, number> = {}
+  for (const part of (q.get('rungs') ?? '').split(';')) {
+    const [family, n] = part.split(':')
+    if (family && Number(n) > 0) rungs[family] = Number(n)
+  }
+  return { ...(styles.length && { modalities: styles }), ...(Object.keys(rungs).length && { rungs }) }
 }
 
 /**
@@ -212,7 +227,9 @@ export default function App() {
             k !== 'vald' &&
             k !== 'bodydot' &&
             k !== 'pins' &&
-            k !== 'caps',
+            k !== 'caps' &&
+            k !== 'modalities' &&
+            k !== 'rungs',
         )
         .map(([k, v]) => [k, String(v)]) as [string, string][],
     )
@@ -267,6 +284,10 @@ export default function App() {
           .map((c) => [c.dayIndex, c.actor, Date.parse(c.timestamp) || 0].join(';'))
           .join(','),
       )
+    if (draft.modalities?.length && !(draft.modalities.length === 1 && draft.modalities[0] === 'Gym'))
+      q.set('styles', draft.modalities.join(','))
+    if (draft.rungs && Object.keys(draft.rungs).length)
+      q.set('rungs', Object.entries(draft.rungs).map(([f, n]) => `${f}:${n}`).join(';'))
     window.history.replaceState(null, '', `?${q.toString()}`)
   }, [draft])
 
@@ -275,7 +296,28 @@ export default function App() {
     [data, draft.age],
   )
 
-  const result = useMemo(() => (data && client ? generate(data, client) : null), [data, client])
+  // The whole week: the strength program (gym, calisthenics, CrossFit) and any Pilates sessions.
+  const planResult = useMemo(() => (data && client ? buildPlan(data, client) : null), [data, client])
+  const plan = planResult?.ok ? planResult.plan : null
+  /** the strength program, as everything below already reads it; null for a Pilates-only week */
+  const result = useMemo(
+    () =>
+      !planResult ? null : !planResult.ok ? { ok: false as const, error: planResult.error } : planResult.plan.strength ? { ok: true as const, program: planResult.plan.strength } : null,
+    [planResult],
+  )
+  /** the strength part as generate() sees it: its own days, split and styles */
+  const strengthInput = useMemo(
+    () =>
+      client && plan?.strength
+        ? {
+            ...client,
+            days: plan.strength.days.length,
+            split: plan.strengthSplit?.to ?? client.split,
+            modalities: plan.styles.filter((st) => STRENGTH_STYLES.includes(st)),
+          }
+        : null,
+    [client, plan],
+  )
 
   const audit = useMemo(
     () =>
@@ -288,7 +330,7 @@ export default function App() {
   // What each structure would cost this client, so the change can be previewed before it
   // is committed to. Volume is held, so a slower structure simply takes longer.
   const structureInfo = useMemo(() => {
-    if (!data || !client) return null
+    if (!data || !client || !strengthInput) return null
     const badges = structureBadges(data.structure, {
       goal: client.goal,
       ageBracket: bracket,
@@ -298,14 +340,14 @@ export default function App() {
       // Without `caps`, deliberately. Every capped day reads 60 min whatever the structure,
       // so leaving them in would flatten the very comparison this preview exists to make —
       // and it would re-run the time-cap search three more times on every keystroke.
-      const r = generate(data, { ...client, structure: s, caps: [] })
+      const r = generate(data, { ...strengthInput, structure: s, caps: [] })
       const minutes = r.ok
         ? r.program.days.reduce((sum, d) => sum + d.wholeSetMinutes, 0) / r.program.days.length
         : 0
       return { structure: s, badge: badges.badges[s], minutes }
     })
     return { options, note: badges.trisetDowngraded ? badges.downgradeReason : '' }
-  }, [data, client, bracket])
+  }, [data, client, bracket, strengthInput])
 
   if (loadError) {
     return (
@@ -353,7 +395,8 @@ export default function App() {
   const amendWiring: AmendWiring | undefined = result?.ok
     ? {
         data: data.amend,
-        exercises: data.exercises,
+        // Swaps come from the client's own styles only: a gym client never sees a reformer move.
+        exercises: data.exercises.filter((e) => inStrengthPool(data, e, strengthInput?.modalities ?? ['Gym'])),
         pins: draft.pins,
         setPins: (pins) => setDraft({ ...draft, pins }),
         ageBracket: bracket,
@@ -386,6 +429,10 @@ export default function App() {
           </div>
 
           <Card className="p-5">
+            <StylePicker data={data} draft={draft} setDraft={setDraft} />
+          </Card>
+
+          <Card className="p-5">
             <ClientPanel
               draft={draft}
               setDraft={setDraft}
@@ -413,9 +460,9 @@ export default function App() {
 
           {hasPains && <MedicalDisclaimer injury={data.injury} />}
 
-          {result && !result.ok && (
+          {planResult && !planResult.ok && (
             <Note tone="flame" title="No program exists for this combination">
-              {result.error}
+              {planResult.error}
             </Note>
           )}
 
@@ -430,7 +477,7 @@ export default function App() {
             <Button
               variant="primary"
               size="lg"
-              disabled={!result?.ok}
+              disabled={!planResult?.ok}
               onClick={() => setPhase('program')}
               className="shadow-lg"
             >
@@ -458,8 +505,13 @@ export default function App() {
             <span>{client.level}</span>
             <span className="text-udra-linen-300">·</span>
             <span>
-              {client.days} days · {client.split}
+              {client.days} days · {plan?.strengthSplit?.to ?? client.split}
             </span>
+            {plan && !(plan.styles.length === 1 && plan.styles[0] === 'Gym') && (
+              <Pill tone="primary" title="The training styles, main one first">
+                {plan.styles.join(' + ')}
+              </Pill>
+            )}
             {/* No structure pill: the picker further down says which one is running, and
                 names it beside the minutes it costs. Twice is once too many. */}
             {reportedPains.map((label) => (
@@ -472,6 +524,8 @@ export default function App() {
             Edit client
           </Button>
         </Card>
+
+        {plan && <WeekStrip plan={plan} days={plan.strength?.days ?? []} />}
 
         {result?.ok ? (
           <>
@@ -496,13 +550,18 @@ export default function App() {
               />
             </Card>
 
+            {plan && <RungsPanel plan={plan} draft={draft} setDraft={setDraft} data={data} />}
+
             <ProgramPanel
               program={result.program}
-              input={client}
+              input={strengthInput ?? client}
+              dayNumbers={plan?.week.flatMap((w, i) => (w.kind === 'strength' ? [i + 1] : []))}
               injury={data.injury}
               amend={amendWiring}
               cap={capWiring}
             />
+
+            {plan && plan.pilates.length > 0 && <PilatesSessions plan={plan} />}
 
             {/* One view means one view. What used to be the detailed view is engineering
                 output — kept, because it is how the program is checked, but folded away so
@@ -554,13 +613,33 @@ export default function App() {
               </details>
             )}
           </>
+        ) : plan && plan.pilates.length > 0 ? (
+          <>
+            {hasPains && <MedicalDisclaimer injury={data.injury} />}
+            <PilatesSessions plan={plan} />
+          </>
         ) : (
           <Note tone="flame" title="Cannot generate a program">
-            {result?.error}
+            {planResult && !planResult.ok ? planResult.error : ''}
           </Note>
         )}
       </div>
     </Shell>
+  )
+}
+
+/** The week's Pilates sessions, numbered by where they fall in the week. */
+function PilatesSessions({ plan }: { plan: Plan }) {
+  return (
+    <div className="grid items-start gap-4 xl:grid-cols-2 2xl:grid-cols-3">
+      {plan.pilates.map((sess) => (
+        <PilatesPanel
+          key={sess.index}
+          session={sess}
+          dayNumber={plan.week.findIndex((w) => w.kind === 'pilates' && w.index === sess.index) + 1}
+        />
+      ))}
+    </div>
   )
 }
 

@@ -10,6 +10,7 @@ import { STRUCTURE_LABEL } from '../lib/structure'
 import type { CapPin } from '../lib/timecap'
 import { sessionLength } from '../lib/sessionlength'
 import { Button, Card, Note, Pill } from './ui'
+import { WarmupStrip } from './StylePanel'
 import type { ClientInput, InjuryData } from '../types'
 
 export interface CapWiring {
@@ -65,12 +66,15 @@ export function ProgramPanel({
   injury,
   amend,
   cap,
+  dayNumbers,
 }: {
   program: Program
   input: ClientInput
   injury: InjuryData
   amend?: AmendWiring
   cap?: CapWiring
+  /** the week's day number of each strength day, when Pilates days sit between them */
+  dayNumbers?: number[]
 }) {
   const { block, days, warnings } = program
   const short = block.deliveredDays < input.days
@@ -235,12 +239,12 @@ export function ProgramPanel({
               <div className="flex flex-wrap items-center justify-between gap-2 border-b border-udra-linen-200 bg-udra-linen/40 px-4 py-3">
                 <div className="flex items-center gap-2.5">
                   <span className="tnum flex h-7 w-7 items-center justify-center rounded-full bg-udra-blue text-xs font-bold text-white">
-                    {day.index + 1}
+                    {dayNumbers?.[day.index] ?? day.index + 1}
                   </span>
                   <div>
                     <div className="text-sm font-bold">{day.label}</div>
                     <div className="text-[10px] tracking-[0.08em] text-udra-ink-500 uppercase">
-                      Day {day.index + 1}
+                      Day {dayNumbers?.[day.index] ?? day.index + 1}
                     </div>
                   </div>
                 </div>
@@ -332,6 +336,9 @@ export function ProgramPanel({
                 </div>
               )}
 
+              {/* A style beyond the gym warms up with five moves; the gym's warm-up is unchanged. */}
+              <WarmupStrip moves={day.warmupMoves} />
+
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-[13px]">
                   <thead className="text-[10px] tracking-[0.08em] text-udra-ink-500 uppercase">
@@ -351,13 +358,13 @@ export function ProgramPanel({
                     // On the end placement every abs block is gathered at the finish, so one
                     // heading covers all of it. Integrated abs are spread through the
                     // session and a heading there would label nothing.
-                    const absBlock = blk.indices.some((i) => isAbs(day.exercises[i].exercise))
+                    const absBlock = blk.indices.some((i) => isAbs(day.exercises[i].exercise) && !day.exercises[i].skill)
                     const firstAbsBlock =
                       absBlock &&
                       input.absPlacement === 'end' &&
                       !day.blocks
                         .slice(0, bi)
-                        .some((b) => b.indices.some((i) => isAbs(day.exercises[i].exercise)))
+                        .some((b) => b.indices.some((i) => isAbs(day.exercises[i].exercise) && !day.exercises[i].skill))
                     return (
                     <tbody
                       key={bi}
@@ -402,6 +409,11 @@ export function ProgramPanel({
                             <td className="px-4 py-2">
                               <span className="font-semibold">{c.exercise.name}</span>
                               {c.exercise.mainLift && <Tag tone="blue">Main</Tag>}
+                              {c.skill && (
+                                <Tag tone="blue" title="Calisthenics skill: it opens the session, straight sets, full rest">
+                                  Skill · {c.skill}
+                                </Tag>
+                              )}
                               {c.verdict.decidedBy && c.verdict.verdict === 'PRIORITY' && (
                                 <Tag
                                   tone="neon"
@@ -610,7 +622,36 @@ export function ProgramPanel({
               {/* Last thing in the session, after the resistance work and after any
                   correctives. It is time, not volume: it satisfies no muscle-group target and
                   never appears in the audit. */}
-              {day.conditioning && (
+              {/* CrossFit's metcon: the session's finish, written the way it goes on the board. */}
+              {day.conditioning?.metcon && (
+                <div className="border-t-2 border-udra-orange/50 bg-udra-orange/10 px-4 py-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded bg-udra-orange px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-black uppercase">
+                      Metcon
+                    </span>
+                    <span className="tnum text-[12px] font-semibold">
+                      {day.conditioning.metcon.format} · {day.conditioning.metcon.minutes} min
+                      {day.conditioning.metcon.rounds ? ` · ${day.conditioning.metcon.rounds} rounds` : ''}
+                    </span>
+                  </div>
+                  <ul className="mt-1 text-[13px]">
+                    {day.conditioning.metcon.moves.map((mv) => (
+                      <li key={mv.exercise.id}>
+                        <span className="font-semibold">{mv.label}</span>
+                        <span className="ml-2 text-[11px] text-udra-ink-500">{mv.role === 'engine' ? 'engine' : mv.role === 'lower' ? 'legs / hips' : 'upper / gymnastics'}</span>
+                        {mv.caution && (
+                          <span className="ml-2 rounded-full bg-udra-flame/15 px-2 py-0.5 text-[10px] font-semibold text-udra-flame">
+                            May aggravate · {mv.caution.toLowerCase()}
+                          </span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="mt-1 text-[11px] text-udra-ink-500">{day.conditioning.metcon.description}</div>
+                </div>
+              )}
+
+              {day.conditioning && !day.conditioning.metcon && (
                 <div className="border-t-2 border-udra-orange/50 bg-udra-orange/10">
                   <div className="flex flex-wrap items-center gap-2 px-4 py-2">
                     <span className="rounded bg-udra-orange px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-black uppercase">

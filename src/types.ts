@@ -68,6 +68,22 @@ export interface Exercise {
   load: number
   avoidAges: string[]
   mainLift: boolean
+  /**
+   * The training styles this exercise belongs to (data/modalities.json). Absent means the gym
+   * library only, which is every row the library had before the modality sheet.
+   */
+  modalities?: Modality[]
+  /** the progression ladders it is a rung of (calisthenics), easiest rung 1 */
+  ladders?: Ladder[]
+  /** the sheet's tags: Drill, Olympic, Metcon, Conditioning, Plyometric, Classical, Footwork… */
+  tags?: string[]
+}
+
+export type Modality = 'Gym' | 'Calisthenics' | 'CrossFit' | 'Mat Pilates' | 'Reformer Pilates'
+
+export interface Ladder {
+  family: string
+  rung: number
 }
 
 export interface PrescriptionEntry {
@@ -548,6 +564,8 @@ export interface DataBundle {
   timecap: TimeCapData
   sessionlength: SessionLengthData
   fit: FitData
+  /** training styles beyond the gym (data/modalities.json); absent means the gym only */
+  modalities?: import('./lib/modality').ModalitiesData
 }
 
 export interface ClientInput {
@@ -584,6 +602,17 @@ export interface ClientInput {
    * which the layer tests run against so each layer is tested on its own.
    */
   fitHour?: boolean
+  /**
+   * The training styles, primary first (data/modalities.json): Gym, Calisthenics, CrossFit, Mat
+   * Pilates, Reformer Pilates, or a combination. Absent means the gym, exactly as before.
+   */
+  modalities?: Modality[]
+  /**
+   * The client's rung on each calisthenics ladder, by family ("Push-up": 4). A ladder not listed
+   * starts where the client's level says (modalities.json ladders.startByLevel); a rung set here
+   * is the trainer's call and may sit above the level's ceiling.
+   */
+  rungs?: Record<string, number>
 }
 
 /**

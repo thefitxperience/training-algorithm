@@ -16,7 +16,7 @@ export interface StructureOption {
 }
 
 const STRUCTURE_BLURB: Record<Structure, string> = {
-  straight: 'One exercise at a time, rest, repeat.',
+  straight: 'One exercise at a time, rest, repeat. A tight day may still pair a few.',
   superset: 'Two exercises back to back, then rest.',
   triset: 'Three back to back where legal, then rest.',
 }
@@ -24,8 +24,8 @@ const STRUCTURE_BLURB: Record<Structure, string> = {
 /**
  * How the session is run, shown beside the program rather than in the client's details.
  *
- * It belongs here because it is the one setting worth flipping back and forth: it changes no
- * exercise and no set, only how long the session takes, so the thing it should be judged
+ * It belongs here because it is the one setting worth flipping back and forth: it changes the
+ * pace (and, with every day built to the hour, sometimes a set), so the thing it should be judged
  * against is the day cards underneath it — not a form filled in before any of them exist.
  */
 export function StructurePicker({
@@ -46,7 +46,7 @@ export function StructurePicker({
     <div className="space-y-3">
       <Field
         label="How the session is run"
-        hint="This changes the pace, never the work. Every set survives whichever you pick."
+        hint="How the exercises are paced. Every session is still built to the hour, so on a tight day a slower way can cost a set, and the hour can still pair a few exercises."
       >
         <div className="grid gap-2 sm:grid-cols-3">
           {options.map((o) => {
@@ -107,7 +107,7 @@ export function StructurePicker({
 
       <Field
         label="Where the abs work sits"
-        hint="Same exercises, same sets, same total time. Only the order changes."
+        hint="Where the core work goes in the session. The day is re-fitted to the hour after the move, so a set can shift elsewhere."
       >
         <div className="grid gap-2 sm:grid-cols-2">
           {ABS_PLACEMENTS.map((placement) => {

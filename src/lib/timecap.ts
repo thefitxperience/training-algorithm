@@ -151,6 +151,8 @@ export interface CapDayModel {
   maxSets?: number
   /** fit.json: exercises no lever may remove (the weaker side's VALD work) */
   protectedIdx?: boolean[]
+  /** a per-exercise floor the trim never cuts sets below (a calisthenics skill keeps 3: its dose is the point) */
+  minSetsIdx?: (number | undefined)[]
   /** fit.json: the week's only exercise for its sub-region — removed only by `remove_sole` */
   soleIdx?: boolean[]
   /** fit.json: whether exercise i is redundant among the exercises still alive */
@@ -455,11 +457,17 @@ export function children(m: CapDayModel, s: CapState, parentSeconds: number): Ch
         // later one on a tie), so cuts spread evenly and the search is not asked to tell apart
         // every order of the same cuts.
         let only = -1
+        // A floored exercise (a calisthenics skill) gives a set only when nothing else in the session
+        // can: its dose is the last thing the hour takes.
+        const othersCanLose = m.exercises.some(
+          (o, j) => s.alive[j] && !o.mainLift && m.minSetsIdx?.[j] === undefined && SET_LEVER_BY_TIER[o.tier] && s.sets[j] - 1 >= m.minSets,
+        )
         if (m.maxSets !== undefined) {
           for (let i = 0; i < m.exercises.length; i++) {
             const e = m.exercises[i]
             if (!s.alive[i] || e.mainLift || SET_LEVER_BY_TIER[e.tier] !== lever.id) continue
             if (s.sets[i] - 1 < m.minSets) continue
+            if (m.minSetsIdx?.[i] !== undefined && (s.sets[i] - 1 < m.minSetsIdx[i]! || othersCanLose)) continue
             if (
               m.compoundFloor &&
               e.exercise.type === 'compound' &&
@@ -488,6 +496,7 @@ export function children(m: CapDayModel, s: CapState, parentSeconds: number): Ch
           if (!s.alive[i] || e.mainLift) continue
           if (SET_LEVER_BY_TIER[e.tier] !== lever.id) continue
           if (s.sets[i] - 1 < m.minSets) continue
+          if (m.minSetsIdx?.[i] !== undefined && (s.sets[i] - 1 < m.minSetsIdx[i]! || othersCanLose)) continue
           if (compoundHeld(i)) continue
           const next = clone(s)
           next.sets[i] -= 1

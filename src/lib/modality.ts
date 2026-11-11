@@ -36,6 +36,21 @@ export interface ModalitiesData {
     skillRestSeconds: number
     warmupRungsBelow: number
     workingRungs?: number
+    focus?: {
+      max: number
+      perSession: Record<string, number>
+      setsPerSession: Record<string, number>
+      minSetsEach: number
+      maxByLevel?: Record<string, number>
+      timesPerWeek: Record<string, number>
+      straightArm: string[]
+      setsEachMax?: Record<string, number>
+      goalByAge?: Record<string, Record<string, string | null> | string>
+      pullSubs?: string[]
+      support: Record<string, { families: string[]; names: string[] }>
+    }
+    holdByName?: Record<string, string>
+    countedNotHeld?: string[]
   }
   crossfit: {
     strengthExcludeTags: string[]

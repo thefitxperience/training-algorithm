@@ -613,6 +613,11 @@ export interface ClientInput {
    * is the trainer's call and may sit above the level's ceiling.
    */
   rungs?: Record<string, number>
+  /**
+   * The calisthenics skills the client wants to master (ladder families: "Front lever", "Planche"…),
+   * up to three. They replace the rotation through every skill; empty or absent rotates them all.
+   */
+  focusSkills?: string[]
 }
 
 /**

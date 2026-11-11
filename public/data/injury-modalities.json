@@ -424,6 +424,7 @@
    "loadTags": [
     "ELB_FLEX",
     "GRIP",
+    "IAP",
     "LUM_EXT",
     "NECK_COMP",
     "OVERHEAD",
@@ -440,6 +441,7 @@
    "loadTags": [
     "ELB_FLEX",
     "GRIP",
+    "IAP",
     "LUM_EXT",
     "NECK_COMP",
     "OVERHEAD",
@@ -456,6 +458,7 @@
    "loadTags": [
     "ELB_FLEX",
     "GRIP",
+    "IAP",
     "LUM_EXT",
     "NECK_COMP",
     "OVERHEAD",
@@ -472,6 +475,7 @@
    "loadTags": [
     "ELB_FLEX",
     "GRIP",
+    "IAP",
     "LUM_EXT",
     "NECK_COMP",
     "OVERHEAD",
@@ -488,6 +492,7 @@
    "loadTags": [
     "ELB_FLEX",
     "GRIP",
+    "IAP",
     "LUM_EXT",
     "NECK_COMP",
     "OVERHEAD",
@@ -505,6 +510,7 @@
     "ELB_FLEX",
     "ELB_WB",
     "IAP",
+    "PEC_STRETCH",
     "SH_LOAD",
     "WR_WB"
    ],
@@ -519,6 +525,7 @@
     "ELB_FLEX",
     "ELB_WB",
     "IAP",
+    "PEC_STRETCH",
     "SH_LOAD",
     "WR_WB"
    ],
@@ -533,6 +540,7 @@
     "ELB_FLEX",
     "ELB_WB",
     "IAP",
+    "PEC_STRETCH",
     "SH_LOAD",
     "WR_WB"
    ],
@@ -547,6 +555,7 @@
     "ELB_FLEX",
     "ELB_WB",
     "IAP",
+    "PEC_STRETCH",
     "SH_LOAD",
     "WR_WB"
    ],

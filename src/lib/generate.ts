@@ -3,10 +3,32 @@ import type {
   ClientInput,
   DataBundle,
   Exercise,
+  Modality,
   PrescriptionEntry,
   Slot,
 } from '../types'
 import { isEquipmentAvailable, type EquipmentTier } from './equipment'
+import {
+  STRENGTH_STYLES,
+  inStrengthPool,
+  isGymOnly,
+  memberOf,
+  isUnloaded,
+  withinSheetLevel,
+  laddersOf,
+  rungIsSet,
+  rungsBelow,
+  rungsFor,
+  skillFamilyOf,
+  stylesOf,
+  usesMoveWarmup,
+  warmupMinutesFor,
+  withStyleOverrides,
+  warmupMoves,
+  type Rung,
+  type WarmupMove,
+} from './modality'
+import { buildMetcon } from './metcon'
 import {
   buildInjuryIndex,
   evaluateAll,
@@ -146,6 +168,8 @@ export interface ChosenExercise {
   }
   /** an amend pinned this slot — the client or trainer chose this exercise */
   pinned?: { equipment?: string; actor: string }
+  /** the calisthenics skill that opens the session, chosen on purpose (not a sub-region slot) */
+  skill?: string
 }
 
 export interface GeneratedDay {
@@ -189,6 +213,8 @@ export interface GeneratedDay {
    */
   capModel: CapDayModel
   capState: CapState
+  /** the five-move warm-up (a style beyond the gym, data/modalities.json); absent for the gym */
+  warmupMoves?: WarmupMove[]
 }
 
 export type WarningKind = 'reuse' | 'substitute' | 'dropped' | 'pain-dropped'
@@ -238,6 +264,11 @@ export interface Program {
   verdicts: Map<number, ExerciseVerdict>
   /** everything the injury layer took out of the pool, for the removals panel */
   removedByPain: RemovedExercise[]
+  /** the training styles this was built for, and the client's rung on each ladder (calisthenics) */
+  styles: {
+    styles: Modality[]
+    rungs: { family: string; rung: number; set: boolean; exercises: string[]; next: string[]; top: number; step: number; steps: number; prevRung?: number; nextRung?: number }[]
+  }
 }
 
 export type GenerateResult =
@@ -301,6 +332,8 @@ export function isEligible(
   return true
 }
 
+const fitHourOn = (input: ClientInput) => input.fitHour !== false
+
 /**
  * "Program standard sets" for a bilateral corrective: the set count the rest of this program
  * is already using, as a whole number, since a corrective has to be decisive. Halves round
@@ -350,9 +383,34 @@ export function rankCandidates(
 
 export function generate(raw: DataBundle, input: ClientInput): GenerateResult {
   // Shape Up and any other goal made from others (fit.json) get their table entries first.
-  const data = withDerivedGoals(raw)
+  const data = withStyleOverrides(withDerivedGoals(raw))
   const { config, allocation, exercises, prescription } = data
   const ageBr = ageBracket(input.age, config.ages)
+
+  // ---- training styles (data/modalities.json) -------------------------------------------------
+  // Gym only is the generator exactly as it was: no pool filter, no ladders, no metcon.
+  const styles = stylesOf(input)
+  const styled = !isGymOnly(styles)
+  const strengthStyles = styles.filter((st) => STRENGTH_STYLES.includes(st))
+  const ladders = styled && strengthStyles.includes('Calisthenics') ? laddersOf(exercises) : undefined
+  const rungs: Map<string, Rung> | undefined = ladders ? rungsFor(data, ladders, input, ageBr) : undefined
+  /**
+   * In one of the client's strength styles (CrossFit's metcon moves are the metcon's). For the gym
+   * this is the library as it was: the modality sheet's rows reach a gym program only when
+   * modalities.json switches that on.
+   */
+  const inPool = (ex: Exercise) => inStrengthPool(data, ex, strengthStyles)
+  /**
+   * A ladder exercise is trained at the client's rung or the two under it (the sheet's rule 2: the
+   * hardest three rungs the client can reach are working sets); easier rungs are warm-up, harder ones wait.
+   */
+  const working = data.modalities?.ladders.workingRungs ?? 1
+  const onRung = (ex: Exercise) => {
+    if (!rungs || !ladders) return true
+    const d = rungsBelow(ex, rungs, ladders)
+    return d === undefined || (d >= 0 && d < working)
+  }
+  const moveWarmup = fitHourOn(input) && usesMoveWarmup(data, styles)
 
   const key = allocationKey({
     split: input.split,
@@ -441,7 +499,14 @@ export function generate(raw: DataBundle, input: ClientInput): GenerateResult {
 
   /** passes the age/level/equipment rules, ignoring pain — used to attribute empty slots */
   const baseEligibleIn = (sub: string): Exercise[] =>
-    (bySub.get(sub) ?? []).filter((ex) => isEligible(ex, input.level, ageBr, input.equipment))
+    (bySub.get(sub) ?? []).filter(
+      (ex) =>
+        inPool(ex) &&
+        onRung(ex) &&
+        // A rung the trainer set may sit above the level's ceiling; the age rules still hold.
+        ((isEligible(ex, input.level, ageBr, input.equipment) && withinSheetLevel(data, ex, input.level)) ||
+          (!!rungs && rungIsSet(ex, rungs) && isEligible(ex, 'Advanced', ageBr, input.equipment))),
+    )
 
   const eligibleIn = (sub: string): Exercise[] => baseEligibleIn(sub).filter((ex) => !isRemoved(ex))
 
@@ -459,6 +524,7 @@ export function generate(raw: DataBundle, input: ClientInput): GenerateResult {
       competing: competingPairs(fit),
       maxPairs: maxPairsFor(fit, input.level, input.age),
       neverPairTypes: fit.pairing.neverPairTypes,
+      ...(rungs && { neverPairIds: new Set(exercises.filter((e) => skillFamilyOf(data, e)).map((e) => e.id)) }),
       ...(derived?.pairIsolation && { pairTypes: ['isolation'] }),
     }),
   }
@@ -534,6 +600,43 @@ export function generate(raw: DataBundle, input: ClientInput): GenerateResult {
   /** the main-lift families each day already holds: one heavy press, one squat… a session */
   const familiesOn: Set<number>[] = []
   const maxMain = fitOn ? maxMainLiftsFor(fit, input.level) : Infinity
+  const skillFirst = (c: ChosenExercise) => (styled && skillFamilyOf(data, c.exercise) ? 0 : 1)
+  /**
+   * Abs placement never moves a calisthenics skill: an L-sit or a human flag is core work, but it
+   * is a skill first, and it opens the session.
+   */
+  const absView = (e: Exercise): Exercise => (styled && skillFamilyOf(data, e) ? { ...e, group: 'Skill' } : e)
+  /**
+   * The style's own ranking on top of the gym's: with Calisthenics as the main style its moves come
+   * first (the gym fills what it cannot), and an advanced CrossFit client's hinge slot leads with an
+   * Olympic lift (which counts as the day's heavy hinge).
+   */
+  const calisthenicsFirst = styled && styles[0] === 'Calisthenics' && strengthStyles.length > 1
+  const olympicFirst = styled && styles.includes('CrossFit') && input.level === 'Advanced'
+  /** on a ladder, the client's own rung before the easier working rungs under it */
+  const rungRank = (e: Exercise) => (rungs && ladders ? (rungsBelow(e, rungs, ladders) ?? 0) : 0)
+  const styleRank = (list: Exercise[]) =>
+    !calisthenicsFirst && !olympicFirst && !rungs
+      ? list
+      : [...list].sort(
+          (a, b) =>
+            (calisthenicsFirst ? Number(memberOf(data, b, 'Calisthenics')) - Number(memberOf(data, a, 'Calisthenics')) : 0) ||
+            (olympicFirst ? Number((b.tags ?? []).includes('Olympic')) - Number((a.tags ?? []).includes('Olympic')) : 0) ||
+            // two rungs of one ladder: the client's own before the easier one
+            ((a.ladders?.length ?? 0) && (b.ladders?.length ?? 0) ? rungRank(a) - rungRank(b) : 0),
+        )
+  /**
+   * Calisthenics skills, programmed on purpose: each session opens with one ladder's skill (two from
+   * intermediate), rotated across the week so each gets its turn, ladders the trainer set first.
+   */
+  const skillFamilies = (() => {
+    if (!rungs || !ladders || !data.modalities) return []
+    const order = data.modalities.ladders.skillFamilies
+    return [...order]
+      .filter((f) => ladders.has(f) && rungs.has(f))
+      .sort((a, b) => Number(rungs.get(b)!.set) - Number(rungs.get(a)!.set) || order.indexOf(a) - order.indexOf(b))
+  })()
+  const skillsPerDay = input.level === 'Beginner' ? 1 : 2
 
   allocDays.forEach((allocDay, dayIndex) => {
     const chosen: ChosenExercise[] = []
@@ -554,6 +657,32 @@ export function generate(raw: DataBundle, input: ClientInput): GenerateResult {
       isHeavyHinge(fit, ex) &&
       (hingesOn[dayIndex] >= fit.heavyHinge.perSession ||
         (fit.heavyHinge.notOnConsecutiveDays && input.days >= 4 && (hingesOn[dayIndex - 1] ?? 0) > 0))
+
+    // The day's skill work, before any slot: the skill at the client's rung, straight sets.
+    if (skillFamilies.length) {
+      let placed = 0
+      for (let k = 0; k < skillFamilies.length && placed < skillsPerDay; k++) {
+        const family = skillFamilies[(dayIndex * skillsPerDay + k) % skillFamilies.length]
+        const r = rungs!.get(family)!
+        const pick = ladders!
+          .get(family)!
+          .find((st) => st.rung === r.rung)
+          ?.exercises.find((e) => eligibleIn(e.sub).some((x) => x.id === e.id) && !chosen.some((c) => c.exercise.id === e.id))
+        if (!pick) continue
+        placed++
+        chosen.push({
+          exercise: pick,
+          requestedSub: pick.sub,
+          slotId: slotId({ dayIndex, sub: `Skill: ${family}`, n: 0 }),
+          sets: input.level === 'Advanced' ? 4 : 3,
+          reps: rx.reps,
+          rest: rx.rest,
+          restSeconds: baseRest,
+          verdict: verdicts.get(pick.id) ?? { verdict: 'OK', byPain: [] },
+          skill: family,
+        })
+      }
+    }
 
     for (const slot of allocDay.slots as Slot[]) {
       const [sub, count, setsPerExercise] = slot
@@ -593,7 +722,7 @@ export function generate(raw: DataBundle, input: ClientInput): GenerateResult {
           continue
         }
 
-        const allRanked = rankCandidates(eligibleIn(sub), input.goal, verdicts)
+        const allRanked = styleRank(rankCandidates(eligibleIn(sub), input.goal, verdicts))
         // A second heavy hinge this session (or one the day after a heavy hinge) gives way to
         // a lighter exercise for the same sub-region, where there is one.
         const lighter = allRanked.filter((ex) => !hingeBlocked(ex) && !mainBlocked(ex))
@@ -631,6 +760,9 @@ export function generate(raw: DataBundle, input: ClientInput): GenerateResult {
           if (borrowed) ranked = [borrowed]
         }
 
+        // A style's small pool can run out: never the same exercise twice in one session (styled only;
+        // the gym's behaviour is unchanged).
+        if (styled) ranked = ranked.filter((ex) => !chosen.some((c) => c.exercise.id === ex.id))
         // 1. eligible and unused
         let pick = ranked.find((ex) => !usedThisWeek.has(ex.id))
         let flag: ChosenExercise['flag'] = borrowed || borrowedKind ? 'substituted' : undefined
@@ -675,7 +807,10 @@ export function generate(raw: DataBundle, input: ClientInput): GenerateResult {
           const group = subToGroup.get(sub)
           if (group) {
             const siblings = (groupToSubs.get(group) ?? []).filter((s) => s !== sub)
-            const allSiblings = rankCandidates(siblings.flatMap(eligibleIn), input.goal, verdicts)
+            const allSiblings = rankCandidates(siblings.flatMap(eligibleIn), input.goal, verdicts).filter(
+              // An Olympic lift trains its own slot, never another's as a stand-in; nor anything twice a session.
+              (ex) => !styled || (!(ex.tags ?? []).includes('Olympic') && !chosen.some((c) => c.exercise.id === ex.id)),
+            )
             // A borrowed exercise follows the same rules: no second heavy hinge or second main lift of a family.
             const lighterSiblings = allSiblings.filter((ex) => !hingeBlocked(ex) && !mainBlocked(ex))
             const siblingPool = lighterSiblings.length > 0 ? lighterSiblings : allSiblings
@@ -733,6 +868,9 @@ export function generate(raw: DataBundle, input: ClientInput): GenerateResult {
     chosen.sort((a, b) => {
       const p = priorityRank(b) - priorityRank(a)
       if (p !== 0) return p
+      // Calisthenics skills (handstand, levers, planche…) open the session, while the client is fresh.
+      const sk = skillFirst(a) - skillFirst(b)
+      if (sk !== 0) return sk
       if (fitOn) return orderRank(fit, a.exercise) - orderRank(fit, b.exercise)
       if (input.goal === 'Get Stronger') {
         return Number(b.exercise.mainLift) - Number(a.exercise.mainLift)
@@ -745,7 +883,7 @@ export function generate(raw: DataBundle, input: ClientInput): GenerateResult {
     selected.push({
       index: dayIndex,
       label: allocDay.label,
-      chosen: placeAbs(chosen, input.absPlacement, (c) => c.exercise),
+      chosen: placeAbs(chosen, input.absPlacement, (c) => absView(c.exercise)),
     })
   })
 
@@ -787,7 +925,9 @@ export function generate(raw: DataBundle, input: ClientInput): GenerateResult {
     // No front raises: a week with an overhead press has the front delts covered; a week without one gets one,
     // at three sets, in the first front raise's place (when the client can do one), and the other raises go.
     if (fit.frontRaiseOnlyWithoutPress) {
-      const raise = (c: ChosenExercise) => !c.pinned && c.exercise.sub === 'Front' && c.exercise.type !== 'compound'
+      // (A calisthenics skill on the front delts, a handstand or a planche, is a skill, not a raise.)
+      const raise = (c: ChosenExercise) =>
+        !c.pinned && !c.skill && !(styled && skillFamilyOf(data, c.exercise)) && c.exercise.sub === 'Front' && c.exercise.type !== 'compound'
       let pressing = selected.some((d) => d.chosen.some((c) => c.exercise.sub === 'Front' && c.exercise.type === 'compound'))
       if (!pressing) {
         const day = selected.find((d) => d.chosen.some(raise))
@@ -868,6 +1008,11 @@ export function generate(raw: DataBundle, input: ClientInput): GenerateResult {
     const injuryUnilateral = new Set(
       data.injury.exercises.filter((r) => r.unilateral).map((r) => r.id),
     )
+    // A calisthenics skill is chosen on purpose, like a trainer's swap: VALD's one-sided swap and
+    // weak-side sets leave it as it is (it is put back below if the allocator touched it).
+    const skillsBefore = new Map(
+      selected.flatMap((d) => d.chosen.filter((c) => c.skill).map((c) => [c.slotId, { exercise: c.exercise, sets: c.sets }] as const)),
+    )
     const allocDays: ValdAllocationDay[] = selected.map((d) => ({
       index: d.index,
       slots: d.chosen.map((c) => ({
@@ -888,7 +1033,7 @@ export function generate(raw: DataBundle, input: ClientInput): GenerateResult {
       library: exercises,
       injuryUnilateral,
       // A swapped-in exercise has to clear exactly what a selected one cleared.
-      canSwapIn: (ex) => !isRemoved(ex) && isEligible(ex, input.level, ageBr, input.equipment),
+      canSwapIn: (ex) => !isRemoved(ex) && inPool(ex) && onRung(ex) && isEligible(ex, input.level, ageBr, input.equipment),
       // No session-length cap is imposed at generation any more. Session length is the
       // client's decision, taken with the time-cap button, and the weak-side sets a real
       // asymmetry earns are not the place to make it silently for them. The callback stays
@@ -901,6 +1046,8 @@ export function generate(raw: DataBundle, input: ClientInput): GenerateResult {
       const slot = selected[b.dayIndex]?.chosen[b.slotIndex]
       const allocSlot = allocDays[b.dayIndex]?.slots[b.slotIndex]
       if (!slot || !allocSlot) continue
+      // A skill stays the skill the session was built around.
+      if (slot.skill && skillsBefore.has(slot.slotId)) continue
       slot.exercise = allocSlot.exercise
       slot.unilateral = {
         form: b.form,
@@ -949,13 +1096,19 @@ export function generate(raw: DataBundle, input: ClientInput): GenerateResult {
   // VALD can swap an exercise for its one-sided version, which may sit elsewhere in the order:
   // the session is put back in order (a stable reorder), abs where the placement wants them.
   for (const day of fitOn ? selected : []) {
+    // VALD's one-sided swap can land on an exercise the session already holds (common in a style's
+    // small pool, rare in the gym's): the one-sided version, weak-side sets and all, replaces the other.
+    // (The gym too: two of the same exercise in one session is never right.)
+    day.chosen = day.chosen.filter(
+        (c, i) => !day.chosen.some((o, j) => j !== i && o.exercise.id === c.exercise.id && (o.unilateral ? !c.unilateral || j < i : !c.unilateral && j < i)),
+      )
     const priorityRank = (c: ChosenExercise) => (c.verdict.verdict === 'PRIORITY' ? 1 : 0)
     day.chosen = placeAbs(
       [...day.chosen].sort(
-        (a, b) => priorityRank(b) - priorityRank(a) || orderRank(fit, a.exercise) - orderRank(fit, b.exercise),
+        (a, b) => priorityRank(b) - priorityRank(a) || skillFirst(a) - skillFirst(b) || orderRank(fit, a.exercise) - orderRank(fit, b.exercise),
       ),
       input.absPlacement,
-      (c) => c.exercise,
+      (c) => absView(c.exercise),
     )
   }
   for (const { chosen } of fitOn ? selected : []) {
@@ -966,6 +1119,29 @@ export function generate(raw: DataBundle, input: ClientInput): GenerateResult {
           : `${inbody.reps[0]}-${inbody.reps[1]}`
         : rx.reps
       c.reps = repsFor(fit, c.exercise, base, oneSided)
+      // Unloaded work is never 3-5 reps: its strength comes from the harder rung.
+      if (styled && input.goal === 'Get Stronger' && data.modalities && c.exercise.type !== 'isometric' && isUnloaded(data, c.exercise))
+        c.reps = data.modalities.bodyweightStrengthReps
+      // Hard bodyweight and technique moves have their own counts (a negative is 3-5, never 16-19), and
+      // no unloaded compound above twelve: past that the next rung is the progression.
+      const caps = styled ? data.modalities?.repCaps : undefined
+      if (caps) {
+        const own = caps.byName[c.exercise.name] ?? (c.exercise.tags ?? []).map((t) => caps.byTag?.[t]).find(Boolean)
+        if (own) c.reps = own
+        else if (c.exercise.type === 'compound' && c.exercise.skill >= 2 && isUnloaded(data, c.exercise)) {
+          const m = c.reps.match(/^(\d+)-(\d+)$/)
+          if (m && Number(m[2]) > caps.bodyweightMaxReps) c.reps = `${Math.min(Number(m[1]), caps.bodyweightMaxReps - 4)}-${caps.bodyweightMaxReps}`
+        }
+      }
+      // A calisthenics skill hold is short and maximal, rested fully: seconds by family, not the goal's.
+      const family = styled ? skillFamilyOf(data, c.exercise) : undefined
+      if (family && c.exercise.type === 'isometric' && data.modalities) {
+        const l = data.modalities.ladders
+        c.reps = `${l.holdSeconds[family] ?? l.holdSeconds.default} s`
+        c.restSeconds = Math.max(c.restSeconds, l.skillRestSeconds)
+        c.rest = String(c.restSeconds)
+        continue
+      }
       // A squat, hinge, press, row or pulldown is prescribed at least three sets.
       if (c.exercise.type === 'compound' && fullBodyKind(fit, c.exercise.sub) >= 0 && c.sets < fit.kindCompoundMinSets.sets)
         c.sets = fit.kindCompoundMinSets.sets
@@ -1114,7 +1290,7 @@ export function generate(raw: DataBundle, input: ClientInput): GenerateResult {
   for (const d of selected)
     for (const c of d.chosen) weekSubs.set(c.exercise.sub, (weekSubs.get(c.exercise.sub) ?? 0) + 1)
   // A trainer's own pick (a swap) is theirs, so it is never removed automatically either.
-  const isProtected = (c: ChosenExercise) => (c.unilateral?.extraSets ?? 0) > 0 || !!c.pinned
+  const isProtected = (c: ChosenExercise) => (c.unilateral?.extraSets ?? 0) > 0 || !!c.pinned || !!c.skill
   const isSole = (c: ChosenExercise) =>
     weekSubs.get(c.exercise.sub) === 1 &&
     !fit.trim.redundant.groups.includes(c.exercise.group) &&
@@ -1133,6 +1309,8 @@ export function generate(raw: DataBundle, input: ClientInput): GenerateResult {
     fullDay = false,
     /** this day's own set ceiling, under the session's (Shape Up: Build Muscle's day) */
     dayMaxSets?: number,
+    /** the shortest the planned conditioning may be cut to: a metcon is never cut */
+    conditioningShortest = 5,
   ): CapDayModel => {
     const blockCache = new Map<string, Block[]>()
     const listed = list.map((c) => c.exercise)
@@ -1148,7 +1326,7 @@ export function generate(raw: DataBundle, input: ClientInput): GenerateResult {
       stretchSeconds: data.bodydot.stretchSeconds,
       conditioningMinutes,
       conditioningFixed,
-      conditioningShortest: 5,
+      conditioningShortest,
       ...(derived?.pairIsolation && { maxStructure: derived.structure as Structure }),
       exercises: list.map((c) => ({
         exercise: c.exercise,
@@ -1183,7 +1361,8 @@ export function generate(raw: DataBundle, input: ClientInput): GenerateResult {
       ...(fitOn && {
         setupSeconds: list.map((c) => setupSeconds(fit, c.exercise)),
         rampSeconds: fit.time.rampSecondsPerMainLift[input.goal] ?? 0,
-        warmup: fit.warmup,
+        // A new style's warm-up is the five moves (five minutes) where the gym's is four minutes of cardio.
+        warmup: moveWarmup ? { ...fit.warmup, generalMinutes: warmupMinutesFor(data) } : fit.warmup,
         maxSets: dayMaxSets !== undefined && maxSets !== undefined ? Math.min(maxSets, dayMaxSets) : maxSets,
         protectedIdx: list.map(isProtected),
         soleIdx: list.map(isSole),
@@ -1231,7 +1410,7 @@ export function generate(raw: DataBundle, input: ClientInput): GenerateResult {
     const formed = buildBlocks(chosen, structure)
     const blocks = orderAbsBlocks(
       formed,
-      (i) => isAbs(chosen[i].exercise),
+      (i) => isAbs(absView(chosen[i].exercise)),
       (i) => chosen[i].exercise.mainLift,
       absPlacement,
     ).map((bi) => formed[bi])
@@ -1252,6 +1431,7 @@ export function generate(raw: DataBundle, input: ClientInput): GenerateResult {
       !!conditioning?.planned,
       fitOn && (input.split === 'Full Body' || /full/i.test(label)),
       referenceSets.get(dayIndex),
+      conditioning?.metcon ? conditioning.minutes : 5,
     )
     const capState = baseState(capModel)
     return {
@@ -1318,6 +1498,48 @@ export function generate(raw: DataBundle, input: ClientInput): GenerateResult {
         days[i] = buildDay(d.index, d.label, d.exercises, d.structure, d.correctives, d.correctiveStretches, d.fillerBouts, conditioning, d.restBoost)
       })
     }
+  }
+
+  // CrossFit's metcon: the session's finish, which the hour is fitted around and the trim never
+  // cuts (it takes its minutes out of the strength part). Every day for CrossFit on its own; on a
+  // hybrid, half the week's days, spread.
+  if (styles.includes('CrossFit') && data.modalities && days.length > 0) {
+    const rules = data.modalities.crossfit.metcon
+    const count = strengthStyles.length === 1 ? days.length : Math.ceil(days.length / 2)
+    // From the first day: a one-day strength week (the first day of a two-day program) keeps its metcon.
+    const at = new Set(Array.from({ length: count }, (_, k) => Math.floor((k * days.length) / count)))
+    const usedInMetcons = new Set<number>()
+    days.forEach((d, i) => {
+      if (!at.has(i)) return
+      const metcon = buildMetcon(data, rules, {
+        usedThisWeek: usedInMetcons,
+        level: input.level,
+        goal: input.goal,
+        age: input.age,
+        ageBr,
+        equipment: input.equipment,
+        dayIndex: i,
+        strength: d.exercises.map((c) => c.exercise),
+        heavyHingeToday: d.exercises.some((c) => isHeavyHinge(fit, c.exercise)),
+        verdicts,
+      })
+      if (!metcon) {
+        // Too few moves left for a metcon (pains, age): the session still finishes with its planned
+        // conditioning, the same minutes, on what the client can do.
+        const fallback = prescribeConditioning(data.sessionlength, rules.minutes[input.level] ?? 10, Object.keys(input.pains))
+        if (fallback) days[i] = buildDay(d.index, d.label, d.exercises, d.structure, d.correctives, d.correctiveStretches, d.fillerBouts, { ...fallback, planned: true }, d.restBoost)
+        return
+      }
+      const conditioning: Conditioning = {
+        minutes: metcon.minutes,
+        modality: { id: 'metcon', label: `Metcon · ${metcon.format}`, impact: false },
+        alternatives: [],
+        impactWithheldFor: [],
+        planned: true,
+        metcon,
+      }
+      days[i] = buildDay(d.index, d.label, d.exercises, d.structure, d.correctives, d.correctiveStretches, d.fillerBouts, conditioning, d.restBoost)
+    })
   }
 
   /**
@@ -1521,6 +1743,32 @@ export function generate(raw: DataBundle, input: ClientInput): GenerateResult {
 
   if (fitOn) {
     trimDays(new Set(days.map((d) => d.index)), false)
+    // A metcon day the trim could not bring inside the hour (everything left is protected) takes the
+    // minutes it is over out of the metcon's clock instead, never below eight: same workout, shorter.
+    if (data.modalities && days.some((d) => d.conditioning?.metcon)) refreshWholeSetMinutes()
+    if (data.modalities)
+      days.forEach((d, i) => {
+        const mc = d.conditioning?.metcon
+        if (!mc || d.wholeSetMinutes <= capTarget + 1e-6) return
+        const room = Math.floor(mc.minutes - (d.wholeSetMinutes - capTarget))
+        if (room >= mc.minutes) return
+        const shorter = buildMetcon(data, data.modalities!.crossfit.metcon, {
+          level: input.level,
+          goal: input.goal,
+          age: input.age,
+          ageBr,
+          equipment: input.equipment,
+          dayIndex: i,
+          strength: d.exercises.map((c) => c.exercise),
+          heavyHingeToday: d.exercises.some((c) => isHeavyHinge(fit, c.exercise)),
+          verdicts,
+          moves: mc.moves.map((x) => x.exercise),
+          maxMinutes: Math.max(8, room),
+        })
+        if (!shorter || !d.conditioning) return
+        days[i] = buildDay(d.index, d.label, d.exercises, d.structure, d.correctives, d.correctiveStretches, d.fillerBouts, { ...d.conditioning, minutes: shorter.minutes, metcon: shorter }, d.restBoost)
+      })
+    refreshWholeSetMinutes()
     fillDays()
     // The two exercises of a pair share one rest, the longer of theirs, taken after each round
     // (the time model already charges it so).
@@ -1557,6 +1805,25 @@ export function generate(raw: DataBundle, input: ClientInput): GenerateResult {
     verdictOf: (id) => verdicts.get(id)?.verdict ?? 'OK',
     vald: data.vald,
   })
+
+  // The five-move warm-up, from the finished sessions (after the trim, so it warms up what is left).
+  if (moveWarmup)
+    for (const d of days)
+      d.warmupMoves = warmupMoves(
+        data,
+        exercises,
+        [
+          ...d.exercises.map((c) => ({ exercise: c.exercise, sets: c.sets })),
+          // the metcon's moves are warmed up too (two sets' worth each)
+          ...(d.conditioning?.metcon?.moves ?? []).map((m) => ({ exercise: m.exercise, sets: 2 })),
+        ],
+        {
+        rungs,
+        ladders,
+        ageBr,
+        equipment: input.equipment,
+        verdicts,
+      })
 
   const timecap: TimeCapResult = {
     active: capApplied.length + capRetired.length > 0,
@@ -1623,6 +1890,31 @@ export function generate(raw: DataBundle, input: ClientInput): GenerateResult {
       timecap,
       verdicts,
       removedByPain,
+      styles: {
+        styles,
+        rungs:
+          ladders && rungs
+            ? [...ladders.entries()]
+                .filter(([, steps]) => steps.some((st) => st.exercises.some((e) => inPool(e))))
+                .map(([family, steps]) => {
+                  const r = rungs.get(family)!
+                  const i = steps.findIndex((st) => st.rung === r.rung)
+                  return {
+                    family,
+                    rung: r.rung,
+                    set: r.set,
+                    exercises: steps[i]?.exercises.map((e) => e.name) ?? [],
+                    next: steps[i + 1]?.exercises.map((e) => e.name) ?? [],
+                    top: steps[steps.length - 1].rung,
+                    /** where it sits on the ladder (1-based) and the rungs either side, for the trainer's buttons */
+                    step: i + 1,
+                    steps: steps.length,
+                    prevRung: steps[i - 1]?.rung,
+                    nextRung: steps[i + 1]?.rung,
+                  }
+                })
+            : [],
+      },
     },
   }
 }

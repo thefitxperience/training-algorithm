@@ -1,0 +1,2846 @@
+{
+ "note": "Injury records for the modality sheet's new exercises (scripts/modalityInjury.ts), merged into injury.json's exercises at load. Generated: edit the rules there, not this file.",
+ "exercises": [
+  {
+   "id": 1001,
+   "name": "Wall push-up",
+   "key": "Chest > Mid",
+   "loadTags": [
+    "ELB_EXT",
+    "ELB_WB",
+    "SH_LOAD",
+    "WR_WB"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1002,
+   "name": "Knee push-up",
+   "key": "Chest > Mid",
+   "loadTags": [
+    "ELB_EXT",
+    "ELB_WB",
+    "SH_LOAD",
+    "WR_WB"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1003,
+   "name": "Archer push-up",
+   "key": "Chest > Mid",
+   "loadTags": [
+    "ELB_EXT",
+    "ELB_WB",
+    "PEC_STRETCH",
+    "SH_LOAD",
+    "WR_WB"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1004,
+   "name": "Assisted one-arm push-up",
+   "key": "Chest > Mid",
+   "loadTags": [
+    "ELB_EXT",
+    "ELB_WB",
+    "PEC_STRETCH",
+    "SH_LOAD",
+    "WR_WB"
+   ],
+   "unilateral": true,
+   "corrective": false
+  },
+  {
+   "id": 1005,
+   "name": "One-arm push-up",
+   "key": "Chest > Mid",
+   "loadTags": [
+    "ELB_EXT",
+    "ELB_WB",
+    "PEC_STRETCH",
+    "SH_LOAD",
+    "WR_WB"
+   ],
+   "unilateral": true,
+   "corrective": false
+  },
+  {
+   "id": 1006,
+   "name": "Ring push-up",
+   "key": "Chest > Mid",
+   "loadTags": [
+    "ELB_EXT",
+    "ELB_WB",
+    "PEC_STRETCH",
+    "SH_LOAD",
+    "WR_WB"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1007,
+   "name": "Pseudo planche push-up",
+   "key": "Chest > Mid",
+   "loadTags": [
+    "ELB_EXT",
+    "ELB_FLEX",
+    "ELB_WB",
+    "IAP",
+    "PEC_STRETCH",
+    "SH_LOAD",
+    "WR_WB"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1008,
+   "name": "Negative pull-up",
+   "key": "Lats > Vertical pull",
+   "loadTags": [
+    "ELB_FLEX",
+    "GRIP",
+    "NECK_COMP",
+    "OVERHEAD",
+    "SH_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1009,
+   "name": "Wide-grip pull-up",
+   "key": "Lats > Vertical pull",
+   "loadTags": [
+    "ELB_FLEX",
+    "GRIP",
+    "NECK_COMP",
+    "OVERHEAD",
+    "SH_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1010,
+   "name": "Commando pull-up",
+   "key": "Lats > Vertical pull",
+   "loadTags": [
+    "ELB_FLEX",
+    "GRIP",
+    "NECK_COMP",
+    "OVERHEAD",
+    "SH_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1011,
+   "name": "Archer pull-up",
+   "key": "Lats > Vertical pull",
+   "loadTags": [
+    "ELB_FLEX",
+    "GRIP",
+    "NECK_COMP",
+    "OVERHEAD",
+    "SH_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1012,
+   "name": "Assisted one-arm pull-up",
+   "key": "Lats > Vertical pull",
+   "loadTags": [
+    "ELB_FLEX",
+    "GRIP",
+    "NECK_COMP",
+    "OVERHEAD",
+    "SH_LOAD"
+   ],
+   "unilateral": true,
+   "corrective": false
+  },
+  {
+   "id": 1013,
+   "name": "One-arm pull-up",
+   "key": "Lats > Vertical pull",
+   "loadTags": [
+    "ELB_FLEX",
+    "GRIP",
+    "NECK_COMP",
+    "OVERHEAD",
+    "SH_LOAD"
+   ],
+   "unilateral": true,
+   "corrective": false
+  },
+  {
+   "id": 1014,
+   "name": "Feet-elevated inverted row",
+   "key": "Lats > Horizontal pull",
+   "loadTags": [
+    "ELB_FLEX",
+    "GRIP",
+    "SH_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1015,
+   "name": "Ring row",
+   "key": "Lats > Horizontal pull",
+   "loadTags": [
+    "ELB_FLEX",
+    "GRIP",
+    "SH_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1016,
+   "name": "One-arm inverted row",
+   "key": "Lats > Horizontal pull",
+   "loadTags": [
+    "ELB_FLEX",
+    "GRIP",
+    "SH_LOAD"
+   ],
+   "unilateral": true,
+   "corrective": false
+  },
+  {
+   "id": 1017,
+   "name": "Front lever row",
+   "key": "Lats > Stretch",
+   "loadTags": [
+    "ELB_FLEX",
+    "GRIP",
+    "IAP",
+    "NECK_COMP",
+    "OVERHEAD",
+    "SH_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1018,
+   "name": "Ring support hold",
+   "key": "Triceps > Lateral-medial (lockout)",
+   "loadTags": [
+    "ELB_EXT",
+    "ELB_WB",
+    "SH_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1019,
+   "name": "Ring dip",
+   "key": "Triceps > Lateral-medial (lockout)",
+   "loadTags": [
+    "ELB_EXT",
+    "ELB_WB",
+    "PEC_STRETCH",
+    "SH_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1020,
+   "name": "Korean dip",
+   "key": "Triceps > Lateral-medial (lockout)",
+   "loadTags": [
+    "ELB_EXT",
+    "ELB_WB",
+    "PEC_STRETCH",
+    "SH_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1021,
+   "name": "Foot-supported L-sit",
+   "key": "Abs & core > Flexion (upper/lower)",
+   "loadTags": [
+    "ELB_WB",
+    "HF_LOAD",
+    "IAP",
+    "SH_LOAD",
+    "WR_WB"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1022,
+   "name": "Tuck L-sit",
+   "key": "Abs & core > Flexion (upper/lower)",
+   "loadTags": [
+    "ELB_WB",
+    "HF_LOAD",
+    "IAP",
+    "SH_LOAD",
+    "WR_WB"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1023,
+   "name": "One-leg L-sit",
+   "key": "Abs & core > Flexion (upper/lower)",
+   "loadTags": [
+    "ELB_WB",
+    "HF_LOAD",
+    "IAP",
+    "SH_LOAD",
+    "WR_WB"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1024,
+   "name": "L-sit",
+   "key": "Abs & core > Flexion (upper/lower)",
+   "loadTags": [
+    "ELB_WB",
+    "HF_LOAD",
+    "IAP",
+    "SH_LOAD",
+    "WR_WB"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1025,
+   "name": "V-sit",
+   "key": "Abs & core > Flexion (upper/lower)",
+   "loadTags": [
+    "ELB_WB",
+    "HF_LOAD",
+    "IAP",
+    "SH_LOAD",
+    "WR_WB"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1026,
+   "name": "Tuck front lever",
+   "key": "Lats > Stretch",
+   "loadTags": [
+    "ELB_FLEX",
+    "GRIP",
+    "IAP",
+    "NECK_COMP",
+    "OVERHEAD",
+    "SH_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1027,
+   "name": "Advanced tuck front lever",
+   "key": "Lats > Stretch",
+   "loadTags": [
+    "ELB_FLEX",
+    "GRIP",
+    "IAP",
+    "NECK_COMP",
+    "OVERHEAD",
+    "SH_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1028,
+   "name": "One-leg front lever",
+   "key": "Lats > Stretch",
+   "loadTags": [
+    "ELB_FLEX",
+    "GRIP",
+    "IAP",
+    "NECK_COMP",
+    "OVERHEAD",
+    "SH_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1029,
+   "name": "Straddle front lever",
+   "key": "Lats > Stretch",
+   "loadTags": [
+    "ELB_FLEX",
+    "GRIP",
+    "IAP",
+    "NECK_COMP",
+    "OVERHEAD",
+    "SH_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1030,
+   "name": "Full front lever",
+   "key": "Lats > Stretch",
+   "loadTags": [
+    "ELB_FLEX",
+    "GRIP",
+    "IAP",
+    "NECK_COMP",
+    "OVERHEAD",
+    "SH_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1031,
+   "name": "Skin the cat",
+   "key": "Lats > Stretch",
+   "loadTags": [
+    "ELB_FLEX",
+    "GRIP",
+    "LUM_EXT",
+    "NECK_COMP",
+    "OVERHEAD",
+    "PEC_STRETCH",
+    "SH_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1032,
+   "name": "Tuck back lever",
+   "key": "Lats > Stretch",
+   "loadTags": [
+    "ELB_FLEX",
+    "GRIP",
+    "LUM_EXT",
+    "NECK_COMP",
+    "OVERHEAD",
+    "PEC_STRETCH",
+    "SH_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1033,
+   "name": "Advanced tuck back lever",
+   "key": "Lats > Stretch",
+   "loadTags": [
+    "ELB_FLEX",
+    "GRIP",
+    "LUM_EXT",
+    "NECK_COMP",
+    "OVERHEAD",
+    "PEC_STRETCH",
+    "SH_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1034,
+   "name": "Straddle back lever",
+   "key": "Lats > Stretch",
+   "loadTags": [
+    "ELB_FLEX",
+    "GRIP",
+    "LUM_EXT",
+    "NECK_COMP",
+    "OVERHEAD",
+    "PEC_STRETCH",
+    "SH_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1035,
+   "name": "Full back lever",
+   "key": "Lats > Stretch",
+   "loadTags": [
+    "ELB_FLEX",
+    "GRIP",
+    "LUM_EXT",
+    "NECK_COMP",
+    "OVERHEAD",
+    "PEC_STRETCH",
+    "SH_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1036,
+   "name": "Planche lean",
+   "key": "Delts > Front",
+   "loadTags": [
+    "ELB_FLEX",
+    "ELB_WB",
+    "IAP",
+    "SH_LOAD",
+    "WR_WB"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1037,
+   "name": "Tuck planche",
+   "key": "Delts > Front",
+   "loadTags": [
+    "ELB_FLEX",
+    "ELB_WB",
+    "IAP",
+    "SH_LOAD",
+    "WR_WB"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1038,
+   "name": "Advanced tuck planche",
+   "key": "Delts > Front",
+   "loadTags": [
+    "ELB_FLEX",
+    "ELB_WB",
+    "IAP",
+    "SH_LOAD",
+    "WR_WB"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1039,
+   "name": "Straddle planche",
+   "key": "Delts > Front",
+   "loadTags": [
+    "ELB_FLEX",
+    "ELB_WB",
+    "IAP",
+    "SH_LOAD",
+    "WR_WB"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1040,
+   "name": "Wall pike hold",
+   "key": "Delts > Front",
+   "loadTags": [
+    "ELB_WB",
+    "NECK_COMP",
+    "OVERHEAD",
+    "SH_LOAD",
+    "WR_WB"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1041,
+   "name": "Feet-on-wall plank walk",
+   "key": "Delts > Front",
+   "loadTags": [
+    "ELB_WB",
+    "NECK_COMP",
+    "OVERHEAD",
+    "SH_LOAD",
+    "WR_WB"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1042,
+   "name": "Chest-to-wall handstand hold",
+   "key": "Delts > Front",
+   "loadTags": [
+    "ELB_WB",
+    "NECK_COMP",
+    "OVERHEAD",
+    "SH_LOAD",
+    "WR_WB"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1043,
+   "name": "Handstand shoulder taps",
+   "key": "Delts > Front",
+   "loadTags": [
+    "ELB_WB",
+    "NECK_COMP",
+    "OVERHEAD",
+    "SH_LOAD",
+    "WR_WB"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1044,
+   "name": "Freestanding handstand",
+   "key": "Delts > Front",
+   "loadTags": [
+    "ELB_WB",
+    "NECK_COMP",
+    "OVERHEAD",
+    "SH_LOAD",
+    "WR_WB"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1045,
+   "name": "Pike push-up",
+   "key": "Delts > Front",
+   "loadTags": [
+    "ELB_EXT",
+    "ELB_WB",
+    "NECK_COMP",
+    "OVERHEAD",
+    "SH_LOAD",
+    "WR_WB"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1046,
+   "name": "Feet-elevated pike push-up",
+   "key": "Delts > Front",
+   "loadTags": [
+    "ELB_EXT",
+    "ELB_WB",
+    "NECK_COMP",
+    "OVERHEAD",
+    "SH_LOAD",
+    "WR_WB"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1047,
+   "name": "Wall handstand push-up",
+   "key": "Delts > Front",
+   "loadTags": [
+    "ELB_EXT",
+    "ELB_WB",
+    "NECK_COMP",
+    "OVERHEAD",
+    "SH_LOAD",
+    "WR_WB"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1048,
+   "name": "Freestanding handstand push-up",
+   "key": "Delts > Front",
+   "loadTags": [
+    "ELB_EXT",
+    "ELB_WB",
+    "NECK_COMP",
+    "OVERHEAD",
+    "SH_LOAD",
+    "WR_WB"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1049,
+   "name": "Explosive pull-up",
+   "key": "Lats > Vertical pull",
+   "loadTags": [
+    "ELB_FLEX",
+    "GRIP",
+    "NECK_COMP",
+    "OVERHEAD",
+    "SH_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1050,
+   "name": "Low-bar transition drill",
+   "key": "Lats > Vertical pull",
+   "loadTags": [
+    "ELB_EXT",
+    "ELB_FLEX",
+    "GRIP",
+    "LUM_EXT",
+    "NECK_COMP",
+    "OVERHEAD",
+    "PEC_STRETCH",
+    "SH_IMPINGE",
+    "SH_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1051,
+   "name": "Jumping muscle-up",
+   "key": "Lats > Vertical pull",
+   "loadTags": [
+    "ANK_PLANTAR",
+    "ELB_EXT",
+    "ELB_FLEX",
+    "GRIP",
+    "IMPACT",
+    "LUM_EXT",
+    "NECK_COMP",
+    "OVERHEAD",
+    "PEC_STRETCH",
+    "SH_IMPINGE",
+    "SH_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1052,
+   "name": "Bar muscle-up",
+   "key": "Lats > Vertical pull",
+   "loadTags": [
+    "ELB_EXT",
+    "ELB_FLEX",
+    "GRIP",
+    "LUM_EXT",
+    "NECK_COMP",
+    "OVERHEAD",
+    "PEC_STRETCH",
+    "SH_IMPINGE",
+    "SH_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1053,
+   "name": "Ring muscle-up",
+   "key": "Lats > Vertical pull",
+   "loadTags": [
+    "ELB_EXT",
+    "ELB_FLEX",
+    "GRIP",
+    "LUM_EXT",
+    "NECK_COMP",
+    "OVERHEAD",
+    "PEC_STRETCH",
+    "SH_IMPINGE",
+    "SH_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1054,
+   "name": "Vertical flag hold",
+   "key": "Abs & core > Anti-lateral flexion",
+   "loadTags": [
+    "ELB_FLEX",
+    "GRIP",
+    "IAP",
+    "NECK_COMP",
+    "OVERHEAD",
+    "SH_LOAD",
+    "TRUNK_ROT"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1055,
+   "name": "Tuck human flag",
+   "key": "Abs & core > Anti-lateral flexion",
+   "loadTags": [
+    "ELB_FLEX",
+    "GRIP",
+    "IAP",
+    "NECK_COMP",
+    "OVERHEAD",
+    "SH_LOAD",
+    "TRUNK_ROT"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1056,
+   "name": "Straddle human flag",
+   "key": "Abs & core > Anti-lateral flexion",
+   "loadTags": [
+    "ELB_FLEX",
+    "GRIP",
+    "IAP",
+    "NECK_COMP",
+    "OVERHEAD",
+    "SH_LOAD",
+    "TRUNK_ROT"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1057,
+   "name": "Full human flag",
+   "key": "Abs & core > Anti-lateral flexion",
+   "loadTags": [
+    "ELB_FLEX",
+    "GRIP",
+    "IAP",
+    "NECK_COMP",
+    "OVERHEAD",
+    "SH_LOAD",
+    "TRUNK_ROT"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1058,
+   "name": "Box pistol squat",
+   "key": "Quads, hams, adductors > Quads - knee-dominant",
+   "loadTags": [
+    "ANK_DORSI",
+    "KNEE_LOAD"
+   ],
+   "unilateral": true,
+   "corrective": false
+  },
+  {
+   "id": 1059,
+   "name": "Shrimp squat",
+   "key": "Quads, hams, adductors > Quads - knee-dominant",
+   "loadTags": [
+    "ANK_DORSI",
+    "HIP_DEEPFLEX",
+    "KNEE_DEEP",
+    "KNEE_LOAD"
+   ],
+   "unilateral": true,
+   "corrective": false
+  },
+  {
+   "id": 1060,
+   "name": "Elevated shrimp squat",
+   "key": "Quads, hams, adductors > Quads - knee-dominant",
+   "loadTags": [
+    "ANK_DORSI",
+    "HIP_DEEPFLEX",
+    "KNEE_DEEP",
+    "KNEE_LOAD"
+   ],
+   "unilateral": true,
+   "corrective": false
+  },
+  {
+   "id": 1061,
+   "name": "Hanging windshield wiper",
+   "key": "Abs & core > Obliques & anti-rotation",
+   "loadTags": [
+    "ELB_FLEX",
+    "GRIP",
+    "HF_LOAD",
+    "LUM_FLEX",
+    "NECK_COMP",
+    "OVERHEAD",
+    "SH_LOAD",
+    "TRUNK_ROT"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1062,
+   "name": "Lying windshield wiper",
+   "key": "Abs & core > Obliques & anti-rotation",
+   "loadTags": [
+    "HF_LOAD",
+    "TRUNK_ROT"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1063,
+   "name": "Toes-to-bar",
+   "key": "Abs & core > Flexion (upper/lower)",
+   "loadTags": [
+    "ELB_FLEX",
+    "GRIP",
+    "HF_LOAD",
+    "LUM_FLEX",
+    "NECK_COMP",
+    "OVERHEAD",
+    "SH_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1064,
+   "name": "Frog stand",
+   "key": "Forearms & grip > Grip & carry",
+   "loadTags": [
+    "ELB_WB",
+    "IAP",
+    "SH_LOAD",
+    "WR_WB"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1065,
+   "name": "Elbow lever",
+   "key": "Abs & core > Anti-extension",
+   "loadTags": [
+    "ELB_WB",
+    "IAP",
+    "SH_LOAD",
+    "WR_WB"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1066,
+   "name": "Muscle snatch",
+   "key": "Delts > Front",
+   "loadTags": [
+    "AXIAL",
+    "ELB_EXT",
+    "GRIP",
+    "HAM_STRETCH",
+    "IAP",
+    "KNEE_LOAD",
+    "LUM_HINGE",
+    "NECK_COMP",
+    "OVERHEAD",
+    "SH_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1067,
+   "name": "Power snatch",
+   "key": "Quads, hams, adductors > Hams - hinge",
+   "loadTags": [
+    "AXIAL",
+    "ELB_EXT",
+    "GRIP",
+    "HAM_STRETCH",
+    "IAP",
+    "KNEE_LOAD",
+    "LUM_HINGE",
+    "NECK_COMP",
+    "OVERHEAD",
+    "SH_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1068,
+   "name": "Squat snatch",
+   "key": "Quads, hams, adductors > Hams - hinge",
+   "loadTags": [
+    "ANK_DORSI",
+    "AXIAL",
+    "ELB_EXT",
+    "GRIP",
+    "HAM_STRETCH",
+    "HIP_DEEPFLEX",
+    "IAP",
+    "KNEE_DEEP",
+    "KNEE_LOAD",
+    "LUM_HINGE",
+    "NECK_COMP",
+    "OVERHEAD",
+    "SH_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1069,
+   "name": "Hang power snatch",
+   "key": "Quads, hams, adductors > Hams - hinge",
+   "loadTags": [
+    "AXIAL",
+    "ELB_EXT",
+    "GRIP",
+    "HAM_STRETCH",
+    "IAP",
+    "KNEE_LOAD",
+    "LUM_HINGE",
+    "NECK_COMP",
+    "OVERHEAD",
+    "SH_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1070,
+   "name": "Snatch balance",
+   "key": "Quads, hams, adductors > Quads - knee-dominant",
+   "loadTags": [
+    "ANK_DORSI",
+    "ELB_EXT",
+    "HIP_DEEPFLEX",
+    "IAP",
+    "KNEE_DEEP",
+    "KNEE_LOAD",
+    "NECK_COMP",
+    "OVERHEAD",
+    "SH_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1071,
+   "name": "Overhead squat",
+   "key": "Quads, hams, adductors > Quads - knee-dominant",
+   "loadTags": [
+    "ANK_DORSI",
+    "ELB_EXT",
+    "HIP_DEEPFLEX",
+    "IAP",
+    "KNEE_DEEP",
+    "KNEE_LOAD",
+    "NECK_COMP",
+    "OVERHEAD",
+    "SH_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1072,
+   "name": "Snatch-grip deadlift",
+   "key": "Quads, hams, adductors > Hams - hinge",
+   "loadTags": [
+    "AXIAL",
+    "GRIP",
+    "HAM_STRETCH",
+    "IAP",
+    "LUM_HINGE"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1073,
+   "name": "Snatch high pull",
+   "key": "Traps > Upper (shrugs, carries)",
+   "loadTags": [
+    "AXIAL",
+    "GRIP",
+    "HAM_STRETCH",
+    "IAP",
+    "KNEE_LOAD",
+    "LUM_HINGE"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1074,
+   "name": "Muscle clean",
+   "key": "Traps > Upper (shrugs, carries)",
+   "loadTags": [
+    "AXIAL",
+    "GRIP",
+    "HAM_STRETCH",
+    "IAP",
+    "KNEE_LOAD",
+    "LUM_HINGE",
+    "NECK_COMP",
+    "WR_WB"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1075,
+   "name": "Power clean",
+   "key": "Quads, hams, adductors > Hams - hinge",
+   "loadTags": [
+    "AXIAL",
+    "GRIP",
+    "HAM_STRETCH",
+    "IAP",
+    "KNEE_LOAD",
+    "LUM_HINGE",
+    "NECK_COMP",
+    "WR_WB"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1076,
+   "name": "Squat clean",
+   "key": "Quads, hams, adductors > Hams - hinge",
+   "loadTags": [
+    "ANK_DORSI",
+    "AXIAL",
+    "GRIP",
+    "HAM_STRETCH",
+    "HIP_DEEPFLEX",
+    "IAP",
+    "KNEE_DEEP",
+    "KNEE_LOAD",
+    "LUM_HINGE",
+    "NECK_COMP",
+    "WR_WB"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1077,
+   "name": "Hang power clean",
+   "key": "Quads, hams, adductors > Hams - hinge",
+   "loadTags": [
+    "AXIAL",
+    "GRIP",
+    "HAM_STRETCH",
+    "IAP",
+    "KNEE_LOAD",
+    "LUM_HINGE",
+    "NECK_COMP",
+    "WR_WB"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1078,
+   "name": "Clean pull",
+   "key": "Quads, hams, adductors > Hams - hinge",
+   "loadTags": [
+    "AXIAL",
+    "GRIP",
+    "HAM_STRETCH",
+    "IAP",
+    "LUM_HINGE"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1079,
+   "name": "Push jerk",
+   "key": "Delts > Front",
+   "loadTags": [
+    "AXIAL",
+    "ELB_EXT",
+    "IAP",
+    "KNEE_LOAD",
+    "NECK_COMP",
+    "OVERHEAD",
+    "SH_LOAD",
+    "WR_WB"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1080,
+   "name": "Split jerk",
+   "key": "Delts > Front",
+   "loadTags": [
+    "AXIAL",
+    "ELB_EXT",
+    "HIP_DEEPFLEX",
+    "IAP",
+    "KNEE_LOAD",
+    "NECK_COMP",
+    "OVERHEAD",
+    "SH_LOAD",
+    "WR_WB"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1081,
+   "name": "Clean and jerk",
+   "key": "Quads, hams, adductors > Hams - hinge",
+   "loadTags": [
+    "ANK_DORSI",
+    "AXIAL",
+    "ELB_EXT",
+    "GRIP",
+    "HAM_STRETCH",
+    "HIP_DEEPFLEX",
+    "IAP",
+    "KNEE_DEEP",
+    "KNEE_LOAD",
+    "LUM_HINGE",
+    "NECK_COMP",
+    "OVERHEAD",
+    "SH_LOAD",
+    "WR_WB"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1082,
+   "name": "Thruster",
+   "key": "Quads, hams, adductors > Quads - knee-dominant",
+   "loadTags": [
+    "AXIAL",
+    "ELB_EXT",
+    "HIP_DEEPFLEX",
+    "IAP",
+    "KNEE_LOAD",
+    "NECK_COMP",
+    "OVERHEAD",
+    "SH_LOAD",
+    "WR_WB"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1083,
+   "name": "Front rack walking lunge",
+   "key": "Glutes & hips > Max - stretch",
+   "loadTags": [
+    "AXIAL",
+    "HIP_DEEPFLEX",
+    "IAP",
+    "KNEE_LOAD",
+    "NECK_COMP",
+    "WR_WB"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1084,
+   "name": "Overhead walking lunge",
+   "key": "Glutes & hips > Max - stretch",
+   "loadTags": [
+    "ELB_EXT",
+    "HIP_DEEPFLEX",
+    "IAP",
+    "KNEE_LOAD",
+    "NECK_COMP",
+    "OVERHEAD",
+    "SH_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1085,
+   "name": "Kipping pull-up",
+   "key": "Lats > Vertical pull",
+   "loadTags": [
+    "ELB_FLEX",
+    "GRIP",
+    "LUM_EXT",
+    "NECK_COMP",
+    "OVERHEAD",
+    "SH_IMPINGE",
+    "SH_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1086,
+   "name": "Butterfly pull-up",
+   "key": "Lats > Vertical pull",
+   "loadTags": [
+    "ELB_FLEX",
+    "GRIP",
+    "LUM_EXT",
+    "NECK_COMP",
+    "OVERHEAD",
+    "SH_IMPINGE",
+    "SH_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1087,
+   "name": "Chest-to-bar pull-up",
+   "key": "Lats > Vertical pull",
+   "loadTags": [
+    "ELB_FLEX",
+    "GRIP",
+    "NECK_COMP",
+    "OVERHEAD",
+    "SH_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1088,
+   "name": "Knees-to-elbow",
+   "key": "Abs & core > Flexion (upper/lower)",
+   "loadTags": [
+    "ELB_FLEX",
+    "GRIP",
+    "HF_LOAD",
+    "LUM_FLEX",
+    "NECK_COMP",
+    "OVERHEAD",
+    "SH_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1089,
+   "name": "Strict handstand push-up",
+   "key": "Delts > Front",
+   "loadTags": [
+    "ELB_EXT",
+    "ELB_WB",
+    "NECK_COMP",
+    "OVERHEAD",
+    "SH_LOAD",
+    "WR_WB"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1090,
+   "name": "Kipping handstand push-up",
+   "key": "Delts > Front",
+   "loadTags": [
+    "ELB_EXT",
+    "ELB_WB",
+    "IMPACT",
+    "LUM_EXT",
+    "NECK_COMP",
+    "OVERHEAD",
+    "SH_LOAD",
+    "WR_WB"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1091,
+   "name": "Wall walk",
+   "key": "Delts > Front",
+   "loadTags": [
+    "ELB_WB",
+    "NECK_COMP",
+    "OVERHEAD",
+    "SH_LOAD",
+    "WR_WB"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1092,
+   "name": "Handstand walk",
+   "key": "Delts > Front",
+   "loadTags": [
+    "ELB_WB",
+    "NECK_COMP",
+    "OVERHEAD",
+    "SH_LOAD",
+    "WR_WB"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1093,
+   "name": "Rope climb",
+   "key": "Lats > Vertical pull",
+   "loadTags": [
+    "ELB_FLEX",
+    "GRIP",
+    "NECK_COMP",
+    "OVERHEAD",
+    "SH_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1094,
+   "name": "Legless rope climb",
+   "key": "Lats > Vertical pull",
+   "loadTags": [
+    "ELB_FLEX",
+    "GRIP",
+    "NECK_COMP",
+    "OVERHEAD",
+    "SH_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1095,
+   "name": "GHD sit-up",
+   "key": "Abs & core > Flexion (upper/lower)",
+   "loadTags": [
+    "HF_LOAD",
+    "IAP",
+    "LUM_EXT",
+    "LUM_FLEX"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1096,
+   "name": "Pull-over to bar",
+   "key": "Abs & core > Flexion (upper/lower)",
+   "loadTags": [
+    "ELB_FLEX",
+    "GRIP",
+    "HF_LOAD",
+    "LUM_FLEX",
+    "NECK_COMP",
+    "OVERHEAD",
+    "SH_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1097,
+   "name": "Burpee",
+   "key": "Chest > Mid",
+   "loadTags": [
+    "ELB_EXT",
+    "ELB_WB",
+    "IMPACT",
+    "KNEE_LOAD",
+    "SH_LOAD",
+    "WR_WB"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1098,
+   "name": "Bar-facing burpee",
+   "key": "Chest > Mid",
+   "loadTags": [
+    "ELB_EXT",
+    "ELB_WB",
+    "IMPACT",
+    "KNEE_LOAD",
+    "SH_LOAD",
+    "WR_WB"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1099,
+   "name": "Burpee box jump-over",
+   "key": "Quads, hams, adductors > Quads - knee-dominant",
+   "loadTags": [
+    "ANK_PLANTAR",
+    "ELB_EXT",
+    "ELB_WB",
+    "IMPACT",
+    "KNEE_LOAD",
+    "SH_LOAD",
+    "WR_WB"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1100,
+   "name": "Box jump",
+   "key": "Quads, hams, adductors > Quads - knee-dominant",
+   "loadTags": [
+    "ANK_PLANTAR",
+    "IMPACT",
+    "KNEE_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1101,
+   "name": "Box jump-over",
+   "key": "Quads, hams, adductors > Quads - knee-dominant",
+   "loadTags": [
+    "ANK_PLANTAR",
+    "IMPACT",
+    "KNEE_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1102,
+   "name": "Wall ball shot",
+   "key": "Quads, hams, adductors > Quads - knee-dominant",
+   "loadTags": [
+    "HIP_DEEPFLEX",
+    "KNEE_LOAD",
+    "OVERHEAD",
+    "SH_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1103,
+   "name": "Double-under",
+   "key": "Calves & ankle > Gastroc",
+   "loadTags": [
+    "ANK_PLANTAR",
+    "IMPACT"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1104,
+   "name": "Dumbbell snatch",
+   "key": "Quads, hams, adductors > Hams - hinge",
+   "loadTags": [
+    "GRIP",
+    "IAP",
+    "LUM_HINGE",
+    "OVERHEAD",
+    "SH_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1105,
+   "name": "Devil press",
+   "key": "Quads, hams, adductors > Hams - hinge",
+   "loadTags": [
+    "ELB_EXT",
+    "ELB_WB",
+    "GRIP",
+    "IAP",
+    "LUM_HINGE",
+    "OVERHEAD",
+    "SH_LOAD",
+    "WR_WB"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1106,
+   "name": "Dumbbell thruster",
+   "key": "Quads, hams, adductors > Quads - knee-dominant",
+   "loadTags": [
+    "AXIAL",
+    "ELB_EXT",
+    "HIP_DEEPFLEX",
+    "IAP",
+    "KNEE_LOAD",
+    "NECK_COMP",
+    "OVERHEAD",
+    "SH_LOAD",
+    "WR_WB"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1107,
+   "name": "American kettlebell swing",
+   "key": "Glutes & hips > Max - hip extension",
+   "loadTags": [
+    "GRIP",
+    "IAP",
+    "IMPACT",
+    "LUM_HINGE",
+    "OVERHEAD",
+    "SH_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1108,
+   "name": "Sandbag clean",
+   "key": "Quads, hams, adductors > Hams - hinge",
+   "loadTags": [
+    "AXIAL",
+    "GRIP",
+    "HAM_STRETCH",
+    "IAP",
+    "KNEE_LOAD",
+    "LUM_FLEX",
+    "LUM_HINGE",
+    "NECK_COMP",
+    "WR_WB"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1109,
+   "name": "Sandbag over shoulder",
+   "key": "Quads, hams, adductors > Hams - hinge",
+   "loadTags": [
+    "GRIP",
+    "IAP",
+    "KNEE_LOAD",
+    "LUM_FLEX",
+    "LUM_HINGE"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1110,
+   "name": "Ball slam",
+   "key": "Abs & core > Flexion (upper/lower)",
+   "loadTags": [
+    "IAP",
+    "LUM_FLEX",
+    "OVERHEAD",
+    "SH_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1111,
+   "name": "D-ball over shoulder",
+   "key": "Quads, hams, adductors > Hams - hinge",
+   "loadTags": [
+    "GRIP",
+    "IAP",
+    "KNEE_LOAD",
+    "LUM_FLEX",
+    "LUM_HINGE"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1112,
+   "name": "Sled push",
+   "key": "Quads, hams, adductors > Quads - knee-dominant",
+   "loadTags": [
+    "ANK_DORSI",
+    "IAP",
+    "KNEE_LOAD",
+    "SH_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1113,
+   "name": "Sled drag",
+   "key": "Quads, hams, adductors > Hams - hinge",
+   "loadTags": [
+    "GRIP",
+    "KNEE_LOAD",
+    "LUM_HINGE"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1114,
+   "name": "Air bike",
+   "key": "Quads, hams, adductors > Quads - knee-dominant",
+   "loadTags": [
+    "KNEE_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1115,
+   "name": "Rowing machine",
+   "key": "Lats > Horizontal pull",
+   "loadTags": [
+    "GRIP",
+    "KNEE_LOAD",
+    "LUM_FLEX"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1116,
+   "name": "Ski erg",
+   "key": "Lats > Stretch",
+   "loadTags": [
+    "LUM_FLEX",
+    "OVERHEAD",
+    "SH_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1117,
+   "name": "Shuttle run",
+   "key": "Quads, hams, adductors > Quads - knee-dominant",
+   "loadTags": [
+    "ANK_PLANTAR",
+    "IMPACT"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1118,
+   "name": "Lateral breathing drill",
+   "key": "Abs & core > Anti-extension",
+   "loadTags": [],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1119,
+   "name": "Pelvic curl",
+   "key": "Glutes & hips > Max - hip extension",
+   "loadTags": [],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1120,
+   "name": "Chest lift",
+   "key": "Abs & core > Flexion (upper/lower)",
+   "loadTags": [
+    "LUM_FLEX",
+    "NECK_DIR"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1121,
+   "name": "Chest lift with rotation",
+   "key": "Abs & core > Obliques & anti-rotation",
+   "loadTags": [
+    "LUM_FLEX",
+    "NECK_DIR",
+    "TRUNK_ROT"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1122,
+   "name": "Supine spine twist",
+   "key": "Abs & core > Obliques & anti-rotation",
+   "loadTags": [
+    "TRUNK_ROT"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1123,
+   "name": "Standing roll down",
+   "key": "Lower back > Erectors",
+   "loadTags": [
+    "LUM_FLEX"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1124,
+   "name": "Rest position",
+   "key": "Lower back > Erectors",
+   "loadTags": [],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1125,
+   "name": "The Hundred",
+   "key": "Abs & core > Flexion (upper/lower)",
+   "loadTags": [
+    "HF_LOAD",
+    "LUM_FLEX",
+    "NECK_DIR"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1126,
+   "name": "Roll up",
+   "key": "Abs & core > Flexion (upper/lower)",
+   "loadTags": [
+    "LUM_FLEX"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1127,
+   "name": "Roll over",
+   "key": "Abs & core > Flexion (upper/lower)",
+   "loadTags": [
+    "HF_LOAD",
+    "LUM_FLEX",
+    "NECK_COMP",
+    "NECK_DIR"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1128,
+   "name": "Single leg circles",
+   "key": "Glutes & hips > Hip flexors",
+   "loadTags": [
+    "HF_LOAD"
+   ],
+   "unilateral": true,
+   "corrective": false
+  },
+  {
+   "id": 1129,
+   "name": "Rolling like a ball",
+   "key": "Abs & core > Flexion (upper/lower)",
+   "loadTags": [
+    "LUM_FLEX"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1130,
+   "name": "Single leg stretch",
+   "key": "Abs & core > Flexion (upper/lower)",
+   "loadTags": [
+    "LUM_FLEX",
+    "NECK_DIR"
+   ],
+   "unilateral": true,
+   "corrective": false
+  },
+  {
+   "id": 1131,
+   "name": "Double leg stretch",
+   "key": "Abs & core > Flexion (upper/lower)",
+   "loadTags": [
+    "HF_LOAD",
+    "LUM_FLEX",
+    "NECK_DIR"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1132,
+   "name": "Single straight leg stretch",
+   "key": "Abs & core > Flexion (upper/lower)",
+   "loadTags": [
+    "HF_LOAD",
+    "LUM_FLEX",
+    "NECK_DIR"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1133,
+   "name": "Double straight leg stretch",
+   "key": "Abs & core > Flexion (upper/lower)",
+   "loadTags": [
+    "HF_LOAD",
+    "LUM_FLEX",
+    "NECK_DIR"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1134,
+   "name": "Criss-cross",
+   "key": "Abs & core > Obliques & anti-rotation",
+   "loadTags": [
+    "LUM_FLEX",
+    "NECK_DIR",
+    "TRUNK_ROT"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1135,
+   "name": "Spine stretch forward",
+   "key": "Lower back > Erectors",
+   "loadTags": [
+    "HAM_STRETCH",
+    "LUM_FLEX"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1136,
+   "name": "Open leg rocker",
+   "key": "Abs & core > Flexion (upper/lower)",
+   "loadTags": [
+    "LUM_FLEX"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1137,
+   "name": "Corkscrew",
+   "key": "Abs & core > Obliques & anti-rotation",
+   "loadTags": [
+    "HF_LOAD",
+    "LUM_FLEX",
+    "NECK_COMP",
+    "NECK_DIR",
+    "TRUNK_ROT"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1138,
+   "name": "Saw",
+   "key": "Abs & core > Obliques & anti-rotation",
+   "loadTags": [
+    "LUM_FLEX",
+    "TRUNK_ROT"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1139,
+   "name": "Swan",
+   "key": "Lower back > Erectors",
+   "loadTags": [
+    "ELB_EXT",
+    "LUM_EXT",
+    "WR_WB"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1140,
+   "name": "Swan dive",
+   "key": "Lower back > Erectors",
+   "loadTags": [
+    "LUM_EXT"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1141,
+   "name": "Single leg kick",
+   "key": "Quads, hams, adductors > Hams - curl",
+   "loadTags": [
+    "LUM_EXT"
+   ],
+   "unilateral": true,
+   "corrective": false
+  },
+  {
+   "id": 1142,
+   "name": "Double leg kick",
+   "key": "Quads, hams, adductors > Hams - curl",
+   "loadTags": [
+    "LUM_EXT",
+    "PEC_STRETCH"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1143,
+   "name": "Neck pull",
+   "key": "Abs & core > Flexion (upper/lower)",
+   "loadTags": [
+    "LUM_FLEX",
+    "NECK_DIR"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1144,
+   "name": "Scissors",
+   "key": "Abs & core > Anti-extension",
+   "loadTags": [
+    "HF_LOAD",
+    "LUM_FLEX",
+    "NECK_COMP"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1145,
+   "name": "Bicycle",
+   "key": "Abs & core > Anti-extension",
+   "loadTags": [
+    "HF_LOAD",
+    "LUM_FLEX",
+    "NECK_COMP"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1146,
+   "name": "Shoulder bridge",
+   "key": "Glutes & hips > Max - hip extension",
+   "loadTags": [
+    "LUM_EXT",
+    "NECK_COMP"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1147,
+   "name": "Spine twist",
+   "key": "Abs & core > Obliques & anti-rotation",
+   "loadTags": [
+    "TRUNK_ROT"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1148,
+   "name": "Jack knife",
+   "key": "Abs & core > Flexion (upper/lower)",
+   "loadTags": [
+    "HF_LOAD",
+    "LUM_FLEX",
+    "NECK_COMP",
+    "NECK_DIR"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1149,
+   "name": "Side kick front and back",
+   "key": "Glutes & hips > Abduction (med-min)",
+   "loadTags": [
+    "HIP_ABD"
+   ],
+   "unilateral": true,
+   "corrective": false
+  },
+  {
+   "id": 1150,
+   "name": "Side kick small circles",
+   "key": "Glutes & hips > Abduction (med-min)",
+   "loadTags": [
+    "HIP_ABD"
+   ],
+   "unilateral": true,
+   "corrective": false
+  },
+  {
+   "id": 1151,
+   "name": "Side kick bicycle",
+   "key": "Glutes & hips > Abduction (med-min)",
+   "loadTags": [
+    "HIP_ABD"
+   ],
+   "unilateral": true,
+   "corrective": false
+  },
+  {
+   "id": 1152,
+   "name": "Teaser",
+   "key": "Abs & core > Flexion (upper/lower)",
+   "loadTags": [
+    "HF_LOAD",
+    "LUM_FLEX",
+    "NECK_DIR"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1153,
+   "name": "Hip circles",
+   "key": "Abs & core > Obliques & anti-rotation",
+   "loadTags": [
+    "HF_LOAD",
+    "LUM_FLEX",
+    "TRUNK_ROT",
+    "WR_WB"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1154,
+   "name": "Swimming",
+   "key": "Lower back > Erectors",
+   "loadTags": [
+    "LUM_EXT"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1155,
+   "name": "Leg pull front",
+   "key": "Abs & core > Anti-extension",
+   "loadTags": [
+    "ELB_WB",
+    "SH_LOAD",
+    "WR_WB"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1156,
+   "name": "Leg pull back",
+   "key": "Glutes & hips > Max - hip extension",
+   "loadTags": [
+    "ELB_WB",
+    "PEC_STRETCH",
+    "SH_LOAD",
+    "WR_WB"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1157,
+   "name": "Kneeling side kick",
+   "key": "Glutes & hips > Abduction (med-min)",
+   "loadTags": [
+    "ELB_WB",
+    "HIP_ABD",
+    "KNEE_LOAD",
+    "SH_LOAD",
+    "WR_WB"
+   ],
+   "unilateral": true,
+   "corrective": false
+  },
+  {
+   "id": 1158,
+   "name": "Mermaid side bend",
+   "key": "Abs & core > Anti-lateral flexion",
+   "loadTags": [
+    "ELB_WB",
+    "SH_LOAD",
+    "WR_WB"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1159,
+   "name": "Seal",
+   "key": "Abs & core > Flexion (upper/lower)",
+   "loadTags": [
+    "LUM_FLEX"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1160,
+   "name": "Boomerang",
+   "key": "Abs & core > Flexion (upper/lower)",
+   "loadTags": [
+    "HF_LOAD",
+    "LUM_FLEX",
+    "NECK_COMP",
+    "NECK_DIR"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1161,
+   "name": "Control balance",
+   "key": "Abs & core > Flexion (upper/lower)",
+   "loadTags": [
+    "HF_LOAD",
+    "LUM_FLEX",
+    "NECK_COMP",
+    "NECK_DIR"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1162,
+   "name": "Pilates push-up",
+   "key": "Chest > Mid",
+   "loadTags": [
+    "ELB_EXT",
+    "ELB_WB",
+    "SH_LOAD",
+    "WR_WB"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1163,
+   "name": "Footwork: toes",
+   "key": "Quads, hams, adductors > Quads - knee-dominant",
+   "loadTags": [
+    "ANK_PLANTAR",
+    "KNEE_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1164,
+   "name": "Footwork: arches",
+   "key": "Quads, hams, adductors > Quads - knee-dominant",
+   "loadTags": [
+    "KNEE_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1165,
+   "name": "Footwork: heels",
+   "key": "Quads, hams, adductors > Quads - knee-dominant",
+   "loadTags": [
+    "KNEE_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1166,
+   "name": "Footwork: tendon stretch",
+   "key": "Calves & ankle > Gastroc",
+   "loadTags": [
+    "ANK_PLANTAR",
+    "KNEE_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1167,
+   "name": "Hundred on the reformer",
+   "key": "Abs & core > Flexion (upper/lower)",
+   "loadTags": [
+    "HF_LOAD",
+    "LUM_FLEX",
+    "NECK_DIR"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1168,
+   "name": "Coordination",
+   "key": "Abs & core > Flexion (upper/lower)",
+   "loadTags": [
+    "HF_LOAD",
+    "LUM_FLEX",
+    "NECK_DIR"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1169,
+   "name": "Short spine massage",
+   "key": "Abs & core > Flexion (upper/lower)",
+   "loadTags": [
+    "HF_LOAD",
+    "LUM_FLEX",
+    "NECK_COMP",
+    "NECK_DIR"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1170,
+   "name": "Long spine massage",
+   "key": "Glutes & hips > Max - hip extension",
+   "loadTags": [
+    "HF_LOAD",
+    "LUM_FLEX",
+    "NECK_COMP",
+    "NECK_DIR"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1171,
+   "name": "Rowing: into the sternum",
+   "key": "Lats > Horizontal pull",
+   "loadTags": [
+    "ELB_FLEX",
+    "SH_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1172,
+   "name": "Rowing: 90 degrees",
+   "key": "Upper back > Retraction (rhomboids, mid traps)",
+   "loadTags": [
+    "ELB_FLEX",
+    "SH_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1173,
+   "name": "Rowing: from the chest",
+   "key": "Upper back > Retraction (rhomboids, mid traps)",
+   "loadTags": [
+    "LUM_FLEX",
+    "OVERHEAD",
+    "SH_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1174,
+   "name": "Rowing: from the hip",
+   "key": "Upper back > Retraction (rhomboids, mid traps)",
+   "loadTags": [
+    "LUM_FLEX",
+    "OVERHEAD",
+    "SH_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1175,
+   "name": "Shave",
+   "key": "Triceps > Long head (overhead)",
+   "loadTags": [
+    "ELB_EXT",
+    "OVERHEAD",
+    "SH_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1176,
+   "name": "Hug a tree",
+   "key": "Chest > Mid",
+   "loadTags": [
+    "PEC_STRETCH",
+    "SH_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1177,
+   "name": "Pulling straps",
+   "key": "Upper back > Retraction (rhomboids, mid traps)",
+   "loadTags": [
+    "LUM_EXT",
+    "SH_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1178,
+   "name": "T-pull",
+   "key": "Upper back > Retraction (rhomboids, mid traps)",
+   "loadTags": [
+    "LUM_EXT",
+    "SH_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1179,
+   "name": "Backstroke",
+   "key": "Abs & core > Flexion (upper/lower)",
+   "loadTags": [
+    "HF_LOAD",
+    "LUM_FLEX",
+    "NECK_DIR"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1180,
+   "name": "Teaser on the box",
+   "key": "Abs & core > Flexion (upper/lower)",
+   "loadTags": [
+    "HF_LOAD",
+    "LUM_FLEX",
+    "NECK_DIR"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1181,
+   "name": "Swan on the long box",
+   "key": "Lower back > Erectors",
+   "loadTags": [
+    "LUM_EXT"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1182,
+   "name": "Breaststroke",
+   "key": "Lower back > Erectors",
+   "loadTags": [
+    "LUM_EXT"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1183,
+   "name": "Short box: round back",
+   "key": "Abs & core > Flexion (upper/lower)",
+   "loadTags": [
+    "LUM_FLEX"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1184,
+   "name": "Short box: flat back",
+   "key": "Lower back > Erectors",
+   "loadTags": [
+    "LUM_EXT"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1185,
+   "name": "Short box: side to side",
+   "key": "Abs & core > Anti-lateral flexion",
+   "loadTags": [
+    "LUM_FLEX"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1186,
+   "name": "Short box: twist",
+   "key": "Abs & core > Obliques & anti-rotation",
+   "loadTags": [
+    "TRUNK_ROT"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1187,
+   "name": "Short box: tree",
+   "key": "Quads, hams, adductors > Hams - hinge",
+   "loadTags": [
+    "HAM_STRETCH"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1188,
+   "name": "Stomach massage: round",
+   "key": "Quads, hams, adductors > Quads - knee-dominant",
+   "loadTags": [
+    "KNEE_LOAD",
+    "LUM_FLEX"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1189,
+   "name": "Stomach massage: flat",
+   "key": "Quads, hams, adductors > Quads - knee-dominant",
+   "loadTags": [
+    "KNEE_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1190,
+   "name": "Stomach massage: reach",
+   "key": "Quads, hams, adductors > Quads - knee-dominant",
+   "loadTags": [
+    "KNEE_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1191,
+   "name": "Stomach massage: twist",
+   "key": "Abs & core > Obliques & anti-rotation",
+   "loadTags": [
+    "KNEE_LOAD",
+    "TRUNK_ROT"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1192,
+   "name": "Long stretch",
+   "key": "Abs & core > Anti-extension",
+   "loadTags": [
+    "ELB_WB",
+    "SH_LOAD",
+    "WR_WB"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1193,
+   "name": "Down stretch",
+   "key": "Lower back > Erectors",
+   "loadTags": [
+    "ELB_WB",
+    "LUM_EXT",
+    "SH_LOAD",
+    "WR_WB"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1194,
+   "name": "Up stretch",
+   "key": "Abs & core > Anti-extension",
+   "loadTags": [
+    "ELB_WB",
+    "IAP",
+    "SH_LOAD",
+    "WR_WB"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1195,
+   "name": "Elephant",
+   "key": "Quads, hams, adductors > Hams - hinge",
+   "loadTags": [
+    "ELB_WB",
+    "HAM_STRETCH",
+    "LUM_FLEX",
+    "SH_LOAD",
+    "WR_WB"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1196,
+   "name": "Arabesque",
+   "key": "Glutes & hips > Max - hip extension",
+   "loadTags": [
+    "ELB_WB",
+    "IAP",
+    "SH_LOAD",
+    "WR_WB"
+   ],
+   "unilateral": true,
+   "corrective": false
+  },
+  {
+   "id": 1197,
+   "name": "Knee stretch: round",
+   "key": "Abs & core > Flexion (upper/lower)",
+   "loadTags": [
+    "ELB_WB",
+    "KNEE_LOAD",
+    "LUM_FLEX",
+    "SH_LOAD",
+    "WR_WB"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1198,
+   "name": "Knee stretch: flat",
+   "key": "Lower back > Erectors",
+   "loadTags": [
+    "ELB_WB",
+    "KNEE_LOAD",
+    "SH_LOAD",
+    "WR_WB"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1199,
+   "name": "Knee stretch: knees off",
+   "key": "Abs & core > Anti-extension",
+   "loadTags": [
+    "ELB_WB",
+    "KNEE_LOAD",
+    "SH_LOAD",
+    "WR_WB"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1200,
+   "name": "Running on the reformer",
+   "key": "Calves & ankle > Gastroc",
+   "loadTags": [
+    "ANK_PLANTAR",
+    "KNEE_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1201,
+   "name": "Pelvic lift on the reformer",
+   "key": "Glutes & hips > Max - hip extension",
+   "loadTags": [
+    "LUM_EXT",
+    "NECK_COMP"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1202,
+   "name": "Side splits",
+   "key": "Quads, hams, adductors > Adductors - short (adduction)",
+   "loadTags": [
+    "ADD_STRETCH",
+    "KNEE_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1203,
+   "name": "Front splits",
+   "key": "Glutes & hips > Hip flexors",
+   "loadTags": [
+    "HAM_STRETCH",
+    "HIP_DEEPFLEX"
+   ],
+   "unilateral": true,
+   "corrective": false
+  },
+  {
+   "id": 1204,
+   "name": "Semi-circle",
+   "key": "Glutes & hips > Max - hip extension",
+   "loadTags": [
+    "LUM_EXT",
+    "NECK_COMP",
+    "NECK_DIR"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1205,
+   "name": "Mermaid on the reformer",
+   "key": "Abs & core > Anti-lateral flexion",
+   "loadTags": [],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1206,
+   "name": "Leg circles in straps",
+   "key": "Glutes & hips > External rotators",
+   "loadTags": [
+    "HF_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1207,
+   "name": "Frog in straps",
+   "key": "Quads, hams, adductors > Adductors - short (adduction)",
+   "loadTags": [
+    "ADD_STRETCH"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1208,
+   "name": "Openings in straps",
+   "key": "Quads, hams, adductors > Adductors - short (adduction)",
+   "loadTags": [
+    "ADD_STRETCH",
+    "HIP_ABD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1209,
+   "name": "Supine arm series",
+   "key": "Chest > Mid",
+   "loadTags": [
+    "SH_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1210,
+   "name": "Kneeling arm series",
+   "key": "Upper back > Retraction (rhomboids, mid traps)",
+   "loadTags": [
+    "KNEE_LOAD",
+    "OVERHEAD",
+    "SH_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1211,
+   "name": "Jumpboard",
+   "key": "Quads, hams, adductors > Quads - knee-dominant",
+   "loadTags": [
+    "ANK_PLANTAR",
+    "IMPACT",
+    "KNEE_LOAD"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1212,
+   "name": "Snake and twist",
+   "key": "Abs & core > Obliques & anti-rotation",
+   "loadTags": [
+    "ELB_WB",
+    "IAP",
+    "SH_LOAD",
+    "TRUNK_ROT",
+    "WR_WB"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1213,
+   "name": "Control front",
+   "key": "Abs & core > Anti-extension",
+   "loadTags": [
+    "ELB_WB",
+    "IAP",
+    "SH_LOAD",
+    "WR_WB"
+   ],
+   "unilateral": false,
+   "corrective": false
+  },
+  {
+   "id": 1214,
+   "name": "Star",
+   "key": "Abs & core > Anti-lateral flexion",
+   "loadTags": [
+    "ELB_WB",
+    "HIP_ABD",
+    "IAP",
+    "SH_LOAD",
+    "WR_WB"
+   ],
+   "unilateral": false,
+   "corrective": false
+  }
+ ]
+}

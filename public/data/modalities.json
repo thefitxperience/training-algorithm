@@ -1,0 +1,1001 @@
+{
+  "note": "Training styles beyond the gym (source/UDRA-new-modality-exercises_1.xlsx, imported by scripts/importModalities.ts). This file is the app's own: how each style builds a session, which styles combine and how, and the defaults a coach can tune. Gym-only programs are untouched by it.",
+  "modalities": {
+    "Gym": {
+      "template": "strength",
+      "label": "Gym",
+      "why": "The generator as it is: sub-region volume, the one-hour rules, every assessment layer."
+    },
+    "Calisthenics": {
+      "template": "strength",
+      "label": "Calisthenics",
+      "ladders": true,
+      "why": "The same volume model on the calisthenics pool, with a rung per progression ladder per client and the skill work first."
+    },
+    "CrossFit": {
+      "template": "crossfit",
+      "label": "CrossFit",
+      "why": "A strength part (the generator, on the CrossFit pool, no metcon moves) and a metcon to finish, which the hour is fitted around."
+    },
+    "Mat Pilates": {
+      "template": "pilates",
+      "apparatus": [
+        "mat"
+      ],
+      "label": "Mat Pilates",
+      "why": "Not sets and rest: an ordered flow in the classical order, a few reps of each, timed to the hour."
+    },
+    "Reformer Pilates": {
+      "template": "pilates",
+      "apparatus": [
+        "reformer"
+      ],
+      "label": "Reformer Pilates",
+      "why": "The reformer's classical order by section, springs by section, reps per move, timed to the hour."
+    }
+  },
+  "levelRule": {
+    "why": "The sheet's rule 1 for its own exercises: skill 1-2 opens at Beginner, 3 at Intermediate, 4-5 at Advanced. Stricter than the gym library's (Intermediate there reaches skill 4), because these are skills, not loads: a level must own them.",
+    "maxSkill": {
+      "Beginner": 2,
+      "Intermediate": 3,
+      "Advanced": 5
+    }
+  },
+  "strengthExcludeTags": [
+    "Metcon",
+    "Conditioning",
+    "Plyometric"
+  ],
+  "strengthExcludeWhy": "Metcon and engine moves (burpees, wall balls, the rower, box jumps) are never a strength slot in any style: they belong to the metcon or the conditioning.",
+  "bodyweightStrengthReps": "5-8",
+  "bodyweightStrengthWhy": "Get Stronger on an unloaded exercise is not 3-5 reps: strength there comes from the harder rung, so the reps sit at 5-8.",
+  "bodyweightTokens": [
+    "BW",
+    "BW + ball",
+    "Bd",
+    "Bd-assisted",
+    "bar",
+    "box",
+    "p-bars",
+    "parallettes",
+    "rings",
+    "wall"
+  ],
+  "needs": {
+    "CrossFit": {
+      "equipment": "Full gym",
+      "why": "CrossFit needs barbells, a rig, boxes and an engine (rower, bike, ski): with home or bodyweight equipment its strength days come out empty and its metcons have nothing to use."
+    },
+    "Reformer Pilates": {
+      "equipment": "Full gym",
+      "why": "A reformer is studio equipment: set the equipment to the full gym or studio."
+    }
+  },
+  "gymTakesNewRows": false,
+  "gymTakesNewRowsWhy": "The sheet ticks Gym on some new exercises (box jump, power clean, wall push-up…). Gym-only programs are live, so they keep the 327-exercise library until this is switched on deliberately; a hybrid with another style already reaches those rows through that style.",
+  "combine": {
+    "maxStyles": 3,
+    "pairs": [
+      {
+        "styles": [
+          "Gym",
+          "Calisthenics"
+        ],
+        "how": "session",
+        "why": "One muscle model: the pools merge, the calisthenics skills come first while the client is fresh, the gym lifts after."
+      },
+      {
+        "styles": [
+          "Gym",
+          "CrossFit"
+        ],
+        "how": "session",
+        "why": "The CrossFit metcon replaces the gym's conditioning at the end; an Olympic lift counts as the day's heavy hinge."
+      },
+      {
+        "styles": [
+          "Calisthenics",
+          "CrossFit"
+        ],
+        "how": "session",
+        "why": "They share the gymnastics (pull-ups, handstands, muscle-ups); the ladders still apply, the metcon finishes."
+      },
+      {
+        "styles": [
+          "Mat Pilates",
+          "Reformer Pilates"
+        ],
+        "how": "session",
+        "why": "One method on two kinds of equipment: a reformer session with the mat work where it belongs in the order."
+      },
+      {
+        "styles": [
+          "Gym",
+          "Mat Pilates"
+        ],
+        "how": "days",
+        "why": "Pilates is a different kind of session, so it gets its own days: never mixed into supersets, never trimmed like a set."
+      },
+      {
+        "styles": [
+          "Gym",
+          "Reformer Pilates"
+        ],
+        "how": "days",
+        "why": "Its own days, as with mat."
+      },
+      {
+        "styles": [
+          "Calisthenics",
+          "Mat Pilates"
+        ],
+        "how": "days",
+        "why": "Its own days."
+      },
+      {
+        "styles": [
+          "Calisthenics",
+          "Reformer Pilates"
+        ],
+        "how": "days",
+        "why": "Its own days."
+      },
+      {
+        "styles": [
+          "CrossFit",
+          "Mat Pilates"
+        ],
+        "how": "days",
+        "why": "A metcon and a Pilates flow make no sense in one hour: separate days only."
+      },
+      {
+        "styles": [
+          "CrossFit",
+          "Reformer Pilates"
+        ],
+        "how": "days",
+        "why": "Separate days only."
+      }
+    ],
+    "pilatesDays": {
+      "why": "With Pilates and a strength style together, the strength style keeps the larger share of the week unless Pilates is listed first. One Pilates day at the least, one strength day at the least.",
+      "pilatesFirst": "half, rounded up",
+      "strengthFirst": "a third, rounded down, at least one"
+    }
+  },
+  "ladders": {
+    "why": "A client's rung is per ladder, never their overall level: an advanced lifter can be on rung 6 of push-ups and rung 1 of the handstand. The trainer moves a rung up when it is clean.",
+    "startByLevel": {
+      "Beginner": {
+        "maxSkill": 1,
+        "why": "The easiest rung open to a beginner."
+      },
+      "Intermediate": {
+        "maxSkill": 2,
+        "why": "The hardest rung a beginner is offered, so the first weeks are about owning it."
+      },
+      "Advanced": {
+        "maxSkill": 3,
+        "why": "The hardest intermediate rung, not the top of the ladder: nobody starts on a full planche because their level says Advanced."
+      }
+    },
+    "cleanWhen": {
+      "reps": "3 sets of 8 with full range and no swing",
+      "hold": "3 holds at the top of the hold range, body line held"
+    },
+    "skillFamilies": [
+      "Handstand",
+      "Front lever",
+      "Back lever",
+      "Planche",
+      "Human flag",
+      "L-sit",
+      "Muscle-up"
+    ],
+    "skillWhy": "Skills need a fresh nervous system: they open the session, before any strength work.",
+    "holdSeconds": {
+      "Handstand": "20-30",
+      "Front lever": "8-12",
+      "Back lever": "8-12",
+      "Planche": "8-12",
+      "Human flag": "5-10",
+      "L-sit": "15-20",
+      "default": "15-20"
+    },
+    "skillRestSeconds": 90,
+    "warmupRungsBelow": 2,
+    "warmupWhy": "The two rungs under the working ones become warm-up drills for that ladder, the sheet's 'easy rungs never disappear'.",
+    "startOverride": {
+      "why": "A beginner's vertical pull is the negative pull-up, not a dead hang (which never fills a pull slot).",
+      "Pull-up": {
+        "Beginner": 3
+      }
+    },
+    "workingRungs": 3,
+    "workingWhy": "The sheet's rule 2: the client's rung and the two under it are working sets (the client's own rung first); everything easier is a warm-up drill, never deleted; anything harder waits."
+  },
+  "crossfit": {
+    "strengthExcludeTags": [
+      "Metcon",
+      "Conditioning",
+      "Plyometric"
+    ],
+    "metcon": {
+      "why": "A metcon is three things: a format, a time domain, and moves that do not fight each other. One lower-body or hip move, one upper-body or gymnastics move, one engine move; never two grip-heavy moves; never a hinge after a heavy hinge in the strength part. Never a drill (negatives, transition drills): those are strength-part work. The upper move is never the day's strength pattern again.",
+      "minutes": {
+        "Beginner": 10,
+        "Intermediate": 12,
+        "Advanced": 15
+      },
+      "minutesLoseFat": {
+        "Beginner": 12,
+        "Intermediate": 15,
+        "Advanced": 18
+      },
+      "minutesOver50": 10,
+      "formats": [
+        "AMRAP",
+        "EMOM",
+        "For time"
+      ],
+      "formatsBeginner": [
+        "AMRAP",
+        "EMOM"
+      ],
+      "forTimeRounds": {
+        "Beginner": 3,
+        "Intermediate": 4,
+        "Advanced": 5
+      },
+      "roles": {
+        "lower": {
+          "subs": [
+            "Quads - knee-dominant",
+            "Hams - hinge",
+            "Max - hip extension",
+            "Max - stretch"
+          ],
+          "label": "legs or hips"
+        },
+        "upper": {
+          "subs": [
+            "Mid",
+            "Vertical pull",
+            "Horizontal pull",
+            "Front",
+            "Lateral-medial (lockout)",
+            "Flexion",
+            "Stretch"
+          ],
+          "label": "upper body or gymnastics"
+        },
+        "engine": {
+          "tags": [
+            "Conditioning"
+          ],
+          "names": [
+            "Double-under",
+            "Burpee",
+            "Shuttle run"
+          ],
+          "label": "engine"
+        }
+      },
+      "reps": {
+        "Beginner": {
+          "reps": 8,
+          "cal": 8,
+          "metres": 100,
+          "du": 30,
+          "sled": 20,
+          "hsw": 5
+        },
+        "Intermediate": {
+          "reps": 10,
+          "cal": 10,
+          "metres": 150,
+          "du": 40,
+          "sled": 30,
+          "hsw": 10
+        },
+        "Advanced": {
+          "reps": 12,
+          "cal": 12,
+          "metres": 200,
+          "du": 50,
+          "sled": 40,
+          "hsw": 15
+        }
+      },
+      "emomRepsFactor": 0.7,
+      "gripHeavy": {
+        "subs": [
+          "Grip & carry",
+          "Vertical pull"
+        ],
+        "alsoTrains": [
+          "Grip & carry"
+        ],
+        "names": [
+          "American kettlebell swing",
+          "Toes-to-bar",
+          "Knees-to-elbow",
+          "Rope climb"
+        ]
+      },
+      "unitByName": {
+        "Rowing machine": "cal",
+        "Air bike": "cal",
+        "Ski erg": "cal",
+        "Shuttle run": "metres",
+        "Sled push": "metres",
+        "Sled drag": "metres",
+        "Double-under": "du"
+      },
+      "minutesGetStronger": {
+        "Beginner": 8,
+        "Intermediate": 10,
+        "Advanced": 10
+      },
+      "perMove": {
+        "why": "One rep count does not fit every move: a wall walk or a muscle-up is several times a burpee. Factors scale the level's rep count; units name what is counted.",
+        "factor": {
+          "Wall walk": 0.3,
+          "Bar muscle-up": 0.4,
+          "Ring muscle-up": 0.4,
+          "Strict handstand push-up": 0.5,
+          "Kipping handstand push-up": 0.5,
+          "Wall handstand push-up": 0.5,
+          "Rope climb": 0.2,
+          "Legless rope climb": 0.2,
+          "Devil press": 0.6,
+          "Burpee box jump-over": 0.8,
+          "Toes-to-bar": 0.8,
+          "Chest-to-bar pull-up": 0.8,
+          "Push jerk": 0.6,
+          "Dumbbell snatch": 0.8,
+          "Sandbag over shoulder": 0.6,
+          "D-ball over shoulder": 0.6,
+          "Sandbag clean": 0.6
+        },
+        "unit": {
+          "Sled push": "sled",
+          "Sled drag": "sled",
+          "Handstand walk": "hsw"
+        },
+        "secondsPerRep": {
+          "default": 3,
+          "cal": 4,
+          "du": 0.6,
+          "metres": 0.25,
+          "sled": 1.2,
+          "hsw": 1.5,
+          "Wall walk": 12,
+          "Bar muscle-up": 5,
+          "Ring muscle-up": 5,
+          "Rope climb": 15,
+          "Legless rope climb": 20,
+          "Burpee": 4,
+          "Bar-facing burpee": 4,
+          "Burpee box jump-over": 6,
+          "Devil press": 5,
+          "Strict handstand push-up": 4
+        },
+        "emomMaxSeconds": 40
+      },
+      "over60": {
+        "why": "From 60: no jumping, burpees or eccentric drills in a metcon.",
+        "excludeTags": [
+          "Plyometric",
+          "Drill"
+        ],
+        "excludeNames": [
+          "Burpee",
+          "Bar-facing burpee",
+          "Burpee box jump-over",
+          "Double-under",
+          "Shuttle run",
+          "Negative pull-up",
+          "Kipping pull-up",
+          "Butterfly pull-up",
+          "Kipping handstand push-up"
+        ]
+      },
+      "excludeTags": [
+        "Drill",
+        "Olympic"
+      ]
+    }
+  },
+  "pilates": {
+    "why": "Pilates is not sets and rest. A session is the classical order (the sheet's order), a few reps of each move, almost no rest, sections in their place. Volume is time: the session fills the hour, and the days rotate the variations so the week covers the whole repertoire.",
+    "sessionMinutes": 55,
+    "warmupMinutes": 5,
+    "level": {
+      "why": "The sheet's rule 1: skill 1-2 opens at Beginner, 3 at Intermediate, 4-5 at Advanced.",
+      "maxSkill": {
+        "Beginner": 2,
+        "Intermediate": 3,
+        "Advanced": 5
+      }
+    },
+    "secondsPerRep": 5,
+    "setupSeconds": {
+      "mat": 15,
+      "reformer": 35
+    },
+    "reps": {
+      "why": "Classical counts: few and precise. The Hundred is 100 beats; footwork and leg work take more; the hardest moves the fewest.",
+      "default": {
+        "Beginner": 5,
+        "Intermediate": 6,
+        "Advanced": 8
+      },
+      "byTag": {
+        "Footwork": 10,
+        "Leg springs": 8,
+        "Arm springs": 8,
+        "Rowing": 5,
+        "Conditioning": 0
+      },
+      "bySkill": {
+        "4": -1,
+        "5": -2
+      },
+      "special": {
+        "The Hundred": "100 beats",
+        "Hundred on the reformer": "100 beats",
+        "Lateral breathing drill": "10 breaths",
+        "Running on the reformer": "60 s",
+        "Jumpboard": "2 × 60 s"
+      },
+      "specialSeconds": {
+        "The Hundred": 110,
+        "Hundred on the reformer": 110,
+        "Lateral breathing drill": 60,
+        "Running on the reformer": 60,
+        "Jumpboard": 150
+      },
+      "buildMuscleExtra": 2,
+      "buildMuscleWhy": "Build Muscle and Shape Up take two more reps on the spring-loaded and footwork moves; the body weight moves stay at their classical counts.",
+      "maxByName": {
+        "Roll up": 5,
+        "Roll over": 5,
+        "Rolling like a ball": 6,
+        "Seal": 6,
+        "Teaser": 3,
+        "Teaser on the box": 3,
+        "Pilates push-up": 3,
+        "Jack knife": 3,
+        "Boomerang": 4,
+        "Control balance": 3,
+        "Corkscrew": 3,
+        "Open leg rocker": 6,
+        "Neck pull": 5,
+        "Swan dive": 5,
+        "Double leg kick": 4,
+        "Spine stretch forward": 4,
+        "Saw": 4,
+        "Single leg circles": 5,
+        "Hip circles": 3,
+        "Leg pull front": 3,
+        "Leg pull back": 3,
+        "Snake and twist": 3,
+        "Control front": 3,
+        "Star": 3,
+        "Semi-circle": 4,
+        "Short spine massage": 4,
+        "Long spine massage": 4,
+        "Up stretch": 4,
+        "Arabesque": 3,
+        "Knee stretch: knees off": 8,
+        "Elephant": 6
+      },
+      "maxWhy": "Classical counts are caps, not a floor to fill the hour: a roll up is 3-5, the push-up 3. A session the level's moves cannot fill stays shorter.",
+      "maxDefaultExtra": 2
+    },
+    "perSide": {
+      "why": "Moves done one side then the other cost twice the time; a VALD finding puts the weaker side first with two more reps.",
+      "names": [
+        "Single leg circles",
+        "Single leg kick",
+        "Saw",
+        "Side kick front and back",
+        "Side kick small circles",
+        "Side kick bicycle",
+        "Kneeling side kick",
+        "Mermaid side bend",
+        "Corkscrew",
+        "Hip circles",
+        "Leg pull back",
+        "Mermaid on the reformer",
+        "Front splits",
+        "Arabesque",
+        "Short box: side to side",
+        "Short box: twist",
+        "Stomach massage: twist",
+        "Star",
+        "Snake and twist"
+      ]
+    },
+    "springs": {
+      "why": "Written as light, medium and heavy: spring colours differ by brand, so the studio maps them once. Footwork and the leg presses heavy, the arm work and anything balancing on the box light.",
+      "default": "medium",
+      "byTag": {
+        "Footwork": "heavy",
+        "Rowing": "light",
+        "Long box": "light",
+        "Short box": "heavy, footstrap on",
+        "Long stretch": "medium",
+        "Knee stretch": "medium",
+        "Stomach massage": "heavy",
+        "Splits": "light",
+        "Leg springs": "medium",
+        "Arm springs": "light",
+        "Conditioning": "light (jumpboard)"
+      },
+      "byName": {
+        "Running on the reformer": "heavy",
+        "Pelvic lift on the reformer": "heavy",
+        "Front splits": "light",
+        "Star": "light",
+        "Control front": "light",
+        "Snake and twist": "light",
+        "Semi-circle": "heavy",
+        "Mermaid on the reformer": "light"
+      },
+      "cautionLighter": "A move a pain cautions (footwork with a knee, say) goes one spring lighter: heavy to medium, medium to light."
+    },
+    "section": {
+      "why": "Where each move sits in a session. The mat follows the classical order of the sheet; the reformer follows its sections.",
+      "matOrder": "sheet",
+      "reformerOrder": [
+        "Footwork",
+        "Hundred",
+        "Rowing",
+        "Long box",
+        "Short box",
+        "Long stretch",
+        "Stomach massage",
+        "Knee stretch",
+        "Leg springs",
+        "Arm springs",
+        "Splits",
+        "Conditioning",
+        "Finish"
+      ],
+      "reformerTagToSection": {
+        "Footwork": "Footwork",
+        "Rowing": "Rowing",
+        "Long box": "Long box",
+        "Short box": "Short box",
+        "Long stretch": "Long stretch",
+        "Stomach massage": "Stomach massage",
+        "Knee stretch": "Knee stretch",
+        "Leg springs": "Leg springs",
+        "Arm springs": "Arm springs",
+        "Splits": "Splits",
+        "Conditioning": "Conditioning"
+      },
+      "reformerUntagged": {
+        "Hundred on the reformer": "Hundred",
+        "Coordination": "Hundred",
+        "Short spine massage": "Hundred",
+        "Long spine massage": "Leg springs",
+        "Pelvic lift on the reformer": "Footwork",
+        "Running on the reformer": "Footwork",
+        "Semi-circle": "Finish",
+        "Mermaid on the reformer": "Finish",
+        "Snake and twist": "Finish",
+        "Control front": "Finish",
+        "Star": "Finish"
+      }
+    },
+    "balance": {
+      "why": "Every session covers the spine's four directions and the hips: a flexion move, an extension move, a rotation or side-bend move, and hip or leg work, whatever else is trimmed.",
+      "categories": {
+        "flexion": {
+          "subs": [
+            "Flexion"
+          ]
+        },
+        "extension": {
+          "subs": [
+            "Erectors"
+          ],
+          "groups": [
+            "Lower back"
+          ]
+        },
+        "rotation": {
+          "subs": [
+            "Obliques & anti-rotation",
+            "Anti-lateral flexion"
+          ]
+        },
+        "hips": {
+          "groups": [
+            "Glutes & hips",
+            "Quads, hams, adductors",
+            "Calves & ankle"
+          ]
+        },
+        "upper": {
+          "groups": [
+            "Chest",
+            "Upper back",
+            "Lats",
+            "Triceps",
+            "Delts"
+          ]
+        }
+      }
+    },
+    "sameMove": {
+      "why": "With the reformer and the mat in one session, a move both have is done once, on the reformer.",
+      "matToReformer": {
+        "The Hundred": "Hundred on the reformer",
+        "Teaser": "Teaser on the box",
+        "Swan": "Swan on the long box",
+        "Mermaid side bend": "Mermaid on the reformer",
+        "Pelvic curl": "Pelvic lift on the reformer"
+      }
+    },
+    "prep": {
+      "why": "The gym-library moves ticked Mat Pilates (dead bug, bird dog, clam, glute bridge…) are pre-Pilates: they open a beginner's session and fill a mat session that runs short.",
+      "beginnerPrepMoves": 2
+    },
+    "goal": {
+      "Lose Fat": {
+        "addTags": [
+          "Conditioning"
+        ],
+        "why": "The jumpboard and running on the reformer go in where the studio has them: the heart rate is the point."
+      },
+      "Shape Up": {
+        "addTags": [
+          "Conditioning"
+        ],
+        "why": "As Lose Fat, with Build Muscle's extra reps."
+      },
+      "Build Muscle": {
+        "why": "Two more reps on the spring-loaded work."
+      },
+      "Get Stronger": {
+        "why": "The hardest variation the level allows comes first in each family."
+      }
+    },
+    "posture": {
+      "why": "U-Body findings move the Pilates that answers them to the front of the queue, so the trim never takes it.",
+      "byIndicator": {
+        "Forward Head Posture Angle": [
+          "Swan",
+          "Swimming",
+          "Chest lift",
+          "Pulling straps",
+          "Swan on the long box",
+          "Breaststroke"
+        ],
+        "Kendall Ear Angle": [
+          "Swan",
+          "Swimming",
+          "Chest lift"
+        ],
+        "Rounded Shoulder Angle": [
+          "Swan",
+          "Swimming",
+          "Rowing: 90 degrees",
+          "T-pull",
+          "Pulling straps",
+          "Breaststroke"
+        ],
+        "Kendall Shoulder Angle": [
+          "Swan",
+          "Swimming",
+          "T-pull",
+          "Pulling straps"
+        ],
+        "Thoracic Kyphosis Angle": [
+          "Swan",
+          "Swan dive",
+          "Swan on the long box",
+          "Breaststroke",
+          "Spine stretch forward"
+        ],
+        "Anterior Pelvic Tilt Angle": [
+          "Pelvic curl",
+          "Shoulder bridge",
+          "Pelvic lift on the reformer",
+          "Chest lift"
+        ],
+        "Lumbar Lordosis Angle": [
+          "Pelvic curl",
+          "Chest lift",
+          "Rest position",
+          "Short box: round back"
+        ],
+        "Pelvic Tilt (frontal)": [
+          "Side kick front and back",
+          "Kneeling side kick",
+          "Mermaid side bend",
+          "Mermaid on the reformer"
+        ],
+        "Shoulder Horizontal Angle": [
+          "Mermaid side bend",
+          "Saw",
+          "Mermaid on the reformer",
+          "Short box: side to side"
+        ],
+        "Coronal Balance": [
+          "Mermaid side bend",
+          "Saw",
+          "Spine twist",
+          "Short box: side to side"
+        ],
+        "Pelvic Stability": [
+          "Side kick front and back",
+          "Leg circles in straps",
+          "Single leg circles"
+        ],
+        "Knee Stability": [
+          "Footwork: arches",
+          "Side splits",
+          "Frog in straps"
+        ],
+        "Fingertip to Floor Distance": [
+          "Spine stretch forward",
+          "Saw",
+          "Short box: tree",
+          "Elephant"
+        ],
+        "Hip Hinge Angle": [
+          "Spine stretch forward",
+          "Elephant",
+          "Short box: tree"
+        ]
+      }
+    },
+    "holdSeconds": {
+      "why": "A hold is timed, never counted in reps.",
+      "default": "20-30 s",
+      "seconds": 25
+    },
+    "warmup": {
+      "why": "Pilates warms up with its own pre-Pilates moves (breathing, pelvic curl, spine twist, cat-cow, roll down), not the gym's band and wall work.",
+      "moves": [
+        "Lateral breathing drill",
+        "Pelvic curl",
+        "Supine spine twist",
+        "Cat-cow",
+        "Standing roll down",
+        "Dead bug"
+      ],
+      "count": 5,
+      "seconds": 45
+    },
+    "counterStretch": {
+      "why": "Rest position follows the session's extension work: the classical counter-stretch.",
+      "name": "Rest position",
+      "label": "30 s"
+    }
+  },
+  "warmup": {
+    "why": "The sheet's five-move warm-up (45 s each, 15 s to change, five minutes) for calisthenics and CrossFit (Pilates has its own, pilates.warmup). For Gym it stays the live warm-up (four minutes of easy cardio and the U-Body correctives inside it) until it is switched deliberately; the posture correctives stay inside it either way.",
+    "styles": [
+      "Calisthenics",
+      "CrossFit"
+    ],
+    "moves": 5,
+    "workSeconds": 45,
+    "transitionSeconds": 15,
+    "bannedTokens": [
+      "M",
+      "Smith",
+      "GHD",
+      "C",
+      "assisted M",
+      "rope C",
+      "reformer",
+      "reformer + jumpboard"
+    ],
+    "areas": {
+      "upper push": {
+        "groups": [
+          "Chest",
+          "Triceps",
+          "Delts"
+        ]
+      },
+      "upper pull": {
+        "groups": [
+          "Lats",
+          "Upper back",
+          "Biceps",
+          "Rotator cuff",
+          "Traps",
+          "Forearms & grip"
+        ]
+      },
+      "hips": {
+        "groups": [
+          "Glutes & hips",
+          "Lower back"
+        ]
+      },
+      "knees": {
+        "groups": [
+          "Quads, hams, adductors",
+          "Calves & ankle"
+        ]
+      },
+      "trunk": {
+        "groups": [
+          "Abs & core",
+          "Neck"
+        ]
+      }
+    },
+    "pool": {
+      "upper push": [
+        "Scapular push-up",
+        "Serratus wall slide",
+        "Wall angel / wall slide",
+        "Wall slide with band",
+        "Wall slide with lift-off",
+        "Banded pec stretch",
+        "Bench thoracic extension",
+        "Wall ball circles"
+      ],
+      "upper pull": [
+        "Band pull-apart - standard, overhead, diagonal",
+        "Overhead band pull-apart",
+        "Prone Y / T / W raise on incline bench",
+        "Blackburn I-Y-T-W series",
+        "Prone swimmer",
+        "Prone lower-trap lift-off",
+        "Scapular pull-up / dead-hang retraction",
+        "Dead hang",
+        "90/90 external rotation",
+        "External rotation with towel under elbow",
+        "Face pull with external rotation",
+        "Levator stretch-hold with scapular depression",
+        "Thoracic extension over roller"
+      ],
+      "trunk": [
+        "Dead bug",
+        "Dead bug with band pull",
+        "Bird dog",
+        "Cat-cow",
+        "Open-book thoracic rotation",
+        "90/90 hip lift with breathing",
+        "Chin tuck / deep neck flexor hold",
+        "Four-way neck isometric",
+        "Bear crawl"
+      ],
+      "hips": [
+        "Glute bridge",
+        "Posterior-pelvic-tilt glute bridge",
+        "Clamshell",
+        "Lateral / monster walk",
+        "Fire hydrant",
+        "Side-lying hip abduction",
+        "90/90 hip lift-off",
+        "Half-kneeling hip flexor stretch",
+        "Banded hip internal rotation",
+        "Dowel hip-hinge patterning"
+      ],
+      "knees": [
+        "Spanish squat",
+        "Wall sit",
+        "Single-leg balance reach",
+        "Pogo hops / jump rope",
+        "Banded dorsiflexion",
+        "Heel walk",
+        "Tibialis raise against wall"
+      ]
+    }
+  },
+  "overrides": {
+    "why": "The app's own additions on top of the coaches' sheet, from the coach review: moves the gym library already has that a style needs (a calisthenics week had no glute or hinge work and no plain push-up; CrossFit had no scaled basics), library moves put on their ladders, and one untick. Each should be copied into the sheet; until then they live here.",
+    "tick": {
+      "Calisthenics": [
+        "Push-up",
+        "Glute bridge",
+        "Posterior-pelvic-tilt glute bridge",
+        "Single-leg hip thrust",
+        "Superman / prone extension",
+        "Single-leg standing calf raise",
+        "Lateral lunge",
+        "Cossack squat",
+        "Reverse lunge",
+        "Walking lunge",
+        "Bulgarian split squat, upright torso",
+        "Low-box step-up",
+        "Single-leg RDL",
+        "Sit-up",
+        "Lying leg raise",
+        "Reverse crunch"
+      ],
+      "CrossFit": [
+        "Push-up",
+        "Sit-up",
+        "Goblet squat",
+        "Bent-over row",
+        "Pendlay row",
+        "Triceps dip",
+        "Romanian deadlift"
+      ]
+    },
+    "untick": {
+      "Mat Pilates": [
+        "Russian twist"
+      ]
+    },
+    "ladders": [
+      {
+        "name": "Push-up",
+        "family": "Push-up",
+        "rung": 3.5
+      },
+      {
+        "name": "Feet-elevated push-up",
+        "family": "Push-up",
+        "rung": 4.5
+      },
+      {
+        "name": "Diamond push-up",
+        "family": "Push-up",
+        "rung": 4.5
+      },
+      {
+        "name": "Chin-up, supinated",
+        "family": "Pull-up",
+        "rung": 4
+      },
+      {
+        "name": "Neutral-grip pull-up",
+        "family": "Pull-up",
+        "rung": 4
+      },
+      {
+        "name": "Chest dip, forward lean",
+        "family": "Dip",
+        "rung": 3
+      }
+    ]
+  },
+  "repCaps": {
+    "why": "Hard bodyweight and technique moves never take the goal's range as it is: an eccentric, a Nordic or a wall walk at 16-19 reps is not training, it is form breaking down.",
+    "byName": {
+      "Negative pull-up": "3-5",
+      "Nordic hamstring curl": "3-6",
+      "Reverse Nordic curl": "5-8",
+      "Wall walk": "3-5",
+      "Turkish get-up": "1-3 each side",
+      "Bear crawl": "20-30 m",
+      "Pogo hops / jump rope": "30-45 s",
+      "Skin the cat": "3-5",
+      "Explosive pull-up": "3-5",
+      "Low-bar transition drill": "3-5",
+      "Jumping muscle-up": "3-5",
+      "Box pistol squat": "5-8",
+      "Shrimp squat": "3-6",
+      "Elevated shrimp squat": "3-6",
+      "Pistol squat": "3-6",
+      "Pike push-up": "6-10",
+      "Feet-elevated pike push-up": "5-8",
+      "Wall handstand push-up": "3-6",
+      "Strict handstand push-up": "3-6",
+      "Archer push-up": "4-6",
+      "Archer pull-up": "3-5",
+      "Commando pull-up": "4-6"
+    },
+    "bodyweightMaxReps": 12,
+    "bodyweightMaxWhy": "An unloaded compound of skill 2 and up never goes above 12 reps: past that the move is too easy, and the next rung is the progression.",
+    "byTag": {
+      "Olympic": "2-5"
+    },
+    "byTagWhy": "An Olympic lift (clean, snatch, jerk, overhead squat) is never done for 8-12: technique goes first. 2-5 reps, whatever the goal."
+  }
+}

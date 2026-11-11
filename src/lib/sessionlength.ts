@@ -165,6 +165,8 @@ export interface Conditioning {
   impactWithheldFor: string[]
   /** part of the goal's plan (Shape Up), not filler for a short session: the trim keeps it */
   planned?: boolean
+  /** CrossFit's metcon: the format, the moves and the board text; never shortened */
+  metcon?: import('./metcon').Metcon
 }
 
 export function prescribeConditioning(

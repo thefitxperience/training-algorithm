@@ -8,6 +8,10 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { ageBracket, generate, isEligible, prescriptionKey } from '../src/lib/generate'
 import { withDerivedGoals } from '../src/lib/goals'
+import { NEW_ROW_ID, inStrengthPool, laddersOf, memberOf, planStyles, skillFamilyOf, splitDays, startRung, withModalityInjury, withStyleOverrides } from '../src/lib/modality'
+import { buildPlan } from '../src/lib/plan'
+import { evaluateAll } from '../src/lib/injury'
+import { equipmentOptions } from '../src/lib/equipment'
 import { fullBodyKindOf } from '../src/lib/fit'
 import { competingPairs, conditioningCapFor, isHeavyHinge, mainFamily, maxMainLiftsFor, maxPairsFor, maxSetsFor, orderRank, restFloorFor } from '../src/lib/fit'
 import { buildAudit } from '../src/lib/audit'
@@ -94,14 +98,19 @@ import {
   readSession,
   scaleFor,
 } from '../src/lib/bodydotApi'
-import type { ClientInput, DataBundle, Exercise } from '../src/types'
+import type { ClientInput, DataBundle, Exercise, Modality } from '../src/types'
 
 const dir = join(process.cwd(), 'public', 'data')
 const read = (f: string) => JSON.parse(readFileSync(join(dir, f), 'utf8'))
+/**
+ * The spec's tests run on the gym library as it was (ids under 1000): the modality sheet's rows sit
+ * beside it in exercises.json and are tested on their own, with `styleData` below.
+ */
+const allExercises: Exercise[] = read('exercises.json')
 const data: DataBundle = {
   config: read('config.json'),
   allocation: read('allocation.json'),
-  exercises: read('exercises.json'),
+  exercises: allExercises.filter((e) => e.id < NEW_ROW_ID),
   prescription: read('prescription.json'),
   splits: read('splits.json'),
   injury: read('injury.json'),
@@ -114,6 +123,13 @@ const data: DataBundle = {
   timecap: read('timecap.json'),
   sessionlength: read('sessionlength.json'),
   fit: read('fit.json'),
+}
+/** everything the app loads: the full library, the styles' rules, the new rows' injury records */
+const styleData: DataBundle = {
+  ...data,
+  exercises: allExercises,
+  injury: withModalityInjury(data.injury, read('injury-modalities.json')),
+  modalities: read('modalities.json'),
 }
 const injuryIndex = buildInjuryIndex(data.injury, data.exercises)
 const idOf = (name: string) => data.exercises.find((e) => e.name === name)!.id
@@ -4603,6 +4619,284 @@ const fingerprint = (p: ReturnType<typeof run>) =>
     }
   }
   check('Shape Up: every session an hour or less', over.length === 0, over.slice(0, 3).join(' | ') || `longest ${worst.toFixed(1)} min`)
+}
+
+
+// ---- Training styles (data/modalities.json) ---------------------------------
+{
+  const M = styleData.modalities!
+  const ex = styleData.exercises
+  const sig = (r: ReturnType<typeof generate>) =>
+    r.ok
+      ? JSON.stringify(r.program.days.map((d) => [d.label, d.exercises.map((c) => [c.exercise.id, c.sets, c.reps, c.restSeconds]), d.wholeSetMinutes.toFixed(3), d.conditioning?.minutes ?? 0]))
+      : r.error
+  const GOALS = ['Build Muscle', 'Lose Fat', 'Get Stronger', 'Shape Up']
+
+  // 1. The gym is untouched: identical with or without the styles' data loaded.
+  {
+    const diffs: string[] = []
+    let n = 0
+    for (const f of FIXTURES)
+      for (const goal of GOALS) {
+        n++
+        if (sig(generate(data, { ...f.input, goal })) !== sig(generate(styleData, { ...f.input, goal }))) diffs.push(`${f.name} ${goal}`)
+      }
+    for (let seed = 0; seed < 40; seed++) {
+      const { input } = sampleClient(data, { pain: true, vald: true, inbody: true, bodydot: true }, seed * 4243 + 11)
+      n++
+      if (sig(generate(data, input)) !== sig(generate(styleData, input))) diffs.push(`seed ${seed}`)
+    }
+    check('Styles: a gym-only program is identical with the styles loaded', diffs.length === 0, diffs.slice(0, 4).join(' | ') || `${n} programs compared`)
+  }
+
+  // 2. The import: every sheet row present, every one with an injury record a rule wrote.
+  {
+    const added = ex.filter((e) => e.id >= NEW_ROW_ID)
+    const records = new Map(styleData.injury.exercises.map((r) => [r.id, r]))
+    const missing = added.filter((e) => !records.has(e.id)).map((e) => e.name)
+    const untagged = added.filter((e) => (records.get(e.id)?.loadTags.length ?? 0) === 0).map((e) => e.name)
+    const loadsNothing = new Set(['Lateral breathing drill', 'Pelvic curl', 'Rest position', 'Supine spine twist', 'Side kick small circles', 'Mermaid on the reformer', 'Footwork: heels', 'Footwork: arches', 'Pelvic lift on the reformer'])
+    const unexplained = untagged.filter((n) => !loadsNothing.has(n))
+    check(
+      'Styles: all 214 sheet exercises imported, each with an injury record in the library\'s vocabulary',
+      added.length === 214 && missing.length === 0 && unexplained.length === 0,
+      missing.length || unexplained.length ? [...missing, ...unexplained].join(', ') : `214 rows, ${untagged.length} that load nothing (breathing, pelvic curl…)`,
+    )
+  }
+
+  // 3-7. A sweep of every style and every combination: pool, level, age, pain, rungs, time.
+  const COMBOS: Modality[][] = [
+    ['Calisthenics'], ['CrossFit'], ['Mat Pilates'], ['Reformer Pilates'],
+    ['Gym', 'Calisthenics'], ['Calisthenics', 'Gym'], ['Gym', 'CrossFit'], ['Calisthenics', 'CrossFit'],
+    ['Mat Pilates', 'Reformer Pilates'], ['Reformer Pilates', 'Mat Pilates'],
+    ['Gym', 'Mat Pilates'], ['Reformer Pilates', 'Gym'], ['CrossFit', 'Reformer Pilates'], ['Calisthenics', 'Mat Pilates'],
+    ['Gym', 'Calisthenics', 'Mat Pilates'],
+  ]
+  const laddersAll = laddersOf(withStyleOverrides(styleData).exercises)
+  const fails: Record<string, string[]> = {}
+  const fail = (k: string, m: string) => (fails[k] ??= []).push(m)
+  let plans = 0
+  let metcons = 0
+  let pilatesSessions = 0
+  for (const [ci, styles] of COMBOS.entries())
+    for (let seed = 0; seed < 12; seed++) {
+      const { input: base } = sampleClient(data, { pain: true, vald: true, inbody: true, bodydot: true }, seed * 7919 + ci * 104729 + 5)
+      const needsGym = styles.some((st) => M.needs[st])
+      const input: ClientInput = { ...base, modalities: styles, days: Math.max(2, base.days), pins: [], ...(needsGym && { equipment: 'Full gym' as const }) }
+      const r = buildPlan(styleData, input)
+      const tag = `${styles.join('+')} #${seed}`
+      if (!r.ok) {
+        fail('builds', `${tag}: ${r.error}`)
+        continue
+      }
+      plans++
+      const plan = r.plan
+      const ageBr = ageBracket(input.age, data.config.ages)
+      const strengthStyles = styles.filter((st) => st === 'Gym' || st === 'Calisthenics' || st === 'CrossFit')
+      // The strength part may deliver fewer days than asked (the generator's own rule: a 6-day ask can be a
+      // 5-day program); Pilates always gets its share.
+      const sp = planStyles(styleData, input)
+      const want = sp.ok ? splitDays(sp, input.days) : { strength: 0, pilates: 0 }
+      if (plan.pilates.length !== want.pilates || (plan.strength?.days.length ?? 0) > want.strength || (want.strength > 0 && !plan.strength?.days.length))
+        fail('days', `${tag}: ${plan.strength?.days.length ?? 0} strength + ${plan.pilates.length} Pilates for ${want.strength} + ${want.pilates}`)
+      const verdicts = plan.strength?.verdicts
+      const maxSkill = M.levelRule.maxSkill[input.level]
+      for (const d of plan.strength?.days ?? []) {
+        const ids = d.exercises.map((c) => c.exercise.id)
+        if (new Set(ids).size !== ids.length) fail('twice', `${tag} day ${d.index + 1}`)
+        if (d.wholeSetMinutes > data.fit.sessionMinutes + 1e-6) fail('hour', `${tag} day ${d.index + 1}: ${d.wholeSetMinutes.toFixed(1)} min`)
+        let seenOther = false
+        for (const c of d.exercises) {
+          const e = c.exercise
+          if (!inStrengthPool(styleData, e, strengthStyles)) fail('pool', `${tag}: ${e.name} is not ${strengthStyles.join('/')}`)
+          if (e.avoidAges.includes(ageBr)) fail('age', `${tag}: ${e.name} at ${ageBr}`)
+          if (verdicts?.get(e.id)?.verdict === 'REMOVE' && !c.pinned) fail('pain', `${tag}: ${e.name}`)
+          if (e.id >= NEW_ROW_ID && e.skill > maxSkill && !input.rungs) fail('level', `${tag}: ${e.name} skill ${e.skill} at ${input.level}`)
+          const isSkill = !!skillFamilyOf(styleData, e)
+          if (!isSkill && c.verdict.verdict !== 'PRIORITY') seenOther = true
+          else if (isSkill && seenOther && styles.includes('Calisthenics')) fail('order', `${tag} day ${d.index + 1}: ${e.name} after strength work`)
+        }
+        // Rungs: a ladder exercise is trained at the client's rung or the two under it, never above.
+        const info = new Map((plan.strength?.styles.rungs ?? []).map((x) => [x.family, x]))
+        for (const c of d.exercises)
+          for (const l of c.exercise.ladders ?? []) {
+            const r = info.get(l.family)
+            if (!r) continue
+            const below = r.step - (laddersAll.get(l.family)?.findIndex((st) => st.rung === l.rung) ?? 0) - 1
+            if (below < 0 || below >= (M.ladders.workingRungs ?? 1)) fail('rung', `${tag}: ${c.exercise.name} (${l.family} ${l.rung}, client on ${r.rung})`)
+          }
+        // The five-move warm-up: five, no machine, no repeat, nothing a pain removes.
+        if (d.warmupMoves) {
+          const names = d.warmupMoves.map((w) => w.name)
+          if (names.length !== M.warmup.moves || new Set(names).size !== names.length) fail('warmup', `${tag} day ${d.index + 1}: ${names.join(', ')}`)
+          for (const w of d.warmupMoves) {
+            const e = ex.find((x) => x.id === w.exerciseId)!
+            if (equipmentOptions(e).every((t) => M.warmup.bannedTokens.includes(t))) fail('warmup', `${tag}: ${e.name} needs a machine`)
+            if (verdicts?.get(e.id)?.verdict === 'REMOVE') fail('pain', `${tag}: warm-up ${e.name}`)
+          }
+        } else if (!(strengthStyles.length === 1 && strengthStyles[0] === 'Gym')) fail('warmup', `${tag} day ${d.index + 1}: no warm-up moves`)
+        // The metcon: two or three moves, one grip-heavy at most, no hinge after a heavy hinge, never cut.
+        // Calisthenics: the session opens with its skill, which is never paired.
+        if (styles.includes('Calisthenics')) {
+          for (const b of d.blocks) if (b.indices.length > 1 && b.indices.some((i) => d.exercises[i].skill)) fail('skills', `${tag} day ${d.index + 1}: a skill paired`)
+          const firstSkill = d.exercises.findIndex((c) => c.skill)
+          if (firstSkill > 0 && d.exercises.slice(0, firstSkill).some((c) => !c.skill && !skillFamilyOf(styleData, c.exercise) && c.verdict.verdict !== 'PRIORITY'))
+            fail('skills', `${tag} day ${d.index + 1}: the skill is not first`)
+          for (const c of d.exercises) if (c.skill && !(c.exercise.ladders ?? []).some((l) => l.family === c.skill)) fail('skills', `${tag}: the ${c.skill} skill became ${c.exercise.name}`)
+        }
+        const mc = d.conditioning?.metcon
+        if (mc) {
+          metcons++
+          const pm = M.crossfit.metcon
+          for (const mv of mc.moves) {
+            if ((mv.exercise.tags ?? []).some((t) => (pm.excludeTags ?? []).includes(t))) fail('metcon', `${tag}: ${mv.exercise.name} (a drill or an Olympic lift) in a metcon`)
+            if (input.age >= 60 && (pm.over60!.excludeNames.includes(mv.exercise.name) || (mv.exercise.tags ?? []).some((t) => pm.over60!.excludeTags.includes(t)))) fail('metcon', `${tag}: ${mv.exercise.name} at ${input.age}`)
+            if (mv.role === 'upper' && d.exercises.some((c) => c.exercise.sub === mv.exercise.sub)) fail('metcon', `${tag}: the metcon's ${mv.exercise.name} repeats the day's strength pattern`)
+            if (verdicts?.get(mv.exercise.id)?.verdict === 'SIDE_ONLY') fail('pain', `${tag}: metcon ${mv.exercise.name} is "one side only"`)
+            if (verdicts?.get(mv.exercise.id)?.verdict === 'CAUTION' && !mv.caution) fail('metcon', `${tag}: ${mv.exercise.name} cautioned but not marked`)
+            if (mc.format === 'EMOM') {
+              const secs = pm.perMove!.secondsPerRep[mv.exercise.name] ?? pm.perMove!.secondsPerRep[mv.unit === 'reps' ? 'default' : mv.unit] ?? 3
+              if (mv.amount * secs > pm.perMove!.emomMaxSeconds + 1e-6 && mv.amount > 1) fail('metcon', `${tag}: EMOM minute of ${mv.label} (${(mv.amount * secs).toFixed(0)} s)`)
+            }
+          }
+          if (mc.moves.length < 2) fail('metcon', `${tag}: ${mc.description}`)
+          if (input.level === 'Beginner' && mc.format === 'For time') fail('metcon', `${tag}: a beginner on For time`)
+          const hinge = d.exercises.some((c) => isHeavyHinge(data.fit, c.exercise))
+          if (hinge && mc.moves.some((m) => m.role === 'lower' && (m.exercise.sub === 'Hams - hinge' || /swing|deadlift|clean|snatch/i.test(m.exercise.name))))
+            fail('metcon', `${tag}: a hinge after the heavy hinge`)
+          for (const m of mc.moves) {
+            if (verdicts?.get(m.exercise.id)?.verdict === 'REMOVE') fail('pain', `${tag}: metcon ${m.exercise.name}`)
+            if (m.exercise.avoidAges.includes(ageBr)) fail('age', `${tag}: metcon ${m.exercise.name}`)
+          }
+          if (d.conditioning!.minutes !== mc.minutes) fail('metcon', `${tag}: the metcon was cut to ${d.conditioning!.minutes} min`)
+        }
+        if (strengthStyles.length === 1 && strengthStyles[0] === 'CrossFit' && !mc && !d.conditioning?.planned) fail('metcon', `${tag} day ${d.index + 1}: no metcon or planned conditioning`)
+      }
+      // Pilates: within the level, the age and the pains; in order; the spine's four directions; an hour.
+      const injIdx = buildInjuryIndex(styleData.injury, ex)
+      const pv = evaluateAll(ex, input.pains, styleData.injury, injIdx)
+      const pMax = M.pilates.level.maxSkill[input.level]
+      for (const sess of plan.pilates) {
+        pilatesSessions++
+        if (sess.minutes > M.pilates.sessionMinutes + 1) fail('pilates-hour', `${tag}: ${sess.minutes} min`)
+        const items = sess.sections.flatMap((x) => x.items)
+        const names = items.map((i) => i.exercise.name)
+        if (new Set(names).size !== names.length) fail('pilates', `${tag}: a move twice`)
+        for (const w of sess.warmup) if (!(M.pilates.warmup?.moves ?? []).includes(w.name)) fail('pilates', `${tag}: ${w.name} is not a Pilates warm-up move`)
+        for (const it of items) {
+          const n = Number.parseInt(it.reps, 10)
+          const cap = M.pilates.reps.maxByName?.[it.exercise.name] ?? (M.pilates.reps.default[input.level] ?? 5) + (M.pilates.reps.maxDefaultExtra ?? 2)
+          // Footwork, springs and the like start above the default cap by design (byTag); only growth is capped.
+          const start = Math.max(M.pilates.reps.default[input.level] ?? 5, ...(it.exercise.tags ?? []).map((t) => M.pilates.reps.byTag[t] ?? 0)) + 2 + (it.weakSideFirst ? 2 : 0)
+          if (Number.isFinite(n) && !/ s$/.test(it.reps) && !M.pilates.reps.special[it.exercise.name] && n > Math.max(cap, start)) fail('pilates', `${tag}: ${it.exercise.name} ${it.reps}, over its classical count`)
+          if (pv.get(it.exercise.id)?.verdict === 'SIDE_ONLY' && !it.perSide) fail('pain', `${tag}: ${it.exercise.name} "one side only" but done both sides`)
+          if (pv.get(it.exercise.id)?.verdict === 'CAUTION' && !it.caution) fail('pilates', `${tag}: ${it.exercise.name} cautioned but not marked`)
+          if (it.exercise.skill > pMax) fail('level', `${tag}: ${it.exercise.name} skill ${it.exercise.skill} at ${input.level}`)
+          if (it.exercise.avoidAges.includes(ageBr)) fail('age', `${tag}: ${it.exercise.name} at ${ageBr}`)
+          if (pv.get(it.exercise.id)?.verdict === 'REMOVE') fail('pain', `${tag}: ${it.exercise.name}`)
+        }
+        // (Rest position is placed after the extension work on purpose: the counter-stretch.)
+        const mat = sess.sections.find((x) => x.name === 'Mat')?.items.filter((i) => i.exercise.name !== M.pilates.counterStretch?.name).map((i) => i.exercise.id) ?? []
+        if (mat.some((id, i) => i > 0 && id < mat[i - 1])) fail('pilates-order', `${tag}: the mat is out of the classical order`)
+        const both = sess.apparatus.length === 2
+        if (both)
+          for (const [m, r] of Object.entries(M.pilates.sameMove.matToReformer))
+            if (names.includes(m) && names.includes(r)) fail('pilates', `${tag}: ${m} and ${r} both`)
+      }
+    }
+  const keys = ['builds', 'days', 'pool', 'level', 'age', 'pain', 'twice', 'order', 'skills', 'rung', 'hour', 'warmup', 'metcon', 'pilates', 'pilates-order', 'pilates-hour']
+  const label: Record<string, string> = {
+    builds: 'every combination builds a week',
+    days: 'the week has the days asked for',
+    pool: 'every strength exercise belongs to one of the client\'s styles',
+    level: 'nothing above the level (the sheet\'s rule for its own rows)',
+    age: 'nothing the age avoids, metcons and Pilates included',
+    pain: 'nothing a pain removes, warm-ups, metcons and Pilates included',
+    twice: 'never the same exercise twice in a session',
+    order: 'calisthenics skills open the session',
+    skills: 'a calisthenics session opens with its skill, never paired',
+    rung: 'a ladder exercise only at the client\'s rung or the two under it',
+    hour: 'every strength session an hour or less, metcon included',
+    warmup: 'five warm-up moves, no machine, no repeat',
+    metcon: 'CrossFit days finish with a whole metcon: no drills, nothing jumping over 60, not the day\'s strength pattern, EMOM minutes that fit, cautions marked',
+    pilates: 'Pilates: a move once a session (on the reformer when both have it), classical counts, its own warm-up, cautions marked',
+    'pilates-order': 'the mat in the classical order',
+    'pilates-hour': 'every Pilates session an hour or less',
+  }
+  for (const k of keys)
+    check(`Styles: ${label[k]}`, !fails[k]?.length, fails[k]?.slice(0, 3).join(' | ') || `${plans} weeks, ${metcons} metcons, ${pilatesSessions} Pilates sessions`)
+
+  // 8. Combining: what is listed combines, what is not does not; the split of the week.
+  {
+    const bad: string[] = []
+    if (planStyles(styleData, { modalities: ['Gym', 'Calisthenics', 'CrossFit', 'Mat Pilates'] }).ok) bad.push('four styles accepted')
+    for (const p of M.combine.pairs) if (!planStyles(styleData, { modalities: p.styles }).ok) bad.push(`${p.styles.join('+')} refused`)
+    const ok = planStyles(styleData, { modalities: ['Gym', 'Reformer Pilates'] })
+    if (ok.ok) {
+      const s4 = splitDays(ok, 4)
+      if (s4.strength !== 3 || s4.pilates !== 1) bad.push(`Gym first, 4 days: ${s4.strength}+${s4.pilates}`)
+    }
+    const pf = planStyles(styleData, { modalities: ['Reformer Pilates', 'Gym'] })
+    if (pf.ok) {
+      const s4 = splitDays(pf, 4)
+      if (s4.strength !== 2 || s4.pilates !== 2) bad.push(`Pilates first, 4 days: ${s4.strength}+${s4.pilates}`)
+      const s2 = splitDays(pf, 2)
+      if (s2.strength !== 1 || s2.pilates !== 1) bad.push(`Pilates first, 2 days: ${s2.strength}+${s2.pilates}`)
+    }
+    for (const [st, need] of Object.entries(M.needs))
+      if (planStyles(styleData, { modalities: [st as Modality], equipment: 'Bodyweight only' }).ok) bad.push(`${st} accepted without ${need!.equipment}`)
+    check('Styles: the listed combinations combine, four styles do not, the week splits by the main style, and CrossFit and the reformer need the gym', bad.length === 0, bad.join(' | ') || `${M.combine.pairs.length} pairs`)
+  }
+
+  // 9. Rungs: the level's start never the top; a trainer's rung is honoured, even above the level.
+  {
+    const bad: string[] = []
+    const lad = laddersOf(ex)
+    for (const [family, steps] of lad) {
+      const top = steps[steps.length - 1].rung
+      for (const level of ['Beginner', 'Intermediate', 'Advanced']) {
+        const r = startRung(styleData, steps, level, '18-29')
+        if (steps.length > 2 && r === top) bad.push(`${family}: ${level} starts on the top rung`)
+      }
+    }
+    const reference = FIXTURES[0].input
+    const set = buildPlan(styleData, { ...reference, level: 'Intermediate', modalities: ['Calisthenics'], rungs: { 'Push-up': 7 } })
+    const pushUp = set.ok ? set.plan.strength?.styles.rungs.find((x) => x.family === 'Push-up') : undefined
+    if (!pushUp || pushUp.rung !== 7 || !pushUp.set) bad.push(`a set rung was not kept: ${JSON.stringify(pushUp)}`)
+    const used = set.ok ? set.plan.strength!.days.flatMap((d) => d.exercises.map((c) => c.exercise.name)) : []
+    if (used.some((n) => ['Wall push-up', 'Knee push-up', 'Hands-elevated push-up', 'Ring push-up', 'Archer push-up', 'Assisted one-arm push-up'].includes(n)))
+      bad.push(`an easier push-up rung was still trained: ${used.join(', ')}`)
+    check('Styles: no level starts on a ladder\'s top rung, and a rung the trainer sets is honoured', bad.length === 0, bad.join(' | ') || `${lad.size} ladders`)
+  }
+
+  // 9b. Calisthenics as the main style of a hybrid: the week is calisthenics, the gym fills the gaps.
+  {
+    const bad: string[] = []
+    for (let seed = 0; seed < 10; seed++) {
+      const { input: b } = sampleClient(data, {}, seed * 3571 + 9)
+      const r = buildPlan(styleData, { ...b, modalities: ['Calisthenics', 'Gym'], equipment: 'Full gym' })
+      if (!r.ok || !r.plan.strength) continue
+      const all = r.plan.strength.days.flatMap((d) => d.exercises)
+      const cal = all.filter((c) => memberOf(styleData, c.exercise, 'Calisthenics') || (c.exercise.modalities ?? []).includes('Calisthenics')).length
+      // The gym fills the sub-regions calisthenics has nothing for (biceps, calves, rotator cuff): a third
+      // at the least is calisthenics, and every session has its skill.
+      if (cal < all.length / 3) bad.push(`seed ${seed}: ${cal}/${all.length} calisthenics`)
+      for (const d of r.plan.strength.days) if (!d.exercises.some((c) => c.skill)) bad.push(`seed ${seed} day ${d.index + 1}: no skill`)
+    }
+    check('Styles: Calisthenics first in a hybrid makes a calisthenics week, skills included', bad.length === 0, bad.slice(0, 3).join(' | ') || '10 clients')
+  }
+
+  // 10. Pilates answers U-Body: a finding's moves stay in every session.
+  {
+    const reference = FIXTURES[0].input
+    const r = buildPlan(styleData, { ...reference, level: 'Advanced', days: 3, modalities: ['Mat Pilates'], bodydot: { S05: { value: 30 } } })
+    const band = realBands(styleData.bodydot).find((b) => b.code === 'S05')!
+    const wanted = M.pilates.posture.byIndicator[band.indicator] ?? []
+    const bad = !r.ok
+      ? [r.error]
+      : r.plan.pilates.filter((s) => !s.sections.some((x) => x.items.some((i) => i.forPosture && wanted.includes(i.exercise.name)))).map((s) => `session ${s.index + 1}`)
+    check('Styles: a U-Body finding keeps the Pilates that answers it in every session', bad.length === 0, bad.join(', ') || `${band.indicator}: ${wanted.slice(0, 3).join(', ')}…`)
+  }
 }
 
 // ---- Report ----------------------------------------------------------------

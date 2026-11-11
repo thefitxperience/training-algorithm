@@ -73,6 +73,8 @@ export interface StructureContext {
   maxPairs?: number
   /** fit.json: exercise types never paired (a carry walks away from the station) */
   neverPairTypes?: string[]
+  /** exercises that are never paired with anything (a calisthenics skill takes straight sets, fully rested) */
+  neverPairIds?: Set<number>
   /** fit.json: only exercises of these types pair (Shape Up pairs its isolation work) */
   pairTypes?: string[]
 }
@@ -176,6 +178,9 @@ export function pairReason(x: Pairable, y: Pairable, ctx: StructureContext): Pai
   //    once a session has to fit the hour — a paired main lift is neither heavy nor safe)
   if ((ctx.protectAllMainLifts || data.mainLiftProtectedGoals.includes(goal)) && (a.mainLift || b.mainLift))
     return null
+
+  // 1b. a calisthenics skill is never paired: it needs full rest to be done well
+  if (ctx.neverPairIds?.has(a.id) || ctx.neverPairIds?.has(b.id)) return null
 
   // 2. two compounds sharing a joint
   if (a.type === 'compound' && b.type === 'compound' && sharesJoint(data, a.sub, b.sub)) return null

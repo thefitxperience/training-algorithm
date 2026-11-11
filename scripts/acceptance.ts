@@ -4913,6 +4913,29 @@ const fingerprint = (p: ReturnType<typeof run>) =>
     check('Styles: Calisthenics first in a hybrid makes a calisthenics week, skills included', bad.length === 0, bad.slice(0, 3).join(' | ') || '10 clients')
   }
 
+  // 9b2. A styled day's trim verdict describes the day as built: no "could not reach the hour" on a day
+  // that is inside it, and skill holds never count against the working-set ceiling.
+  {
+    const bad: string[] = []
+    const SKILLS = M.ladders.skillFamilies
+    for (let seed = 0; seed < 40; seed++) {
+      const { input: b } = sampleClient(data, {}, seed * 7919 + 3)
+      for (const styles of [['Calisthenics'], ['Calisthenics', 'Gym'], ['CrossFit', 'Calisthenics']] as Modality[][]) {
+        const r = buildPlan(styleData, { ...b, modalities: styles, focusSkills: [SKILLS[seed % SKILLS.length], SKILLS[(seed + 2) % SKILLS.length]] })
+        if (!r.ok || !r.plan.strength) continue
+        for (const a of r.plan.strength.timecap.applied) {
+          const d = r.plan.strength.days.find((x) => x.index === a.dayIndex)!
+          const sets = d.exercises.reduce((n, c) => n + (c.skill ? 0 : c.sets + (c.unilateral?.extraSets ?? 0)), 0)
+          const fits = d.wholeSetMinutes <= 60 + 1e-6 && sets <= (a.model.maxSets ?? Infinity)
+          if (a.plan.reached !== fits) bad.push(`seed ${seed} ${styles.join('+')} day ${a.dayIndex + 1}: reached ${a.plan.reached}, ${d.wholeSetMinutes.toFixed(1)} min, ${sets}/${a.model.maxSets} sets`)
+          // (a day the trim fitted is then filled up to the session floor; one the guard finished is described as built)
+          if (a.plan.after && Math.abs(a.plan.minutesAfter - d.wholeSetMinutes) > 1e-6) bad.push(`seed ${seed} day ${a.dayIndex + 1}: says ${a.plan.minutesAfter.toFixed(1)} min, built ${d.wholeSetMinutes.toFixed(1)}`)
+        }
+      }
+    }
+    check('Styles: a fitted day reports the day as built, skill holds outside the set ceiling', bad.length === 0, bad.slice(0, 3).join(' | ') || '120 programs')
+  }
+
   // 9c. Skills to master: only those open the sessions, each about three times a week at a steady dose,
   // the program leans on their support work, at most three, and one a pain rules out is refused.
   {

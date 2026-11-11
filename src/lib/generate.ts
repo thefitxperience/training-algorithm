@@ -1577,6 +1577,8 @@ export function generate(raw: DataBundle, input: ClientInput): GenerateResult {
         // A skill's sets come off last of all and never below its floor (a day too tight for everything).
         // The trim never cuts a skill's dose: only the last guard after it does, once the accessories are gone.
         ...(list.some((c) => c.skill) && { minSetsIdx: list.map((c) => (c.skill ? c.sets : undefined)) }),
+        // Skill holds are practice, not working sets: the set ceiling is for the rest of the session.
+        ...(list.some((c) => c.skill) && { outsideCeiling: list.map((c) => !!c.skill) }),
         soleIdx: list.map(isSole),
         redundant: (i: number, alive: readonly boolean[]) => isRedundant(fit, listed, alive, i),
         mainLiftMinSets,
@@ -1796,6 +1798,10 @@ export function generate(raw: DataBundle, input: ClientInput): GenerateResult {
       : rawBand
     : null
   const capApplied: TimeCapResult['applied'] = []
+  /** what the styles' last guard took out of each day, by day index */
+  const guardSaid = new Map<number, string[]>()
+  /** a day's working sets as the ceiling counts them: a skill's holds are practice, not working sets */
+  const workingSetsOf = (d: GeneratedDay) => d.exercises.reduce((n, c) => n + (c.skill ? 0 : c.sets + (c.unilateral?.extraSets ?? 0)), 0)
   const capRetired: { pin: CapPin; reason: string }[] = []
 
   /** Trims these days to the target; `always` records a plan even for a day already inside it. */
@@ -1996,13 +2002,26 @@ export function generate(raw: DataBundle, input: ClientInput): GenerateResult {
       const metconsKept = styles[0] === 'CrossFit' ? 2 : 1
       const floor = focusRules?.minSetsEach ?? 3
       refreshWholeSetMinutes()
+      // The working-set ceiling the trim held the day to (skills' holds aside): the guard keeps to it too.
+      const ceilingOf = (dayIndex: number) => capApplied.find((a) => a.dayIndex === dayIndex)?.model.maxSets ?? maxSets ?? Infinity
+      const overCeiling = (d: GeneratedDay) => workingSetsOf(d) > ceilingOf(d.index)
       days.forEach((_, i) => {
-        for (let guard = 0; guard < 12 && days[i].wholeSetMinutes > capTarget + 1e-6; guard++) {
+        for (let guard = 0; guard < 16 && (days[i].wholeSetMinutes > capTarget + 1e-6 || overCeiling(days[i])); guard++) {
           const d = days[i]
           const list = d.exercises.map((c) => ({ ...c }))
           let conditioning = d.conditioning
-          const say = (what: string) =>
-            warnings.push({ kind: 'dropped', dayIndex: d.index, dayLabel: d.label, sub: what, message: `Day ${d.index + 1} (${d.label}): ${what} to keep the session inside the hour.` })
+          // Over the ceiling but inside the hour, only sets help: the metcon stays.
+          const overTime = d.wholeSetMinutes > capTarget + 1e-6
+          const say = (what: string) => {
+            guardSaid.set(d.index, [...(guardSaid.get(d.index) ?? []), what])
+            warnings.push({
+              kind: 'dropped',
+              dayIndex: d.index,
+              dayLabel: d.label,
+              sub: what,
+              message: `Day ${d.index + 1} (${d.label}): ${what} to keep the session ${overTime ? 'inside the hour' : `to ${ceilingOf(d.index)} working sets`}.`,
+            })
+          }
           // A day's only pull, and the week's only vertical pull, are never what goes: a third press is.
           const pulls = new Set(focusRules?.pullSubs ?? [])
           const essential = (j: number) => {
@@ -2032,20 +2051,21 @@ export function generate(raw: DataBundle, input: ClientInput): GenerateResult {
           if (accessory !== undefined) {
             say(`"${list[accessory].exercise.name}" left out`)
             list.splice(accessory, 1)
-          } else if (conditioning?.metcon && styles[0] !== 'CrossFit' && metconsLeft > metconsKept) {
+          } else if (overTime && conditioning?.metcon && styles[0] !== 'CrossFit' && metconsLeft > metconsKept) {
             // (With CrossFit the main style every day keeps its metcon: other work goes first.)
             say('the metcon left out')
             conditioning = null
           } else if (other !== undefined) {
             say(`"${list[other].exercise.name}" left out`)
             list.splice(other, 1)
-          } else if (skill !== undefined) {
+          } else if (overTime && skill !== undefined) {
             say(`the ${list[skill].skill!.toLowerCase()} at ${list[skill].sets - 1} sets`)
             list[skill].sets -= 1
           } else if (support !== undefined) {
             say(`"${list[support].exercise.name}" left out`)
             list.splice(support, 1)
           } else if (
+            overTime &&
             conditioning?.metcon &&
             styles[0] === 'CrossFit' &&
             metconsLeft <= metconsKept &&
@@ -2057,7 +2077,7 @@ export function generate(raw: DataBundle, input: ClientInput): GenerateResult {
             if (main === undefined) break
             say(`"${list[main].exercise.name}" left out (the metcon stays)`)
             list.splice(main, 1)
-          } else if (conditioning?.metcon) {
+          } else if (overTime && conditioning?.metcon) {
             say('the metcon left out')
             conditioning = null
           } else break
@@ -2067,6 +2087,26 @@ export function generate(raw: DataBundle, input: ClientInput): GenerateResult {
       })
     }
     fillDays()
+    refreshWholeSetMinutes()
+    // A day the guard finished is described as it was built: the search's own verdict was on the day
+    // before the guard's cuts.
+    if (styled)
+      for (const a of capApplied) {
+        const d = days.find((x) => x.index === a.dayIndex)
+        const said = guardSaid.get(a.dayIndex)
+        if (!d || (a.plan.reached && !said)) continue
+        const reached = d.wholeSetMinutes <= capTarget + 1e-6 && workingSetsOf(d) <= (a.model.maxSets ?? Infinity)
+        a.plan = {
+          ...a.plan,
+          reached,
+          minutesAfter: d.wholeSetMinutes,
+          shortfall: Math.max(0, d.wholeSetMinutes - capTarget),
+          ...(said && { after: said }),
+          ...(!reached && d.wholeSetMinutes <= capTarget + 1e-6 && {
+            reason: `inside the hour, but over this client's ${a.model.maxSets} working sets: everything left is a skill, its support, a main lift or a trainer's pick`,
+          }),
+        }
+      }
     // The two exercises of a pair share one rest, the longer of theirs, taken after each round
     // (the time model already charges it so).
     for (const d of days)

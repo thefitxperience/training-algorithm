@@ -151,6 +151,11 @@ export interface CapDayModel {
   maxSets?: number
   /** fit.json: exercises no lever may remove (the weaker side's VALD work) */
   protectedIdx?: boolean[]
+  /**
+   * Exercises whose sets are not working sets against `maxSets` (a calisthenics skill: short holds
+   * practised fresh, with full rest). Their time is still charged.
+   */
+  outsideCeiling?: boolean[]
   /** a per-exercise floor the trim never cuts sets below (a calisthenics skill keeps 3: its dose is the point) */
   minSetsIdx?: (number | undefined)[]
   /** fit.json: the week's only exercise for its sub-region — removed only by `remove_sole` */
@@ -181,7 +186,7 @@ export interface CapDayModel {
 export function workingSets(m: CapDayModel, s: CapState): number {
   let n = 0
   for (let i = 0; i < m.exercises.length; i++)
-    if (s.alive[i]) n += s.sets[i] + m.exercises[i].unilateralExtraSets
+    if (s.alive[i] && !m.outsideCeiling?.[i]) n += s.sets[i] + m.exercises[i].unilateralExtraSets
   return n
 }
 
@@ -628,6 +633,12 @@ export interface CapPlan {
   state: CapState
   /** one sentence naming what was given up */
   gaveUp: string
+  /**
+   * What the training styles' last guard took out after the search (whole exercises, a skill's set,
+   * a metcon), when the search alone could not fit the day. `reached` and `minutesAfter` then describe
+   * the day as it was finally built.
+   */
+  after?: string[]
   reason: string
   nodesExpanded: number
 }

@@ -87,6 +87,7 @@ export function ProgramPanel({
     rounding.byPick.get(pickKey(dayIndex, position)) ?? raw
 
   const target = program.timecap.target
+  const planModel = (dayIndex: number) => program.timecap.applied.find((a) => a.dayIndex === dayIndex)?.model
   const planFor = (dayIndex: number) =>
     program.timecap.applied.find((a) => a.dayIndex === dayIndex)?.plan
   const pressCap = (dayIndex: number) =>
@@ -127,7 +128,7 @@ export function ProgramPanel({
         was: `was ${was > target ? was : plan.minutesBefore.toFixed(1)} min`,
       }
     }
-    const before = model.exercises.reduce((n, e) => n + e.sets + e.unilateralExtraSets, 0)
+    const before = model.exercises.reduce((n, e, i) => n + (model.outsideCeiling?.[i] ? 0 : e.sets + e.unilateralExtraSets), 0)
     return {
       title: `Kept to ${model.maxSets ?? before} working sets`,
       was: `was ${before}, this client's limit is ${model.maxSets ?? before}`,
@@ -272,19 +273,25 @@ export function ProgramPanel({
                       <span className="font-bold">{fittedLabel(day.index)?.title}</span>
                       <span className="text-udra-ink-500"> — {fittedLabel(day.index)?.was}</span>
                     </span>
-                    {plan.steps.length > 0 && (
+                    {plan.steps.length + (plan.after?.length ?? 0) > 0 && (
                       <span className="text-[11px] text-udra-ink-500 underline">
-                        <span className="group-open:hidden">What was trimmed ({plan.steps.length})</span>
+                        <span className="group-open:hidden">What was trimmed ({plan.steps.length + (plan.after?.length ?? 0)})</span>
                         <span className="hidden group-open:inline">Hide</span>
                       </span>
                     )}
                   </summary>
-                  {plan.steps.length > 0 && (
+                  {plan.steps.length + (plan.after?.length ?? 0) > 0 && (
                     <ol className="mt-1.5 list-decimal space-y-0.5 pl-5 text-[11px]">
                       {plan.steps.map((s, i) => (
                         <li key={i}>
                           {s.detail}
                           <span className="ml-1 opacity-50">({s.cost})</span>
+                        </li>
+                      ))}
+                      {plan.after?.map((a, i) => (
+                        <li key={`after-${i}`}>
+                          {a[0].toUpperCase() + a.slice(1)}
+                          <span className="ml-1 opacity-50">(skills, support and the metcon were kept until here)</span>
                         </li>
                       ))}
                     </ol>
@@ -303,7 +310,9 @@ export function ProgramPanel({
                     <span className="text-[12px] font-bold">
                       {plan.reached
                         ? `Reduced to ${target} min — ${movedFrom(plan)} min for ${pts(plan.points)}`
-                        : `Could not reach ${target} min — ${movedFrom(plan)} min, still ${plan.shortfall.toFixed(1)} over`}
+                        : plan.shortfall > 0
+                          ? `Could not reach ${target} min — ${movedFrom(plan)} min, still ${plan.shortfall.toFixed(1)} over`
+                          : `Inside ${target} min (${movedFrom(plan)} min), but over ${planModel(day.index)?.maxSets ?? ''} working sets`}
                       {plan.reached && !plan.proven && (
                         <Tag tone="ink" title={plan.reason}>
                           not proven cheapest
